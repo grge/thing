@@ -120,7 +120,9 @@ any blob it does not already hold — even one another reader has. §7.2 names t
 as the gap a pinning peer fills.
 
 A mesh needs a blob-availability exchange, since a version vector describes
-*events* and never *blobs*.
+*events* and never *blobs*. [FINDINGS F14](FINDINGS.md#f14-peer-meshing-in-mode-2--three-separable-things-not-one)
+separates the three changes meshing would involve — metadata relay, blob
+availability, and peer-list sharing — which have very different costs.
 
 ### I10. A permanently missing event stalls a writer's chain forever — **Rewrite**
 *SPEC §3.3, §10.2*

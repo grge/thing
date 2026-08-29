@@ -411,6 +411,79 @@ need"* vs *"events that are what you need"* — `:parent` and `:name` necessaril
 complete, `:content` payloads and `:yjs` updates selective. That line is cleaner
 than the current one and, unlike "metadata is small", it survives mode 3.
 
+### F14. Peer meshing in mode 2 — three separable things, not one
+
+**2026-08-29. Open thinking, not a decision.** The idea: the writer shares its
+peer list, readers connect to each other, and the resulting mesh keeps the space
+reachable after the writer closes its tab — addressing
+[ISSUES I9](ISSUES.md#i9-star-topology-makes-the-writer-a-single-point-of-failure).
+
+The mechanism is sound and mostly already supported. §3.2 guarantees a relaying
+peer cannot forge, because chains are per-writer and hash-linked; §3.4's protocol
+is symmetric. Readers relaying to each other needs no new correctness argument.
+
+What the discussion clarified is that "meshing" is **three separable changes**
+with quite different costs, and they should be decided independently.
+
+**1. Metadata mesh — nearly free.** Readers exchange events directly. The log is
+a set (§1.3), `EVENTS`/`GAP` are already symmetric, and a reader holding A@0–47
+can serve them. Nothing structural changes.
+
+This alone addresses [I10](ISSUES.md#i10-a-permanently-missing-event-stalls-a-writers-chain-forever): a gap can be filled by any peer holding the
+missing event, not only by an absent writer.
+
+**2. Blob mesh — one new message.** This is where I9 actually bites, and it is
+the piece §3.4 genuinely lacks: **a version vector describes events, never
+blobs.** Two readers with identical VVs can hold completely different blob sets,
+because §6.1 makes blob fetching a local policy. So `WANT` has no routing — a
+peer cannot know whom to ask.
+
+Needs a `HAVE` exchange: a hash list, or a Bloom filter once the set is large.
+Piggybacked on `HELLO` and updated as blobs arrive. At POC scale a plain list is
+nothing beside the blobs themselves.
+
+**3. Liveness after the writer leaves — where the model needs care.**
+
+The precision worth insisting on: **what does "alive" mean for a space whose only
+permitted writer is gone?** Mode 2 (§7.2) says the writer owns the space and is
+its only writer. A mesh surviving the writer's departure keeps the space
+*readable*, frozen at whatever state it reached — nobody can write, and it cannot
+change until the writer returns.
+
+That is genuinely useful and is most of what a pinning peer provides. But it is a
+**distributed cache of a static state**, not a space that continues to live. The
+distinction decides whether meshing substitutes for the pinning peer (§9) or
+merely reduces how often one is needed.
+
+**The awkward part is peer-list sharing specifically**, not meshing:
+
+- **Peer ids become de-facto membership, with no way to leave.** Readers learn
+  who else joined and can dial them directly, forever. This makes
+  [I7](ISSUES.md#i7-share-codes-cannot-be-revoked-or-rotated) worse rather than better.
+- **A reader who joined once can rejoin without the code**, through any peer that
+  remembers it. Whether that is a feature or a hole depends on whether the code
+  was meant as access control — and today it is the only access control there is.
+- **PeerJS ids are ephemeral**, one per session unless claimed. A durable peer
+  list goes stale immediately, so it implies stable per-reader identity, which is
+  [I6](ISSUES.md#i6-hello-is-unauthenticated-any-peer-can-claim-any-writer-id).
+
+**A cheaper middle, worth considering:** the writer includes in `HELLO` the ids of
+peers *currently* connected — no persistence, no roster, just "these are alive
+now". Readers can then connect to each other while the writer is up, and those
+connections survive its departure. Mesh redundancy without anyone accumulating a
+durable membership list.
+
+It also degrades honestly: a reader arriving after the writer has gone finds
+nobody, which is exactly the case §7.2 says a pinning peer exists for.
+
+**Tentative shape, unsettled.** Metadata mesh and `HAVE` look like real
+improvements that fit the existing design. Durable peer lists drag in identity
+and revocation — a roster nobody can leave is a worse version of a share code
+nobody can revoke — so they belong with signing (§9) rather than ahead of it.
+
+This touches §3.4, which [I18](ISSUES.md#i18-two-selective-fetch-mechanisms-with-incompatible-completeness-models) already argues should be reconsidered as a whole
+rather than piecemeal.
+
 ---
 
 ## Method notes
