@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design mockup — two-pane browser</title>
+<link rel="stylesheet" href="./app.css">
+<style>
+  /* Mockup scaffolding only — not part of the app. */
+  .mockup-note {
+    padding: var(--space-2);
+    background: var(--canvas-sunken);
+    border-bottom: 1px solid var(--rule-strong);
+    font-size: var(--text--2);
+    color: var(--ink-muted);
+  }
+  .mockup-note strong { color: var(--ink); }
+  .mockup-note button {
+    font: inherit; padding: 0 var(--space-2); margin-left: var(--space-2);
+    background: var(--canvas); border: 1px solid var(--rule); color: var(--ink);
+    cursor: pointer;
+  }
+  .variants { display: grid; gap: var(--space-6); padding: var(--space-4); }
+  .variant > h2 {
+    margin: 0 0 var(--space-1);
+    font-size: var(--text--1); font-weight: 600; color: var(--ink-muted);
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  .frame { height: 22rem; border: 1px solid var(--rule-strong); }
+  .frame .app { height: 100%; }
+</style>
+</head>
+<body>
+
+<div class="mockup-note">
+  <strong>Design mockup</strong> — static markup, no behaviour. Every §8.2 preview state and §8.6 tab kind shown at once.
+  <button id="theme">Toggle theme</button>
+</div>
+
+<div class="variants">
+
+  <section class="variant">
+    <h2>Mode 1 — local space, text file selected</h2>
+    <div class="frame">
+      <div class="app">
+        <div class="tabs" role="tablist">
+          <button class="tab" role="tab" aria-selected="true" data-mode="local">
+            scratch <span class="tab-mode">local</span>
+          </button>
+          <button class="tab" role="tab" aria-selected="false" data-mode="writer">
+            shared-notes <span class="tab-mode">writer</span>
+          </button>
+          <button class="tab" role="tab" aria-selected="false" data-mode="reader">
+            alice-photos <span class="tab-mode">reader</span>
+          </button>
+          <button class="tab-new" title="New space">+</button>
+        </div>
+
+        <div class="panes">
+          <div class="pane-tree">
+            <div class="pane-head"><span>scratch</span><span>14 objects</span></div>
+            <ul class="tree" role="tree">
+              <li role="none">
+                <div class="row" role="treeitem" data-kind="dir" aria-selected="false" aria-expanded="true">
+                  <span class="twisty">▾</span>
+                  <span class="row-name">docs</span>
+                  <span class="row-meta">3</span>
+                </div>
+                <ul role="group">
+                  <li role="none">
+                    <div class="row" role="treeitem" data-kind="file" aria-selected="true" style="padding-left:0.875rem">
+                      <span class="twisty" data-leaf="true">·</span>
+                      <span class="row-name">notes.txt</span>
+                      <span class="row-meta">2.1 KB</span>
+                    </div>
+                  </li>
+                  <li role="none">
+                    <div class="row" role="treeitem" data-kind="file" aria-selected="false" style="padding-left:0.875rem">
+                      <span class="twisty" data-leaf="true">·</span>
+                      <span class="row-name">draft.md</span>
+                      <span class="row-meta">840 B</span>
+                    </div>
+                  </li>
+                  <li role="none">
+                    <div class="row is-deleted" role="treeitem" data-kind="file" aria-selected="false" style="padding-left:0.875rem">
+                      <span class="twisty" data-leaf="true">·</span>
+                      <span class="row-name">old-draft.md</span>
+                      <span class="row-meta">1.2 KB</span>
+                    </div>
+                  </li>
+                </ul>
+              </li>
+              <li role="none">
+                <div class="row" role="treeitem" data-kind="dir" aria-selected="false" aria-expanded="true">
+                  <span class="twisty">▾</span>
+                  <span class="row-name">photos</span>
+                  <span class="row-meta">2</span>
+                </div>
+                <ul role="group">
+                  <li role="none">
+                    <div class="row" role="treeitem" data-kind="file" aria-selected="false" style="padding-left:0.875rem">
+                      <span class="twisty" data-leaf="true">·</span>
+                      <span class="row-name">IMG_0421.png</span>
+                      <span class="row-meta">1.4 MB</span>
+                    </div>
+                  </li>
+                  <li role="none">
+                    <div class="row" role="treeitem" data-kind="file" aria-selected="false" style="padding-left:0.875rem">
+                      <span class="twisty" data-leaf="true">·</span>
+                      <span class="row-name">IMG_0422.png</span>
+                      <span class="row-meta">1.1 MB</span>
+                    </div>
+                  </li>
+                </ul>
+              </li>
+              <li role="none">
+                <div class="row" role="treeitem" data-kind="dir" aria-selected="false" aria-expanded="false">
+                  <span class="twisty">▸</span>
+                  <span class="row-name">archive</span>
+                  <span class="row-meta">7</span>
+                </div>
+              </li>
+              <li role="none">
+                <div class="row" role="treeitem" data-kind="file" aria-selected="false">
+                  <span class="twisty" data-leaf="true">·</span>
+                  <span class="row-name">untitled</span>
+                  <span class="badge">cycle</span>
+                  <span class="row-meta">0 B</span>
+                </div>
+              </li>
+              <li role="none">
+                <div class="row" role="treeitem" data-kind="file" aria-selected="false">
+                  <span class="twisty" data-leaf="true">·</span>
+                  <span class="row-name">same-name.txt</span>
+                  <span class="row-meta">12 B</span>
+                </div>
+              </li>
+              <li role="none">
+                <div class="row" role="treeitem" data-kind="file" aria-selected="false">
+                  <span class="twisty" data-leaf="true">·</span>
+                  <span class="row-name">same-name.txt</span>
+                  <span class="row-meta">44 B</span>
+                </div>
+              </li>
+            </ul>
+          </div>
+
+          <div class="pane-preview">
+            <div class="pane-head"><span>preview</span><span>text/plain</span></div>
+            <div class="preview-head">
+              <div class="preview-name">notes.txt</div>
+              <div class="preview-facts">
+                <span>/docs/notes.txt</span>
+                <span>9f86d081…88b48f</span>
+                <span>2.1 KB</span>
+              </div>
+            </div>
+            <div class="preview-body">
+<pre class="preview-text">The log is a set, not a sequence.
+
+Any peer that has applied the same set of events
+holds the same state, regardless of arrival order.
+This is the load-bearing property.</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="status">
+          <span>mode 1 · local</span>
+          <span>writer a3f2…</span>
+          <span>seq 47</span>
+          <span>lamport 112</span>
+          <span class="status-spacer"></span>
+          <span>14 objects · 3 blobs</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="variant">
+    <h2>Mode 2 reader — fetching, and a stale space</h2>
+    <div class="frame">
+      <div class="app">
+        <div class="tabs" role="tablist">
+          <button class="tab" role="tab" aria-selected="false" data-mode="local">
+            scratch <span class="tab-mode">local</span>
+          </button>
+          <button class="tab is-drop-target" role="tab" aria-selected="false" data-mode="writer">
+            shared-notes <span class="tab-mode">writer</span>
+          </button>
+          <button class="tab" role="tab" aria-selected="true" data-mode="reader">
+            alice-photos <span class="tab-mode">reader</span>
+          </button>
+          <button class="tab-new" title="New space">+</button>
+        </div>
+
+        <div class="panes">
+          <div class="pane-tree">
+            <div class="pane-head"><span>alice-photos · read-only</span><span>6 objects</span></div>
+            <ul class="tree" role="tree">
+              <li role="none">
+                <div class="row" role="treeitem" data-kind="dir" aria-selected="false" aria-expanded="true">
+                  <span class="twisty">▾</span>
+                  <span class="row-name">2024</span>
+                  <span class="row-meta">3</span>
+                </div>
+                <ul role="group">
+                  <li role="none">
+                    <div class="row" role="treeitem" data-kind="file" aria-selected="true" style="padding-left:0.875rem">
+                      <span class="twisty" data-leaf="true">·</span>
+                      <span class="row-name">beach.png</span>
+                      <span class="row-meta">4.2 MB</span>
+                    </div>
+                  </li>
+                  <li role="none">
+                    <div class="row" role="treeitem" data-kind="file" aria-selected="false" style="padding-left:0.875rem">
+                      <span class="twisty" data-leaf="true">·</span>
+                      <span class="row-name">hills.png</span>
+                      <span class="row-meta">3.8 MB</span>
+                    </div>
+                  </li>
+                  <li role="none">
+                    <div class="row" role="treeitem" data-kind="file" aria-selected="false" style="padding-left:0.875rem">
+                      <span class="twisty" data-leaf="true">·</span>
+                      <span class="row-name">notes.txt</span>
+                      <span class="row-meta">310 B</span>
+                    </div>
+                  </li>
+                </ul>
+              </li>
+            </ul>
+          </div>
+
+          <div class="pane-preview">
+            <div class="pane-head"><span>preview</span><span>image/png</span></div>
+            <div class="preview-head">
+              <div class="preview-name">beach.png</div>
+              <div class="preview-facts">
+                <span>/2024/beach.png</span>
+                <span>4e07408…6b7d0d</span>
+                <span>4.2 MB</span>
+              </div>
+            </div>
+            <div class="preview-body">
+              <div class="state" data-state="fetching">Fetching…</div>
+              <div class="state-detail">chunk 128 / 268 · 16 KiB chunks · from a3f2…</div>
+              <span class="progress"><span style="width:48%"></span></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="status">
+          <span class="status-stale">stale · writer not connected</span>
+          <span>read-only</span>
+          <span>vv a3f2…:47</span>
+          <span class="status-spacer"></span>
+          <span>6 objects · 1 blob held</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="variant">
+    <h2>Preview states (§8.2), all five</h2>
+    <div class="frame" style="height:auto">
+      <div class="app" style="height:auto">
+        <div class="panes" style="grid-template-columns:1fr 1fr 1fr">
+          <div class="pane-preview" style="border-right:1px solid var(--rule)">
+            <div class="pane-head"><span>rendered</span></div>
+            <div class="preview-head">
+              <div class="preview-name">notes.txt</div>
+              <div class="preview-facts"><span>9f86d081…</span><span>2.1 KB</span></div>
+            </div>
+            <div class="preview-body"><pre class="preview-text">The log is a set,
+not a sequence.</pre></div>
+          </div>
+          <div class="pane-preview" style="border-right:1px solid var(--rule)">
+            <div class="pane-head"><span>not renderable</span></div>
+            <div class="preview-head">
+              <div class="preview-name">archive.zip</div>
+              <div class="preview-facts"><span>ef2d127…</span><span>18 MB</span></div>
+            </div>
+            <div class="preview-body">
+              <div class="state" data-state="not-renderable">No renderer for application/zip.</div>
+              <div class="state-detail">Blob is held locally. Download to open it.</div>
+            </div>
+          </div>
+          <div class="pane-preview">
+            <div class="pane-head"><span>no content</span></div>
+            <div class="preview-head">
+              <div class="preview-name">docs</div>
+              <div class="preview-facts"><span>dir</span><span>3 children</span></div>
+            </div>
+            <div class="preview-body">
+              <div class="state" data-state="no-content">No content.</div>
+              <div class="state-detail">A directory, or an object holding only a position (§4.3).</div>
+            </div>
+          </div>
+        </div>
+        <div class="panes" style="grid-template-columns:1fr 1fr;border-top:1px solid var(--rule)">
+          <div class="pane-preview" style="border-right:1px solid var(--rule)">
+            <div class="pane-head"><span>fetching</span></div>
+            <div class="preview-head">
+              <div class="preview-name">beach.png</div>
+              <div class="preview-facts"><span>4e07408…</span><span>4.2 MB</span></div>
+            </div>
+            <div class="preview-body">
+              <div class="state" data-state="fetching">Fetching…</div>
+              <div class="state-detail">chunk 128 / 268 · from a3f2…</div>
+              <span class="progress"><span style="width:48%"></span></span>
+            </div>
+          </div>
+          <div class="pane-preview">
+            <div class="pane-head"><span>unavailable</span></div>
+            <div class="preview-head">
+              <div class="preview-name">hills.png</div>
+              <div class="preview-facts"><span>7d793037…</span><span>3.8 MB</span></div>
+            </div>
+            <div class="preview-body">
+              <div class="state" data-state="unavailable">Unavailable — no connected peer holds this blob.</div>
+              <div class="state-detail">Metadata is complete; only the content is missing (§6.1).</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+  document.getElementById('theme').addEventListener('click', () => {
+    const el = document.documentElement;
+    el.dataset.theme = el.dataset.theme === 'dark' ? 'light' : 'dark';
+  });
+</script>
+</body>
+</html>

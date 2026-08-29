@@ -1,0 +1,692 @@
+@import './tokens.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+html {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-interface);
+  font-size: 100%;
+  line-height: 1.35;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+a {
+  color: var(--link);
+  text-underline-offset: 0.16em;
+}
+
+/* ── Frame ─────────────────────────────────────────────────────────────── */
+
+.app {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100vh;
+}
+
+/* ── Tabs (§8.3, §8.6) ─────────────────────────────────────────────────── */
+
+.tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  background: var(--canvas-sunken);
+  border-bottom: 1px solid var(--rule);
+  font-size: var(--text--1);
+  overflow-x: auto;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  min-height: 1.75rem;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--rule);
+  /* The mode marker: a 2px edge, colour-coded, but never the only signal. */
+  border-top: 2px solid var(--mode);
+  color: var(--ink-muted);
+  font: inherit;
+  font-family: var(--font-interface);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tab[aria-selected='true'] {
+  background: var(--canvas);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.tab[data-mode='local'] { --mode: var(--mode-local); }
+.tab[data-mode='writer'] { --mode: var(--mode-writer); }
+.tab[data-mode='reader'] { --mode: var(--mode-reader); }
+
+/*
+ * The mode word itself. Colour is a supplement, never the sole carrier
+ * (COMMON-CORE: "the interface must remain understandable without colour").
+ */
+.tab-mode {
+  font-family: var(--font-data);
+  font-size: var(--text--2);
+  color: var(--mode);
+  text-transform: lowercase;
+}
+
+.tab.is-drop-target {
+  background: var(--canvas-raised);
+  outline: 2px dashed var(--action);
+  outline-offset: -2px;
+}
+
+.tab-new {
+  padding: 0 var(--space-3);
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--rule);
+  color: var(--ink-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.tabs-spacer {
+  flex: 1 1 auto;
+}
+
+/*
+ * View switch. Space-scoped, so it lives with the tabs. A segmented pair rather
+ * than one toggling label: which view you are in is visible without having to
+ * infer it from what the button offers to do next.
+ */
+.viewswitch {
+  display: flex;
+  align-self: center;
+  margin-right: var(--space-2);
+}
+
+.viewswitch button {
+  font: inherit;
+  font-size: var(--text--2);
+  padding: 0 var(--space-2);
+  min-height: 1.25rem;
+  background: transparent;
+  border: 1px solid var(--rule);
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+
+.viewswitch button + button {
+  border-left: 0;
+}
+
+.viewswitch button[aria-pressed='true'] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--canvas);
+}
+
+.viewswitch button:not([aria-pressed='true']):hover {
+  color: var(--ink);
+  border-color: var(--rule-strong);
+}
+
+/* ── Panes ─────────────────────────────────────────────────────────────── */
+
+.panes {
+  display: grid;
+  grid-template-columns: minmax(14rem, 22rem) 1fr;
+  min-height: 0;
+}
+
+.pane-tree {
+  border-right: 1px solid var(--rule);
+  overflow: auto;
+  min-height: 0;
+}
+
+.pane-preview {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.pane-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-2);
+  min-height: 1.5rem;
+  background: var(--canvas-raised);
+  border-bottom: 1px solid var(--rule);
+  font-size: var(--text--2);
+  color: var(--ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/*
+ * Controls that act on the pane they head — creating in this tree, filtering
+ * this tree. Scoped here rather than in the status bar, which reports and does
+ * not act.
+ */
+.pane-head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.pane-head-actions button {
+  font: inherit;
+  font-size: var(--text--2);
+  padding: 0 var(--space-2);
+  min-height: 1.125rem;
+  background: transparent;
+  border: 1px solid var(--rule);
+  color: var(--ink-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pane-head-actions button:hover {
+  color: var(--ink);
+  border-color: var(--rule-strong);
+}
+
+.pane-head-actions button[aria-pressed='true'] {
+  background: var(--canvas-sunken);
+  border-color: var(--rule-strong);
+  color: var(--ink);
+}
+
+/* ── Tree (§8.1) ───────────────────────────────────────────────────────── */
+
+.tree {
+  margin: 0;
+  padding: var(--space-1) 0;
+  list-style: none;
+  font-family: var(--font-data);
+  font-size: var(--text--1);
+}
+
+.tree ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--row);
+  padding-right: var(--space-2);
+  /*
+   * Departure from --control-min: rows are 1.5rem, not 2.25rem. The tree is
+   * the primary object and TUI density is the point. Pointer safety comes
+   * from the padded hit area below, not from row height.
+   */
+  cursor: default;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.row:hover {
+  background: var(--canvas-raised);
+}
+
+/*
+ * Selection reads as a filled row. In dark mode --canvas-sunken is darker than
+ * the canvas, which reads as a hole rather than a selection, so the raised
+ * surface is used instead.
+ */
+.row[aria-selected='true'] {
+  background: var(--canvas-sunken);
+  color: var(--ink);
+}
+
+:root[data-theme='dark'] .row[aria-selected='true'] {
+  background: var(--canvas-raised);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .row[aria-selected='true'] {
+    background: var(--canvas-raised);
+  }
+}
+
+.row.is-deleted .row-name {
+  text-decoration: line-through;
+  color: var(--ink-faint);
+}
+
+.row.is-drop-target {
+  outline: 1px dashed var(--action);
+  outline-offset: -1px;
+}
+
+.twisty {
+  flex: none;
+  width: var(--indent);
+  color: var(--ink-faint);
+  text-align: center;
+  /* Enlarged invisible hit area so a 1.5rem row is still clickable. */
+  padding: var(--space-2) 0;
+  margin: calc(var(--space-2) * -1) 0;
+  cursor: pointer;
+}
+
+.twisty[data-leaf='true'] {
+  cursor: default;
+  visibility: hidden;
+}
+
+.row-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row-meta {
+  flex: none;
+  color: var(--ink-faint);
+  font-size: var(--text--2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A dir is distinguished by weight, not by an icon (§4.6 is advisory). */
+.row[data-kind='dir'] .row-name {
+  font-weight: 600;
+}
+
+/* Cycle-broken objects (§4.1) — visible, not hidden. */
+.badge {
+  flex: none;
+  padding: 0 var(--space-1);
+  border: 1px solid currentColor;
+  color: var(--danger);
+  font-size: var(--text--2);
+  line-height: 1.2;
+}
+
+/* ── Preview (§8.2) ────────────────────────────────────────────────────── */
+
+.preview-head {
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--rule);
+}
+
+.preview-name {
+  font-family: var(--font-data);
+  font-size: var(--text-0);
+  font-weight: 600;
+}
+
+.preview-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-1);
+  font-family: var(--font-data);
+  font-size: var(--text--2);
+  color: var(--ink-muted);
+}
+
+/*
+ * Copy / download. Ordinary web powers, kept visible rather than tucked into a
+ * menu — the design system treats leaving with your data as a first-class act.
+ */
+.preview-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.preview-actions button {
+  font: inherit;
+  font-size: var(--text--2);
+  padding: 0 var(--space-2);
+  min-height: 1.25rem;
+  background: transparent;
+  border: 1px solid var(--rule);
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+
+.preview-actions button:hover {
+  color: var(--ink);
+  border-color: var(--rule-strong);
+}
+
+.action-error {
+  font-family: var(--font-data);
+  font-size: var(--text--2);
+  color: var(--danger);
+}
+
+.preview-body {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: var(--space-3);
+  min-height: 0;
+}
+
+.preview-text {
+  margin: 0;
+  font-family: var(--font-data);
+  font-size: var(--text--1);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/*
+ * State lines. Every state says what it is in words; colour only reinforces.
+ * `Fetching` and `Unavailable` are deliberately distinct (§8.2).
+ */
+.state {
+  font-size: var(--text--1);
+  color: var(--ink-muted);
+}
+
+.state[data-state='unavailable'] {
+  color: var(--danger);
+}
+
+.state-detail {
+  margin-top: var(--space-1);
+  font-family: var(--font-data);
+  font-size: var(--text--2);
+  color: var(--ink-faint);
+}
+
+.progress {
+  display: block;
+  width: 12rem;
+  height: 2px;
+  margin-top: var(--space-2);
+  background: var(--rule);
+}
+
+.progress span {
+  display: block;
+  height: 100%;
+  background: var(--ink-muted);
+}
+
+/* ── Status bar ────────────────────────────────────────────────────────── */
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-2);
+  min-height: 1.5rem;
+  background: var(--canvas-raised);
+  border-top: 1px solid var(--rule);
+  font-family: var(--font-data);
+  font-size: var(--text--2);
+  color: var(--ink-muted);
+}
+
+.status-stale {
+  color: var(--danger);
+}
+
+.status-spacer {
+  flex: 1 1 auto;
+}
+
+/* ── Debug view ────────────────────────────────────────────────────────────
+ * The raw event log, made legible. "Let the interface reveal structure" taken
+ * at its word: this is the data model with nothing between you and it.
+ */
+.debug {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.debug table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-data);
+  font-size: var(--text--2);
+}
+
+.debug th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--space-1) var(--space-2);
+  background: var(--canvas-raised);
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink-muted);
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.debug td {
+  padding: 0 var(--space-2);
+  height: var(--row);
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+}
+
+.debug tbody tr:hover {
+  background: var(--canvas-raised);
+}
+
+.debug .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.debug .muted {
+  color: var(--ink-faint);
+}
+
+.debug .value {
+  max-width: 28rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.debug .has-gap {
+  color: var(--danger);
+}
+
+.debug-summary {
+  flex: none;
+  border-bottom: 1px solid var(--rule-strong);
+}
+
+.debug-note {
+  margin: 0;
+  padding: var(--space-2);
+  font-family: var(--font-interface);
+  font-size: var(--text--2);
+  color: var(--ink-faint);
+  line-height: 1.45;
+}
+
+.debug-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--rule);
+}
+
+.debug-controls input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  font-family: var(--font-data);
+  font-size: var(--text--2);
+  padding: var(--space-1) var(--space-2);
+  background: var(--canvas);
+  border: 1px solid var(--rule);
+  color: var(--ink);
+}
+
+.debug-controls button {
+  font: inherit;
+  font-size: var(--text--2);
+  padding: var(--space-1) var(--space-2);
+  background: transparent;
+  border: 1px solid var(--rule);
+  color: var(--ink-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.debug-controls button:hover {
+  color: var(--ink);
+  border-color: var(--rule-strong);
+}
+
+.debug-log {
+  flex: 1 1 auto;
+  overflow: auto;
+  min-height: 0;
+}
+
+/* ── Transport harness (stage 4) ───────────────────────────────────────────
+ * A test rig, not a product surface. Plain document flow, same tokens.
+ */
+.harness {
+  max-width: 60rem;
+  margin-inline: auto;
+  padding: var(--space-4);
+  font-size: var(--text--1);
+}
+
+.harness h1 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-1);
+  font-weight: 600;
+}
+
+.harness h2 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text--1);
+  font-weight: 600;
+  color: var(--ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.harness section {
+  margin-top: var(--space-6);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--rule);
+}
+
+.harness-note {
+  margin: 0;
+  max-width: 60ch;
+  color: var(--ink-muted);
+  line-height: 1.5;
+}
+
+.harness-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.harness input,
+.harness button {
+  font: inherit;
+  font-size: var(--text--1);
+  padding: var(--space-1) var(--space-2);
+  background: var(--canvas);
+  border: 1px solid var(--rule);
+  color: var(--ink);
+}
+
+.harness input[type='text'],
+.harness input[type='number'] {
+  font-family: var(--font-data);
+}
+
+.harness button {
+  background: var(--canvas-raised);
+  cursor: pointer;
+}
+
+.harness button:hover {
+  border-color: var(--rule-strong);
+}
+
+.harness code {
+  font-family: var(--font-data);
+  font-size: var(--text--1);
+}
+
+.harness-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-family: var(--font-data);
+  font-size: var(--text--2);
+  line-height: 1.9;
+}
+
+.harness-list button {
+  font-size: var(--text--2);
+  padding: 0 var(--space-1);
+}
+
+.harness-empty {
+  list-style: none;
+  margin-left: -1.1rem;
+  color: var(--ink-faint);
+}
+
+.harness-metrics {
+  margin: 0 0 var(--space-2);
+  padding: var(--space-2);
+  background: var(--canvas-raised);
+  border: 1px solid var(--rule);
+  font-family: var(--font-data);
+  font-size: var(--text--2);
+  line-height: 1.45;
+  overflow-x: auto;
+}
+
+.harness-log {
+  max-height: 16rem;
+  overflow: auto;
+  padding: var(--space-2);
+  background: var(--canvas-raised);
+  border: 1px solid var(--rule);
+  font-family: var(--font-data);
+  font-size: var(--text--2);
+  line-height: 1.5;
+}
