@@ -208,6 +208,16 @@ identifies a snapshot.
 The useful constraint out of F13: **whatever determines scope must itself always
 be replicated in full.**
 
+### I21. No touch path for re-parent or cross-space move — **Limit**
+*[MOBILE.md](MOBILE.md)*
+
+Re-parenting a tree entry and moving a file across space tabs (§8.5) are both
+native HTML5 drag-and-drop, which mobile browsers don't make touch-operable.
+The rest of the app — joining, browsing, previewing, and (once built)
+non-drag content-in — is planned to work on a phone; these two gestures are
+deliberately left desktop-only for v0 rather than attempting a touch
+drag-and-drop implementation, which is a separate UI problem on its own.
+
 ---
 
 ## Closed

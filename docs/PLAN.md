@@ -230,6 +230,13 @@ marked stale and unfetched blobs marked unavailable.
 Write these into [FINDINGS.md](FINDINGS.md). A number in a console log is not a
 finding.
 
+**The UI built for this stage is desktop-only.** The README's own two-device
+test asks for a phone on a hotspot, and Q3 is best tested on whatever device a
+shared link actually gets opened on — usually a phone. [MOBILE.md](MOBILE.md)
+plans what that needs and in what order; it is not gated on this stage
+finishing, but its Stage B (touch-safe reader) is where the phone half of this
+stage's own measurements come from.
+
 ---
 
 ## Stage 6 — Canvas
