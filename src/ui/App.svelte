@@ -254,7 +254,26 @@
     });
   }
 
+  /**
+   * Is the user typing into something? Window-level shortcuts and paste must
+   * not fire then — a paste into the join field was landing as a new file,
+   * because the handler had no notion of focus.
+   */
+  function isEditing(target: EventTarget | null): boolean {
+    const el = target instanceof HTMLElement ? target : null;
+    if (el === null) return false;
+    if (el.isContentEditable) return true;
+    const tag = el.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+  }
+
+  /** Any dialog open owns the keyboard entirely. */
+  function dialogOpen(): boolean {
+    return document.querySelector('dialog[open]') !== null;
+  }
+
   function onPaste(e: ClipboardEvent): void {
+    if (isEditing(e.target) || dialogOpen()) return;
     if (space === null || !space.writable) return;
     const files = e.clipboardData?.files;
     if (files !== undefined && files.length > 0) {
@@ -415,7 +434,8 @@
    * arrow keys move and expand exactly as they would in a TUI file manager.
    */
   function onKey(e: KeyboardEvent): void {
-    if (e.target instanceof HTMLInputElement) return;
+    // Same guard as paste: typing in a field, or any open dialog, wins.
+    if (isEditing(e.target) || dialogOpen()) return;
 
     const rows = flatten(tree, expanded);
     const at = selected === null ? -1 : rows.findIndex((r) => r.key === selected);
