@@ -11,9 +11,9 @@ that is a guess is labelled a guess.
 
 | Question | Status |
 |---|---|
-| 1. Does WebRTC blob transfer work in practice? | protocol proven on loopback; real networks unmeasured |
-| 2. Does the UUID + LWW-attribute model survive real filesystem operations? | holding so far |
-| 3. Does paste-then-share-a-URL feel good? | not yet reachable (needs stage 5) |
+| 1. Does WebRTC blob transfer work in practice? | works between browsers; **real networks unmeasured** |
+| 2. Does the UUID + LWW-attribute model survive real filesystem operations? | yes, so far — including concurrent writers |
+| 3. Does paste-then-share-a-URL feel good? | flow works end to end; judgement pending |
 
 ---
 
@@ -194,10 +194,34 @@ wrong in the easy half.
 
 ---
 
+### F8. Sync works between two browsers; one bug class was transmission, not model
+
+**2026-08-29, stage 5.** Two Chrome sessions, writer and reader, same machine.
+
+Working: a reader opens a share URL and replicates the space; the writer's
+creates and renames appear immediately; blobs fetch on demand when the reader
+selects a file.
+
+One bug found in testing, and its shape is the interesting part. Dragging a file
+*into* the writer's space did not reach the reader — but **reloading the reader
+fixed it**. The events were correct and already in the log; only the broadcast
+was missing, because a cross-space move writes to two logs (fresh events in the
+destination, a tombstone in the source) and the UI flushed only the visible one.
+
+That the fold produced correct state from a late, out-of-order batch is §1.3
+behaving exactly as specified. The failure was in transmission, and the model
+absorbed it without special handling. This is weak evidence *for* the design:
+the class of bug that remains possible is "we forgot to send something", not "we
+sent it and the state diverged".
+
 ## Q3 — does it feel good?
 
-Not yet reachable. The tree view exists and the paste/drag gestures work, but
-the share-a-URL half needs stage 5. Deferred.
+**Reachable now, not yet judged.** The full loop works: create a writer space,
+add files, copy the share URL, open it elsewhere, watch it replicate. Whether it
+*feels* good is a judgement that needs more than a first run, and unlike Q1 and
+Q2 it cannot be settled by a test.
+
+The spatial half — paste onto a canvas — needs stage 6 and may not be built.
 
 ---
 

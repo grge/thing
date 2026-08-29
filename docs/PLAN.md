@@ -213,6 +213,9 @@ selects a file and watches the blob arrive, and sees the writer's subsequent
 edits appear live. Closing the writer's tab leaves the reader with its held state
 marked stale and unfetched blobs marked unavailable.
 
+**Status: working 2026-08-29.** Two Chrome sessions replicate end to end
+(FINDINGS F8). The measurements below still need two machines on two networks.
+
 **Measure** — this stage produces the POC's evidence:
 - peer-pair connection failure rate without TURN (**Q1**)
 - §3.3 stall frequency
