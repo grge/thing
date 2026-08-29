@@ -27,15 +27,22 @@ describe('renderer selection (§4.7, FINDINGS F11)', () => {
     expect(rendererFor('image/x-invented')?.id).toBe('image');
   });
 
+  it('picks the pdf renderer for application/pdf', () => {
+    expect(rendererFor('application/pdf')?.id).toBe('pdf');
+  });
+
   it('is null for a format nothing claims', () => {
-    expect(rendererFor('application/pdf')).toBeNull();
     expect(rendererFor('application/octet-stream')).toBeNull();
+    expect(rendererFor('video/mp4')).toBeNull();
     expect(rendererFor(null)).toBeNull();
     expect(rendererFor('nonsense')).toBeNull();
   });
 
   it('reports prefetch intent per type, for the canvas', () => {
     expect(shouldPrefetch('image/png')).toBe(true);
+    // PDFs are large and this renderer cannot thumbnail them, so eager
+    // fetching would buy the canvas nothing.
     expect(shouldPrefetch('application/pdf')).toBe(false);
+    expect(shouldPrefetch('application/octet-stream')).toBe(false);
   });
 });

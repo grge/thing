@@ -6,6 +6,7 @@
  * renderer needing to know about the others.
  */
 import ImageView from './ImageView.svelte';
+import PdfView from './PdfView.svelte';
 import TextView from './TextView.svelte';
 import { register } from './registry.js';
 
@@ -30,4 +31,14 @@ register({
   claims: ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif', 'image/svg+xml', 'image/*'],
   component: ImageView,
   prefetch: true, // a canvas of unfetched images is a canvas of grey rectangles
+});
+
+register({
+  id: 'pdf',
+  claims: ['application/pdf'],
+  component: PdfView,
+  // Not prefetched: PDFs are large, and this renderer cannot make a thumbnail
+  // anyway, so fetching one eagerly buys the canvas nothing.
+  prefetch: false,
+  fills: true, // the browser's viewer scrolls itself
 });

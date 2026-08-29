@@ -148,7 +148,7 @@
       {/if}
     </div>
 
-    <div class="preview-body">
+    <div class="preview-body" class:is-filled={previewState === 'rendered' && renderer?.fills === true}>
       {#if previewState === 'rendered' && renderer !== null && blob !== null}
         <renderer.component bytes={blob} {type} name={obj.name} />
       {:else if previewState === 'no-content'}

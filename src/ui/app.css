@@ -407,6 +407,13 @@ a {
   min-height: 0;
 }
 
+/* A renderer that scrolls itself must not also be scrolled by the pane. */
+.preview-body.is-filled {
+  display: flex;
+  padding: 0;
+  overflow: hidden;
+}
+
 .preview-text {
   margin: 0;
   font-family: var(--font-data);
@@ -1157,4 +1164,60 @@ a {
     linear-gradient(-45deg, transparent 75%, var(--canvas-raised) 75%);
   background-size: 16px 16px;
   background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+
+/*
+ * The PDF viewer fills the pane. The fallback sits underneath and is covered
+ * when the browser's viewer paints over it — `<embed>` gives no reliable load
+ * event, so a silent blank is the failure mode to guard against.
+ */
+.render-pdf {
+  position: relative;
+  display: flex;
+  min-height: 24rem;
+  height: 100%;
+}
+
+.render-pdf embed {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 auto;
+  width: 100%;
+  border: 0;
+  background: var(--canvas-raised);
+}
+
+.render-pdf-fallback {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-4);
+}
+
+.render-pdf-fallback p {
+  margin: 0;
+  max-width: 44ch;
+}
+
+.render-pdf-fallback code {
+  font-family: var(--font-data);
+}
+
+.render-pdf-fallback button {
+  font: inherit;
+  font-size: var(--text--1);
+  padding: var(--space-1) var(--space-3);
+  background: var(--canvas-raised);
+  border: 1px solid var(--rule-strong);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.render-pdf-fallback button:hover {
+  border-color: var(--ink-muted);
 }

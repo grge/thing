@@ -30,6 +30,12 @@ export interface Renderer {
    * the right answer differs by how much a thumbnail is worth.
    */
   readonly prefetch: boolean;
+  /**
+   * True if the renderer manages its own scrolling and wants the full pane —
+   * a PDF viewer, later a canvas. The preview drops its padding and overflow
+   * so the renderer is not scrolled inside a scroller.
+   */
+  readonly fills?: boolean;
 }
 
 const registry: Renderer[] = [];
