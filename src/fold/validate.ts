@@ -66,6 +66,12 @@ export function validateEvent(e: Event): void {
     case ':kind':
       if (v.t !== 'kind') throw new InvalidEvent(`:kind takes a kind`);
       break;
+    case ':type':
+      if (v.t !== 'string') throw new InvalidEvent(`:type takes a string`);
+      // A MIME type, not a renderer name (§4.7). Length-capped because it is
+      // hashed into every EventId and an unbounded string there is a footgun.
+      if (v.v.length > 255) throw new InvalidEvent(`:type must be at most 255 chars`);
+      break;
   }
 }
 

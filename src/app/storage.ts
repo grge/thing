@@ -290,12 +290,19 @@ function tx<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore) => IDBReque
 
 export interface StoredBlob {
   readonly bytes: Uint8Array;
-  /** The browser's guess at creation time. Advisory, like `:kind` (§4.6). */
-  readonly mime: string;
 }
 
-export async function putBlob(hash: Hash, bytes: Uint8Array, mime: string): Promise<void> {
-  await tx('readwrite', (s) => s.put({ bytes, mime }, hex(hash)));
+/**
+ * Blobs store bytes and nothing else.
+ *
+ * A MIME field used to live here, learned from the browser's `File` at upload —
+ * but it was never replicated, so a peer receiving the blob stored nothing and
+ * disagreed with the writer about what the file was (FINDINGS F10). Format is
+ * an attribute of the *object* now (§4.7), which also lets two objects share one
+ * blob and render differently.
+ */
+export async function putBlob(hash: Hash, bytes: Uint8Array): Promise<void> {
+  await tx('readwrite', (s) => s.put({ bytes }, hex(hash)));
 }
 
 export async function getBlob(hash: Hash): Promise<StoredBlob | null> {

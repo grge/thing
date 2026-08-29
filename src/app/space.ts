@@ -132,15 +132,20 @@ export class Space {
   ): Promise<Uuid> {
     const w = this.requireWriter();
     const hash = await sha256(bytes);
-    await putBlob(hash, bytes, mime);
+    await putBlob(hash, bytes);
 
     const id = newUuid();
-    this.commit([
+    const events = [
       await w.setKind(id, 'file'),
       await w.setName(id, name),
       await w.setParent(id, parent),
       await w.setContent(id, hash),
-    ]);
+    ];
+    // Assert the format so peers agree (§4.7). Previously the browser's MIME
+    // was stored beside the blob and never replicated, so a reader disagreed
+    // with the writer about what a file was (FINDINGS F10).
+    if (mime !== '') events.push(await w.setType(id, mime));
+    this.commit(events);
     return id;
   }
 
@@ -185,6 +190,9 @@ export class Space {
     }
     if (obj.pos !== null) {
       events.push(await w.setPos(id, obj.pos));
+    }
+    if (obj.type !== null) {
+      events.push(await w.setType(id, obj.type));
     }
     this.commit(events);
 
@@ -233,8 +241,13 @@ export class Space {
     return '/' + pathOf(this.state, uuid).join('/');
   }
 
-  async content(hash: Hash): Promise<{ bytes: Uint8Array; mime: string } | null> {
-    return getBlob(hash);
+  /**
+   * Blob bytes. The format is an attribute of the *object* (§4.7), not of the
+   * blob — the same bytes can legitimately be plain markdown in one object and
+   * a todo list in another, and blobs are shared across spaces (§8.5).
+   */
+  async content(hash: Hash): Promise<Uint8Array | null> {
+    return (await getBlob(hash))?.bytes ?? null;
   }
 
   async blobs(): Promise<number> {

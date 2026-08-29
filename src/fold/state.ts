@@ -18,6 +18,12 @@ export interface ObjectState {
   /** Advisory: tells the UI how to render (§4.6). Null if never set. */
   readonly kind: Kind | null;
   /**
+   * MIME type, asserted at creation and replicated like any other attribute
+   * (§4.7). Names a *format*, never a renderer — a client with no renderer for
+   * it degrades by suffix and then by base type. Null if never asserted.
+   */
+  readonly type: string | null;
+  /**
    * True if this object was re-parented to ROOT to break a cycle (§4.1).
    * Fold-local state, never an event. Recomputed on every fold, so it vanishes
    * when the cycle does.

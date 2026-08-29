@@ -67,4 +67,7 @@ export class TestWriter {
   kind(target: Uuid, k: Kind, at?: number): Event {
     return this.next(target, ':kind', { t: 'kind', v: k }, at);
   }
+  type(target: Uuid, mime: string, at?: number): Event {
+    return this.next(target, ':type', { t: 'string', v: mime }, at);
+  }
 }

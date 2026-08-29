@@ -108,6 +108,9 @@ export class Writer {
   setKind(target: Uuid, kind: Kind): Promise<Event> {
     return this.emit(target, ':kind', { t: 'kind', v: kind });
   }
+  setType(target: Uuid, mime: string): Promise<Event> {
+    return this.emit(target, ':type', { t: 'string', v: mime });
+  }
 }
 
 function hexOf(b: Uint8Array): string {

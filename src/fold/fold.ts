@@ -33,6 +33,9 @@ interface Acc {
   kind: Kind | null;
   kindKey: MaybeKey;
 
+  type: string | null;
+  typeKey: MaybeKey;
+
   /**
    * §4.5. `kill` is the max key over `:deleted = true` events; `live` is the max
    * key over `:content`/`:name`/`:parent`/`:pos`/`:deleted = false` events.
@@ -55,6 +58,8 @@ function emptyAcc(uuid: Uuid): Acc {
     posKey: null,
     kind: null,
     kindKey: null,
+    type: null,
+    typeKey: null,
     kill: null,
     live: null,
   };
@@ -140,6 +145,17 @@ export function fold(events: Iterable<Event>): State {
         break;
       }
 
+      case ':type': {
+        if (e.value.t !== 'string') break;
+        if (greater(key, a.typeKey)) {
+          a.type = e.value.v;
+          a.typeKey = key;
+        }
+        // Like `:kind`, not a live-attr event: asserting a format is not a
+        // reason to revive a tombstoned object (§4.5).
+        break;
+      }
+
       case ':deleted': {
         if (e.value.t !== 'bool') break;
         if (e.value.v) {
@@ -167,6 +183,7 @@ export function fold(events: Iterable<Event>): State {
       // §4.5: deleted iff a kill exists and beats every live-attr write.
       deleted: a.kill !== null && greater(a.kill, a.live),
       kind: a.kind,
+      type: a.type,
       cycleBroken: resolved.broken,
     });
   }

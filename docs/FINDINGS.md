@@ -262,7 +262,12 @@ exists.
 
 Nothing here is a v0 obligation. All of it is input to the rewrite.
 
-### F10. MIME is stored per-blob and not replicated — already wrong
+### F10. MIME is stored per-blob and not replicated — already wrong *(fixed)*
+
+**Fixed 2026-08-29** by SPEC §4.7: format is now a `:type` attribute on the
+object, asserted at creation and replicated with the metadata. The blob store
+holds bytes and nothing else. The original finding follows.
+
 
 **2026-08-29.** `putBlob(hash, bytes, mime)` stores a MIME string beside the
 bytes in IndexedDB. The writer learns it from the browser's `File` object at

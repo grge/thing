@@ -21,7 +21,14 @@ export const SHORT_HASH_LEN = 16;
 /** `:content` holds a full SHA-256 of the plaintext blob (§4.3, §6). */
 export const CONTENT_HASH_LEN = 32;
 
-export type AttrName = ':parent' | ':name' | ':content' | ':pos' | ':deleted' | ':kind';
+export type AttrName =
+  | ':parent'
+  | ':name'
+  | ':content'
+  | ':pos'
+  | ':deleted'
+  | ':kind'
+  | ':type';
 
 export type Kind = 'file' | 'dir';
 

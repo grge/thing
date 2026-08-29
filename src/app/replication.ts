@@ -19,9 +19,9 @@ import type { Space } from './space.js';
 const blobStore: BlobStore = {
   get: async (hash) => (await getBlob(hexToBytes(hash)))?.bytes ?? null,
   put: async (hash, bytes) => {
-    // MIME is not carried on the wire: it is a local rendering hint (§4.6 in
-    // spirit), and the receiver can sniff or default it.
-    await putBlob(hexToBytes(hash), bytes, '');
+    // No MIME here: format is an attribute of the object (§4.7), replicated
+    // with the metadata, so nothing about it belongs beside the bytes.
+    await putBlob(hexToBytes(hash), bytes);
   },
 };
 

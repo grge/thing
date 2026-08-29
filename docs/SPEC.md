@@ -347,9 +347,55 @@ erodes trust immediately.
 
 ### 4.6 `:kind` — `"file" | "dir"`
 
-Set once at creation, LWW like everything else. Advisory: it tells the UI how to
-render. A `dir` with content or a `file` with children is legal and rendered
+Structural rather than descriptive: it tells the tree what is expandable. What
+an object *is* — its format — is `:type` (§4.7), kept separate so one attribute
+answers one question (§1.1).
+
+LWW like everything else, and advisory. A `dir` with content or a `file` with children is legal and rendered
 sensibly rather than rejected.
+
+### 4.7 `:type` — `string | null`
+
+The object's **format**, as a MIME type. Asserted at creation and replicated
+like any other attribute.
+
+This names a format, never a renderer. `text/markdown`, not `todo-list`. A
+client is free to have a renderer the sender has never heard of, and a TUI
+client, a web client, and a client with a bespoke renderer must all be able to
+do something sensible with the same object.
+
+**Why it cannot be derived.** Extension and content both fail for the same
+reason: a todo list whose content is markdown has markdown bytes and a `.md`
+name, and only an assertion distinguishes it from a plain note. Content
+addressing would call the two identical. §7.3's Yjs objects go further — they
+have no blob at all, so there is nothing to inspect, and two byte-identical
+update streams can be different applications.
+
+**Degradation.** A client with no renderer for a type walks the type itself,
+most specific first:
+
+```
+application/vnd.thing.board+json; schema=kanban
+application/vnd.thing.board+json
+application/json                  ← the +suffix fallback
+application/*
+```
+
+Each step is a real MIME mechanism, and each degrades rather than fails. The
+`+suffix` form is what lets an unknown specialised type stay readable.
+
+**Absent means unknown.** The fold is total (§3.5), so an object with no
+`:type` is legal. The UI falls back to the filename extension and then to the
+not-renderable state (§8.2); it never guesses from content.
+
+**The format belongs to the object, not the blob.** Blobs are content-addressed
+and shared across spaces (§8.5), so the same bytes may legitimately be plain
+markdown in one object and a todo list in another. Storing format beside the
+bytes also meant it was never replicated, so a reader disagreed with the writer
+about what a file was (FINDINGS F10).
+
+Like `:kind`, `:type` is **not** a live-attr event: asserting a format does not
+revive a tombstoned object (§4.5).
 
 ---
 

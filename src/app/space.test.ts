@@ -60,7 +60,7 @@ describe('Space (stage 2)', () => {
     const obj = s.state.objects.get(hex(id))!;
     expect(obj.content).not.toBeNull();
     const got = await s.content(obj.content!);
-    expect(new TextDecoder().decode(got!.bytes)).toBe('the quick brown fox');
+    expect(new TextDecoder().decode(got!)).toBe('the quick brown fox');
   });
 
   it('dedups identical content to one blob', async () => {

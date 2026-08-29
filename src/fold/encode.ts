@@ -21,6 +21,7 @@ const ATTR_TAG: Record<AttrName, number> = {
   ':pos': 4,
   ':deleted': 5,
   ':kind': 6,
+  ':type': 7,
 };
 
 const VALUE_TAG = {

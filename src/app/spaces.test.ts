@@ -101,8 +101,8 @@ describe('cross-space moves (§8.5)', () => {
     const f = await spaces.get(aId)!.createFile(ROOT, 'f.txt', new Uint8Array([1]), 'text/plain');
     const before = b.eventCount;
     await spaces.moveAcross(aId, bRec.id, f);
-    // :kind, :name, :parent, :content — four fresh assertions, not one move.
-    expect(b.eventCount).toBe(before + 4);
+    // :kind, :name, :parent, :content, :type — fresh assertions, not one move.
+    expect(b.eventCount).toBe(before + 5);
   });
 
   it('resolves content in the destination without copying the blob', async () => {
@@ -117,7 +117,7 @@ describe('cross-space moves (§8.5)', () => {
 
     const arrived = buildTree(b.state, false)[0]!.obj;
     const got = await b.content(arrived.content!);
-    expect(new TextDecoder().decode(got!.bytes)).toBe('shared bytes');
+    expect(new TextDecoder().decode(got!)).toBe('shared bytes');
   });
 
   it('carries a directory subtree, with new UUIDs throughout', async () => {
@@ -237,7 +237,7 @@ describe('storage keying (§2) — what stage 3 exists to catch', () => {
     const hb = b.state.objects.get(hex(fb))!.content!;
     expect(hex(ha)).toBe(hex(hb));
     // And each space can read the blob the other wrote — the leak §10.9 notes.
-    expect((await a.content(hb))!.bytes.length).toBe(bytes.length);
+    expect((await a.content(hb))!.length).toBe(bytes.length);
   });
 });
 
@@ -263,8 +263,8 @@ describe('cross-space moves are broadcastable (§3.4, §8.5)', () => {
 
     await spaces.moveAcross(aId, bRec.id, f);
 
-    // Destination gained the four fresh assertions.
-    expect(b.since(bMark).length).toBe(4);
+    // Destination gained the fresh assertions, including the format (§4.7).
+    expect(b.since(bMark).length).toBe(5);
     // Source gained the tombstone — the half that was being missed.
     expect(a.since(aMark).length).toBe(1);
     expect(a.since(aMark)[0]!.attr).toBe(':deleted');
@@ -335,7 +335,7 @@ describe('forgetting a space', () => {
     const hash = keeper.state.objects.get(hex(kept))!.content!;
     const still = await keeper.content(hash);
     expect(still).not.toBeNull();
-    expect(new TextDecoder().decode(still!.bytes)).toBe('shared between spaces');
+    expect(new TextDecoder().decode(still!)).toBe('shared between spaces');
   });
 
   it('does not disturb the surviving space log', async () => {

@@ -56,7 +56,7 @@
   let showDeleted = $state(false);
   let dropTarget = $state<string | null>(null);
   let dragging = $state<string | null>(null);
-  let blob = $state<{ bytes: Uint8Array; mime: string } | null>(null);
+  let blob = $state<Uint8Array | null>(null);
   let loadingBlob = $state(false);
   let blobsHeld = $state(0);
   let message = $state<string | null>(null);
