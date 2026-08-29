@@ -214,8 +214,19 @@
     await fn(space);
     version += 1;
     void refreshBlobCount();
-    // Stream what was just written to any connected peer (§3.4).
-    replication.get(space.record.id)?.flush();
+    flushSpaces(space.record.id);
+  }
+
+  /**
+   * Push anything newly written in these spaces to their peers (§3.4).
+   *
+   * Takes ids rather than assuming the visible space: a cross-space move (§8.5)
+   * writes to *two* logs — fresh events in the destination, a tombstone in the
+   * source — and both must reach their own peers. Flushing only the active
+   * space left a reader showing stale state until it reloaded.
+   */
+  function flushSpaces(...ids: string[]): void {
+    for (const id of ids) replication.get(id)?.flush();
   }
 
   /** Where a new object lands: inside the selection if it is a directory. */
@@ -422,6 +433,8 @@
       version += 1;
       selected = null;
       void refreshBlobCount();
+      // Both sides were written to (§8.5), so both need flushing.
+      flushSpaces(activeId, toId);
       const to = spaces.find((s) => s.id === toId);
       notify(`Moved ${obj.name ?? 'object'} to ${to?.name ?? 'space'}.`);
     } catch (err) {

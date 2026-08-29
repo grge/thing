@@ -240,3 +240,46 @@ describe('storage keying (§2) — what stage 3 exists to catch', () => {
     expect((await a.content(hb))!.bytes.length).toBe(bytes.length);
   });
 });
+
+describe('cross-space moves are broadcastable (§3.4, §8.5)', () => {
+  /**
+   * A cross-space move writes to two logs. Replication tracks a watermark per
+   * space and flushes what is past it — so both sides must show new events, or
+   * a peer of either space never learns what happened. This was a real bug: the
+   * UI flushed only the visible space, and a reader stayed stale until reload.
+   */
+  it('leaves unbroadcast events in BOTH spaces', async () => {
+    const spaces = await Spaces.load();
+    const aId = spaces.list[0]!.id;
+    const a = spaces.get(aId)!;
+    const bRec = await spaces.create('second', 'local');
+    const b = spaces.get(bRec.id)!;
+
+    const f = await a.createFile(ROOT, 'travel.txt', new Uint8Array([1]), 'text/plain');
+
+    // Watermarks as they would stand after a flush of each space.
+    const aMark = a.log.length;
+    const bMark = b.log.length;
+
+    await spaces.moveAcross(aId, bRec.id, f);
+
+    // Destination gained the four fresh assertions.
+    expect(b.since(bMark).length).toBe(4);
+    // Source gained the tombstone — the half that was being missed.
+    expect(a.since(aMark).length).toBe(1);
+    expect(a.since(aMark)[0]!.attr).toBe(':deleted');
+  });
+
+  it('a copy leaves nothing to broadcast in the source', async () => {
+    const spaces = await Spaces.load();
+    const aId = spaces.list[0]!.id;
+    const a = spaces.get(aId)!;
+    const bRec = await spaces.create('second', 'local');
+
+    const f = await a.createFile(ROOT, 'f.txt', new Uint8Array([1]), 'text/plain');
+    const aMark = a.log.length;
+
+    await spaces.moveAcross(aId, bRec.id, f, { copy: true });
+    expect(a.since(aMark)).toEqual([]);
+  });
+})
