@@ -17,15 +17,26 @@ npm test         # 129 tests
 npm run check    # tsc + svelte-check
 ```
 
-## Testing sync across two machines
+## Live
 
-1. `npm run dev -- --host` and note the network URL.
-2. Machine A: create a space with mode `writer`, add a file, click **Share**.
-3. Machine B: open the copied URL. It joins as a reader and replicates.
+**<https://grge.github.io/thing/>** — deployed from `master` on every push.
+The stage 4 transport harness is at
+[`/thing/transport.html`](https://grge.github.io/thing/transport.html).
 
-Both machines need to reach the PeerJS broker; they do not need to reach each
-other directly unless a relay is unavailable — which is the thing POC question 1
-is measuring.
+## Testing sync across two devices
+
+No clone needed — open the deployed app on both.
+
+1. Device A: **+** → *Shared — you write*, add a file, click **Share**.
+2. Device B: open the app, **+** → *Join someone's space*, paste the link.
+
+Both devices need to reach the PeerJS broker. They do **not** need to reach each
+other directly unless a relay is unavailable — whether they can is exactly what
+POC question 1 is measuring, so try it across different networks (one on wifi,
+one on a phone hotspot) rather than only on the same LAN.
+
+The app is served over HTTPS, which WebRTC requires; `localhost` is exempt but a
+LAN IP is not, so the deployed URL is the easier path for a real test.
 
 **Use Chromium.** Firefox 99 in this environment gathers no UDP ICE candidates
 and cannot connect at all (FINDINGS F1).
