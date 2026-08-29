@@ -3,9 +3,14 @@
 A namespaced, append-only event log replicated between browser peers over
 WebRTC, folded into a filesystem.
 
-Throwaway proof of concept. See [docs/SPEC.md](docs/SPEC.md) for the design,
-[docs/PLAN.md](docs/PLAN.md) for the build order, and
-[docs/FINDINGS.md](docs/FINDINGS.md) for what has actually been learned.
+Throwaway proof of concept.
+
+| Doc | What it is |
+|---|---|
+| [SPEC.md](docs/SPEC.md) | The design — what v0 is |
+| [PLAN.md](docs/PLAN.md) | The build order — what gets built when |
+| [FINDINGS.md](docs/FINDINGS.md) | Evidence — what was learned. Append-only |
+| [ISSUES.md](docs/ISSUES.md) | State — what is currently wrong. Mutable |
 
 ## Running
 

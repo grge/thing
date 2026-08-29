@@ -4,6 +4,11 @@ Evidence gathered while building the POC, against the three questions in
 [SPEC.md](SPEC.md) §0. Companion to [PLAN.md](PLAN.md), which says *what* to
 build; this records *what was learned*.
 
+**Append-only.** A finding is evidence, dated, and is never rewritten when the
+thing it describes is fixed — the reasoning is the point, including where it was
+wrong (see F1). What is *currently* broken lives in [ISSUES.md](ISSUES.md),
+which is mutable and links back here.
+
 Findings F1–F9 answer the questions. **F10–F13 do not** — they record design
 pressure discovered by building: places where v0's design is already known to be
 insufficient for where the project is heading. Those are input to the rewrite,
@@ -262,12 +267,9 @@ exists.
 
 Nothing here is a v0 obligation. All of it is input to the rewrite.
 
-### F10. MIME is stored per-blob and not replicated — already wrong *(fixed)*
+### F10. MIME is stored per-blob and not replicated — already wrong
 
-**Fixed 2026-08-29** by SPEC §4.7: format is now a `:type` attribute on the
-object, asserted at creation and replicated with the metadata. The blob store
-holds bytes and nothing else. The original finding follows.
-
+*Addressed by SPEC §4.7; see [ISSUES I19](ISSUES.md#i19-mime-stored-per-blob-and-never-replicated--fixed-2026-08-29).*
 
 **2026-08-29.** `putBlob(hash, bytes, mime)` stores a MIME string beside the
 bytes in IndexedDB. The writer learns it from the browser's `File` object at
