@@ -88,8 +88,13 @@ export class Replication {
     return this.transport.connectedPeers;
   }
 
-  async start(): Promise<string> {
-    const id = await this.transport.start();
+  /**
+   * Register with signalling. A writer claims the peer id its share code
+   * names, so a reader can dial it knowing only the code; a reader takes
+   * whatever id it is given, since nobody dials it (§3.4 star topology).
+   */
+  async start(preferredId?: string): Promise<string> {
+    const id = await this.transport.start(preferredId);
     this.broadcast = this.space.log.length;
     return id;
   }

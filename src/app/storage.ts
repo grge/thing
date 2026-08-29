@@ -30,27 +30,79 @@ export interface SpaceRecord {
 }
 
 /**
- * The share URL for a mode 2 space (§7.2): `space_id` and a `role` hint, plus
- * the writer's peer id so a reader knows whom to dial.
+ * A share code: the writer's peer id, short enough to read off one screen and
+ * type into another.
  *
- * A joined space derives its storage keyspace from `space` (§8.6), so reopening
+ * Unambiguous alphabet — no 0/O, 1/I/l — because these get transcribed by hand
+ * between devices, which is the whole point of them being short.
+ */
+const CODE_ALPHABET = '23456789abcdefghjkmnpqrstuvwxyz';
+const CODE_LENGTH = 8;
+
+export function newShareCode(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(CODE_LENGTH));
+  let out = '';
+  for (const b of bytes) out += CODE_ALPHABET[b % CODE_ALPHABET.length];
+  return out;
+}
+
+/** A peer id derived from a code. Namespaced so it cannot collide with a UUID. */
+export function peerIdForCode(code: string): string {
+  return `thing-${code}`;
+}
+
+/**
+ * The share URL for a mode 2 space (§7.2).
+ *
+ * Everything a reader needs is derived from the code: the peer to dial is
+ * `thing-<code>`, and the space id is the code itself. Carrying a separate
+ * 36-char `space` UUID would make the link untypeable for no benefit — the
+ * writer owns the space, so its identity can be the writer's own.
+ *
+ * A joined space derives its storage keyspace from that id (§8.6), so reopening
  * the same link finds the existing log and blob cache rather than re-fetching
  * from zero.
  */
-export function shareUrl(spaceId: string, name: string, peerId: string): string {
+export function shareUrl(code: string, name: string): string {
   const u = new URL(window.location.href);
-  u.hash = new URLSearchParams({ space: spaceId, name, host: peerId, role: 'reader' }).toString();
+  u.hash = name === '' ? code : `${code}&${encodeURIComponent(name)}`;
   return u.toString();
 }
 
-export function parseShareUrl(href: string): SpaceRecord | null {
-  const hash = new URL(href).hash.replace(/^#/, '');
-  if (hash === '') return null;
-  const p = new URLSearchParams(hash);
-  const id = p.get('space');
-  const host = p.get('host');
-  if (id === null || host === null) return null;
-  return { id, name: p.get('name') ?? 'shared', mode: 'reader', host };
+/**
+ * Accept either a full URL or a bare code — someone reading a link off another
+ * screen will often type just the short part, and rejecting that would be
+ * needlessly strict.
+ */
+export function parseShareUrl(input: string): SpaceRecord | null {
+  const raw = input.trim();
+  if (raw === '') return null;
+
+  let hash = raw;
+  if (raw.includes('#')) hash = raw.slice(raw.indexOf('#') + 1);
+  else if (/^https?:/i.test(raw)) return null; // a URL with no fragment carries nothing
+
+  // Legacy long form, still parsed so older links keep working.
+  if (hash.includes('space=')) {
+    const p = new URLSearchParams(hash);
+    const id = p.get('space');
+    const host = p.get('host');
+    if (id === null || host === null) return null;
+    return { id, name: p.get('name') ?? 'shared', mode: 'reader', host };
+  }
+
+  const [code = '', name = ''] = hash.split('&');
+  if (!isShareCode(code)) return null;
+  return {
+    id: code,
+    name: name === '' ? 'shared' : decodeURIComponent(name),
+    mode: 'reader',
+    host: peerIdForCode(code),
+  };
+}
+
+export function isShareCode(s: string): boolean {
+  return s.length === CODE_LENGTH && [...s].every((c) => CODE_ALPHABET.includes(c));
 }
 
 /* ── Event serialisation ──────────────────────────────────────────────────
@@ -180,6 +232,19 @@ export function saveSpaces(spaces: readonly SpaceRecord[]): void {
   localStorage.setItem(SPACES_KEY, JSON.stringify(spaces));
 }
 
+/**
+ * Forget a space entirely: its log, its writer identity, its registry entry.
+ *
+ * Blobs are **not** removed. The store is shared across spaces and addressed by
+ * content (§8.5), so a blob here may be referenced by another space; deleting
+ * by space would corrupt those. `purgeUnreferencedBlobs` handles reclaiming.
+ */
+export function forgetSpace(spaceId: string): void {
+  localStorage.removeItem(EVENTS_PREFIX + spaceId);
+  localStorage.removeItem(WRITER_PREFIX + spaceId);
+  saveSpaces(loadSpaces().filter((s) => s.id !== spaceId));
+}
+
 /* ── Blobs ─────────────────────────────────────────────────────────────────
  * Content-addressed by SHA-256 of plaintext (§6), and **shared across spaces**
  * (§8.5): one store, keyed by hash, so the same file in two spaces is stored
@@ -245,4 +310,32 @@ export async function hasBlob(hash: Hash): Promise<boolean> {
 
 export async function blobCount(): Promise<number> {
   return tx<number>('readonly', (s) => s.count());
+}
+
+export async function blobHashes(): Promise<string[]> {
+  const keys = await tx<IDBValidKey[]>('readonly', (s) => s.getAllKeys());
+  return keys.map(String);
+}
+
+export async function deleteBlob(hashHex: string): Promise<void> {
+  await tx('readwrite', (s) => s.delete(hashHex));
+}
+
+/**
+ * Drop blobs no remaining space references.
+ *
+ * Called after forgetting a space: the shared store means a deleted space's
+ * blobs are only garbage once *nothing* points at them. Returns how many went,
+ * so the UI can say what it reclaimed.
+ */
+export async function purgeUnreferencedBlobs(referenced: ReadonlySet<string>): Promise<number> {
+  const held = await blobHashes();
+  let removed = 0;
+  for (const h of held) {
+    if (!referenced.has(h)) {
+      await deleteBlob(h);
+      removed += 1;
+    }
+  }
+  return removed;
 }

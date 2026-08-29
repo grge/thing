@@ -3,12 +3,13 @@
   import type { Space } from '../app/space.js';
   import { Spaces } from '../app/spaces.js';
   import type { SpaceMode, SpaceRecord } from '../app/storage.js';
-  import { parseShareUrl, shareUrl } from '../app/storage.js';
+  import { parseShareUrl, peerIdForCode, shareUrl } from '../app/storage.js';
   import { Replication } from '../app/replication.js';
   import { hex, ROOT, type ObjectState } from '../fold/index.js';
   import { SvelteSet } from 'svelte/reactivity';
   import Debug from './Debug.svelte';
   import AskName from './AskName.svelte';
+  import ConfirmDelete from './ConfirmDelete.svelte';
   import NewSpace from './NewSpace.svelte';
   import Preview from './Preview.svelte';
   import Tree from './Tree.svelte';
@@ -22,6 +23,7 @@
   /** Debug view shows the raw log for the active space. Per-space, not global. */
   let showDebug = $state(false);
   let showNewSpace = $state(false);
+  let confirmDelete = $state<SpaceRecord | null>(null);
   /** One name prompt, reused for rename and new-directory. */
   let ask = $state<{
     title: string;
@@ -115,7 +117,10 @@
 
     replication.set(rec.id, rep);
     try {
-      const id = await rep.start();
+      // A writer claims the peer id its share code names, so the code alone is
+      // enough for a reader to dial it.
+      const wanted = rec.mode === 'writer' ? peerIdForCode(rec.id) : undefined;
+      const id = await rep.start(wanted);
       peerIds = { ...peerIds, [rec.id]: id };
       if (rec.host != null) await rep.connect(rec.host);
     } catch (err) {
@@ -395,6 +400,31 @@
   }
 
   /**
+   * Delete a space and everything local to it. Destructive and irreversible on
+   * this device, so it is confirmed first.
+   */
+  async function deleteSpace(rec: SpaceRecord): Promise<void> {
+    if (manager === null) return;
+    confirmDelete = null;
+
+    // Drop the connection before the log it replicates.
+    replication.get(rec.id)?.stop();
+    replication.delete(rec.id);
+
+    const { blobsFreed } = await manager.forget(rec.id);
+    spaces = manager.list;
+    if (activeId === rec.id) activeId = manager.list[0]?.id ?? null;
+    selected = null;
+    version += 1;
+    void refreshBlobCount();
+    notify(
+      blobsFreed === 0
+        ? `Deleted ${rec.name}.`
+        : `Deleted ${rec.name} — freed ${blobsFreed} blob${blobsFreed === 1 ? '' : 's'}.`,
+    );
+  }
+
+  /**
    * Copy the share URL for a mode 2 writer space (§7.2). Readers open it and
    * replicate; the writer must stay connected for new readers to join.
    */
@@ -405,13 +435,12 @@
       notify('Only a writer space can be shared.');
       return;
     }
-    const peer = peerIds[rec.id];
-    if (peer === undefined) {
+    if (peerIds[rec.id] === undefined) {
       notify('Not connected to signalling yet.');
       return;
     }
-    await navigator.clipboard.writeText(shareUrl(rec.id, rec.name, peer));
-    notify('Share URL copied.');
+    await navigator.clipboard.writeText(shareUrl(rec.id, rec.name));
+    notify(`Share link copied — code ${rec.id}`);
   }
 
   /**
@@ -525,6 +554,16 @@
   onConfirm={(v) => ask?.run(v)}
 />
 
+<ConfirmDelete
+  open={confirmDelete !== null}
+  name={confirmDelete?.name ?? ''}
+  objectCount={confirmDelete === null
+    ? 0
+    : Math.max(0, (manager?.get(confirmDelete.id)?.state.objects.size ?? 1) - 1)}
+  onCancel={() => (confirmDelete = null)}
+  onConfirm={() => confirmDelete !== null && void deleteSpace(confirmDelete)}
+/>
+
 <NewSpace
   open={showNewSpace}
   onCancel={() => (showNewSpace = false)}
@@ -563,6 +602,24 @@
         }}
       >
         {s.name} <span class="tab-mode">{s.mode}</span>
+        <span
+          class="tab-close"
+          role="button"
+          tabindex="-1"
+          aria-label="Delete {s.name}"
+          title="Delete space"
+          onclick={(e) => {
+            e.stopPropagation();
+            confirmDelete = s;
+          }}
+          onkeydown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.stopPropagation();
+              e.preventDefault();
+              confirmDelete = s;
+            }
+          }}
+        >×</span>
       </button>
     {/each}
     <button class="tab-new" title="New space" onclick={() => (showNewSpace = true)}>+</button>
@@ -604,8 +661,11 @@
             </button>
           {/if}
           {#if space?.record.mode === 'writer'}
-            <button type="button" title="Copy share URL" onclick={() => void share()}>
-              Share
+            <span class="share-code" title="Share code — type this on another device">
+              {space.record.id}
+            </span>
+            <button type="button" title="Copy share link" onclick={() => void share()}>
+              Copy link
             </button>
           {/if}
           <button

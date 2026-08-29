@@ -9,7 +9,16 @@
  * space that is not the visible one, so the destination must already be live.
  */
 import { Space } from './space.js';
-import { loadSpaces, saveSpaces, type SpaceMode, type SpaceRecord } from './storage.js';
+import {
+  forgetSpace,
+  loadSpaces,
+  newShareCode,
+  purgeUnreferencedBlobs,
+  saveSpaces,
+  type SpaceMode,
+  type SpaceRecord,
+} from './storage.js';
+import { hex } from '../fold/index.js';
 
 export class Spaces {
   private open = new Map<string, Space>();
@@ -44,7 +53,11 @@ export class Spaces {
   }
 
   async create(name: string, mode: SpaceMode): Promise<SpaceRecord> {
-    const rec: SpaceRecord = { id: crypto.randomUUID(), name, mode };
+    // A writer space is identified by its share code, so the link stays short
+    // enough to read off one screen and type into another. A local space never
+    // leaves the device, so a UUID is fine and avoids burning a code.
+    const id = mode === 'writer' ? newShareCode() : crypto.randomUUID();
+    const rec: SpaceRecord = { id, name, mode };
     this.records = [...this.records, rec];
     saveSpaces(this.records);
     await this.openOne(rec);
@@ -62,6 +75,29 @@ export class Spaces {
     saveSpaces(this.records);
     await this.openOne(rec);
     return rec;
+  }
+
+  /**
+   * Forget a space: its log, its writer identity, its registry entry.
+   *
+   * Then reclaim blobs nothing references any more — the store is shared across
+   * spaces (§8.5), so a blob is only garbage once no *remaining* space points at
+   * it. Returns how many were freed.
+   */
+  async forget(spaceId: string): Promise<{ blobsFreed: number }> {
+    this.open.delete(spaceId);
+    this.records = this.records.filter((r) => r.id !== spaceId);
+    forgetSpace(spaceId);
+
+    // Everything still referenced by a surviving space.
+    const referenced = new Set<string>();
+    for (const space of this.open.values()) {
+      for (const obj of space.state.objects.values()) {
+        if (obj.content !== null) referenced.add(hex(obj.content));
+      }
+    }
+    const blobsFreed = await purgeUnreferencedBlobs(referenced);
+    return { blobsFreed };
   }
 
   /**

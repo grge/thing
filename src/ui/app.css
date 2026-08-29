@@ -849,3 +849,56 @@ a {
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+.sheet .confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  max-width: 30rem;
+}
+
+.sheet .confirm p {
+  margin: 0;
+  font-size: var(--text--1);
+  line-height: 1.5;
+}
+
+.sheet .actions button.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--canvas);
+}
+
+/* Close button on a tab, revealed on hover or when the tab is current. */
+.tab-close {
+  padding: 0 var(--space-1);
+  margin-left: var(--space-1);
+  background: transparent;
+  border: 0;
+  color: var(--ink-faint);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.tab:hover .tab-close,
+.tab[aria-selected='true'] .tab-close {
+  opacity: 1;
+}
+
+.tab-close:hover {
+  color: var(--danger);
+}
+
+/* The share code, shown so it can be read off the screen and typed elsewhere. */
+.share-code {
+  font-family: var(--font-data);
+  font-size: var(--text--1);
+  letter-spacing: 0.08em;
+  color: var(--ink);
+  background: var(--canvas-raised);
+  border: 1px solid var(--rule);
+  padding: 0 var(--space-1);
+}

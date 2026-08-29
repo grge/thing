@@ -92,25 +92,26 @@
       <label class:is-selected={choice === 'join'}>
         <input type="radio" name="mode" value="join" bind:group={choice} />
         <span class="mode-name">Join someone's space</span>
-        <span class="mode-desc">Paste a link you were sent. Read-only.</span>
+        <span class="mode-desc">Paste a link, or type the 8-character code. Read-only.</span>
       </label>
     </fieldset>
 
     {#if choice === 'join'}
       <label class="field">
-        <span>Share link</span>
+        <span>Link or code</span>
         <input
-          type="url"
+          type="text"
           bind:value={url}
-          placeholder="http://…#space=…&host=…"
+          placeholder="k7mfq2xw"
           spellcheck="false"
+          autocapitalize="off"
           autocomplete="off"
         />
       </label>
       {#if url.trim() !== '' && parsed === null}
         <p class="field-error">
-          That is not a share link. It should contain <code>space</code> and
-          <code>host</code>.
+          Not a share link or code. A code is 8 characters, like
+          <code>k7mfq2xw</code>.
         </p>
       {:else if parsed !== null}
         <p class="field-hint">Joins <strong>{parsed.name}</strong> as a reader.</p>

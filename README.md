@@ -13,7 +13,7 @@ Throwaway proof of concept. See [docs/SPEC.md](docs/SPEC.md) for the design,
 npm install
 npm run dev      # the app          → /
                  # transport harness → /transport.html
-npm test         # 129 tests
+npm test         # 145 tests
 npm run check    # tsc + svelte-check
 ```
 
@@ -27,8 +27,14 @@ The stage 4 transport harness is at
 
 No clone needed — open the deployed app on both.
 
-1. Device A: **+** → *Shared — you write*, add a file, click **Share**.
-2. Device B: open the app, **+** → *Join someone's space*, paste the link.
+1. Device A: **+** → *Shared — you write*, add a file. The tree header shows an
+   8-character **share code**.
+2. Device B: open the app, **+** → *Join someone's space*, and type that code —
+   no need to transcribe a URL. **Copy link** on device A gives a full URL if
+   pasting is easier.
+
+Delete a space with the **×** on its tab. That clears its log and writer identity
+and frees any blobs no other space still references.
 
 Both devices need to reach the PeerJS broker. They do **not** need to reach each
 other directly unless a relay is unavailable — whether they can is exactly what

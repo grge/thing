@@ -283,3 +283,71 @@ describe('cross-space moves are broadcastable (§3.4, §8.5)', () => {
     expect(a.since(aMark)).toEqual([]);
   });
 })
+
+describe('forgetting a space', () => {
+  it('removes it from the registry and from storage', async () => {
+    const spaces = await Spaces.load();
+    const keep = spaces.list[0]!.id;
+    const doomed = await spaces.create('doomed', 'local');
+    await spaces.get(doomed.id)!.createDir(ROOT, 'stuff');
+
+    await spaces.forget(doomed.id);
+
+    expect(spaces.list.map((r) => r.id)).toEqual([keep]);
+    expect(spaces.get(doomed.id)).toBeNull();
+    expect(store.get(`thing:events:${doomed.id}`)).toBeUndefined();
+    expect(store.get(`thing:writer:${doomed.id}`)).toBeUndefined();
+  });
+
+  it('survives a reload — the space stays gone', async () => {
+    const first = await Spaces.load();
+    const doomed = await first.create('doomed', 'local');
+    await first.forget(doomed.id);
+
+    const reloaded = await Spaces.load();
+    expect(reloaded.list.some((r) => r.id === doomed.id)).toBe(false);
+  });
+
+  it('frees blobs nothing else references', async () => {
+    const spaces = await Spaces.load();
+    const doomed = await spaces.create('doomed', 'local');
+    await spaces
+      .get(doomed.id)!
+      .createFile(ROOT, 'only-here.txt', new TextEncoder().encode('unique bytes'), 'text/plain');
+
+    const { blobsFreed } = await spaces.forget(doomed.id);
+    expect(blobsFreed).toBeGreaterThan(0);
+  });
+
+  it('KEEPS a blob another space still references (§8.5 shared store)', async () => {
+    // The decisive case: the store is shared and content-addressed, so deleting
+    // by space would corrupt any other space holding the same bytes.
+    const spaces = await Spaces.load();
+    const keeper = spaces.get(spaces.list[0]!.id)!;
+    const doomed = await spaces.create('doomed', 'local');
+
+    const bytes = new TextEncoder().encode('shared between spaces');
+    const kept = await keeper.createFile(ROOT, 'mine.txt', bytes, 'text/plain');
+    await spaces.get(doomed.id)!.createFile(ROOT, 'theirs.txt', bytes, 'text/plain');
+
+    await spaces.forget(doomed.id);
+
+    const hash = keeper.state.objects.get(hex(kept))!.content!;
+    const still = await keeper.content(hash);
+    expect(still).not.toBeNull();
+    expect(new TextDecoder().decode(still!.bytes)).toBe('shared between spaces');
+  });
+
+  it('does not disturb the surviving space log', async () => {
+    const spaces = await Spaces.load();
+    const keeper = spaces.get(spaces.list[0]!.id)!;
+    await keeper.createDir(ROOT, 'survivor');
+    const before = keeper.eventCount;
+
+    const doomed = await spaces.create('doomed', 'local');
+    await spaces.forget(doomed.id);
+
+    expect(keeper.eventCount).toBe(before);
+    expect(names(buildTree(keeper.state, false))).toEqual(['survivor']);
+  });
+});
