@@ -40,6 +40,13 @@
   /** Blob hashes currently arriving, for the §8.2 `fetching` state. */
   let fetching = $state<Record<string, { got: number; total: number }>>({});
   let unavailable = $state<Record<string, true>>({});
+  /**
+   * Bumped when a blob arrives, so the loading effect re-reads the store for
+   * the object already on screen. Without it the effect only re-runs when the
+   * selection changes, leaving a completed fetch showing "Fetching…" until the
+   * user clicked away and back.
+   */
+  let blobEpoch = $state(0);
 
   let expanded = $state(new SvelteSet<string>());
   let selected = $state<string | null>(null);
@@ -107,6 +114,8 @@
       onBlobDone: (h) => {
         const { [h]: _done, ...rest } = fetching;
         fetching = rest;
+        // Tell the preview to re-read: the bytes it was waiting for are here.
+        blobEpoch += 1;
       },
       onBlobUnavailable: (h) => {
         const { [h]: _gone, ...rest } = fetching;
@@ -169,28 +178,37 @@
   // Load the selected object's blob. This is the fetch trigger the preview pane
   // becomes in mode 2 (§8.2); in mode 1 it only reads the local store.
   $effect(() => {
+    blobEpoch; // re-read when a blob lands, not only when the selection changes
     const obj = selectedObj;
     if (space === null || obj === null || obj.content === null) {
       blob = null;
       loadingBlob = false;
       return;
     }
-    loadingBlob = true;
     const wanted = hex(obj.content);
     const sp = space;
+    const rep = replication.get(sp.record.id);
+    loadingBlob = true;
+
     void sp.content(obj.content).then((got) => {
+      // The selection may have moved while the read was in flight.
       if (selectedObj?.content == null || hex(selectedObj.content) !== wanted) return;
-      blob = got;
       loadingBlob = false;
-      if (got === null) {
-        // Not held locally: ask peers for it. This is the fetch §6.1 defers
-        // until the user opens something, and the preview pane is the trigger.
-        const rep = replication.get(sp.record.id);
-        if (rep !== undefined && obj.content !== null) {
-          const { [wanted]: _prev, ...rest } = unavailable;
-          unavailable = rest;
-          rep.want(obj.content);
-        }
+      if (got !== null) {
+        blob = got;
+        return;
+      }
+
+      blob = null;
+      // Not held locally: ask peers for it. This is the fetch §6.1 defers until
+      // the user opens something, and the preview pane is the trigger.
+      if (rep === undefined) {
+        // No replication for this space, so nobody will ever answer.
+        unavailable = { ...unavailable, [wanted]: true };
+        return;
+      }
+      if (fetching[wanted] === undefined && unavailable[wanted] !== true) {
+        rep.want(obj.content!);
       }
     });
   });
