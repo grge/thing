@@ -4,6 +4,9 @@ import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
   root: 'src/ui',
+  // GitHub Pages serves the project at /<repo>/, so assets need that prefix.
+  // Locally the base stays '/' — set BASE_PATH only in CI.
+  base: process.env['BASE_PATH'] ?? '/',
   // The Svelte config lives at the repo root, not under `root`.
   plugins: [svelte({ configFile: fileURLToPath(new URL('./svelte.config.js', import.meta.url)) })],
   build: {
