@@ -77,6 +77,18 @@ only — no gesture changes.
 **Done when:** on a ~375px viewport the tree is fully legible and tappable,
 selecting an item shows a full-width preview, and there's a one-tap path back.
 
+**Status: done 2026-08-29.** `.panes` collapses at `max-width: 40rem` to a
+single `1fr` column, showing `.pane-tree` until something is selected and
+`.pane-preview` (with a back button, `.preview-back`) once it is — driven by
+one existing bit of state, `selected`, no new tracking needed. The same touch
+hit-area trick already used on `.twisty` was extended to the whole row under
+`@media (pointer: coarse)`, decoupled from viewport width on purpose. Checked
+headlessly at 375×667 with touch emulation: `.panes` renders as one `375px`
+column, row hit-area grows from 24px to ~33.5px content + 8px padding each
+side (desktop/mouse: unchanged 24px, no padding) — confirms the CSS actually
+fires as designed, not that 33.5px+16px of overflow is *enough*; that still
+wants a real device.
+
 ### Stage B — Touch-safe read path (mode 2 reader)
 
 **Build:** confirm the join flow (share-code entry), tap-to-select, and tab
@@ -88,6 +100,12 @@ code created on a desktop writer, browses the tree, and watches a blob arrive
 live — the same two-device test the README already describes, with a phone as
 one of the two devices instead of assumed. This is where Q1's phone-hotspot
 evidence actually comes from.
+
+**Status: not started.** Nothing here is peer-to-peer specific — the join
+dialog, tap-to-select, and tab switching are all exercised by Stage A/C's
+checks and depend on no code this plan hasn't already touched — but the
+actual two-real-devices-over-a-real-network test needs hardware this
+environment doesn't have. Unverified, same as Q1's TURN question.
 
 ### Stage C — Non-drag content-in (mode 1 / writer, on phone)
 
@@ -103,6 +121,19 @@ drop.
 **Not here:** touch re-parent. A file added this way lands under whatever
 "selected directory" already means today — a tap-based "add here", not a
 drop target.
+
+**Status: done 2026-08-29.** An upload button opens a hidden
+`<input type="file" multiple>` wired to the same `addFiles()` a drop calls; a
+paste button calls `navigator.clipboard.readText()` behind the tap and hands
+the result to the same `pasteText()` Ctrl+V uses. Both checked headlessly at
+375×667 with touch emulation and clipboard permissions granted: the upload
+button produced a file with the expected name and content, and the paste
+button — with `hello from a phone` actually on the clipboard via
+`navigator.clipboard.writeText()`, not simulated — produced a
+`pasted-from-a-phone….txt` with matching bytes, previewable immediately.
+Neither path is drag, and neither needed a keyboard. Cross-browser clipboard
+permission behaviour (iOS Safari in particular) is still unverified — that
+part needs a real device, as the Risks section below already says.
 
 ## Explicitly deferred, not solved
 
