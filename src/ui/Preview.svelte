@@ -17,6 +17,12 @@
     progress?: { got: number; total: number } | null;
     /** No connected peer holds it — NOBLOB answered (§8.2 `unavailable`). */
     unavailable?: boolean;
+    /**
+     * Return to the tree pane. Only rendered by CSS on the single-pane
+     * layout (docs/MOBILE.md, stage A) — on the desktop two-pane layout the
+     * tree is already visible, so there is nothing to go back to.
+     */
+    onBack?: () => void;
   }
 
   let {
@@ -27,6 +33,7 @@
     childCount,
     progress = null,
     unavailable = false,
+    onBack,
   }: Props = $props();
 
   /**
@@ -104,7 +111,16 @@
 
 <div class="pane-preview">
   <div class="pane-head">
-    <span>preview</span>
+    <span class="pane-head-left">
+      <button
+        type="button"
+        class="preview-back"
+        title="Back to files"
+        aria-label="Back to files"
+        onclick={() => onBack?.()}
+      ><Icon name="arrowLeft" size={12} /></button>
+      <span>preview</span>
+    </span>
     <span>{type ?? obj?.kind ?? ''}</span>
   </div>
 

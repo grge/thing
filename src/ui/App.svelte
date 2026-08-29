@@ -60,6 +60,8 @@
   let loadingBlob = $state(false);
   let blobsHeld = $state(0);
   let message = $state<string | null>(null);
+  /** Hidden, clicked from the upload button (§8.4 has no touch drag). */
+  let fileInput = $state<HTMLInputElement | null>(null);
 
   // All registered spaces are opened at once and stay open (§8.3). Switching
   // tabs switches which one the panes show; it does not open or close anything.
@@ -323,6 +325,39 @@
       e.preventDefault();
       void pasteText(text);
     }
+  }
+
+  /** The `<input type="file">` behind the upload button, once a choice is made. */
+  async function onFileInputChange(e: Event): Promise<void> {
+    const input = e.currentTarget as HTMLInputElement;
+    const files = input.files;
+    if (files !== null && files.length > 0) await addFiles(files);
+    // Reset so choosing the same file again still fires a change event.
+    input.value = '';
+  }
+
+  /**
+   * The tap equivalent of Ctrl+V (§8.4): reads the clipboard behind a user
+   * gesture rather than a keyboard event, which is what a touch device has.
+   * Text only, same as the keyboard path — clipboard *files* still need drag
+   * or the upload button above.
+   */
+  async function pasteFromClipboard(): Promise<void> {
+    if (space === null || !space.writable) return;
+    let text: string;
+    try {
+      text = await navigator.clipboard.readText();
+    } catch {
+      // Permission refused, or no async Clipboard API (docs/MOBILE.md notes
+      // this gap is unverified across mobile browsers).
+      notify('Clipboard access was refused.');
+      return;
+    }
+    if (text.length === 0) {
+      notify('Clipboard is empty.');
+      return;
+    }
+    await pasteText(text);
   }
 
   function onDropFiles(e: DragEvent): void {
@@ -599,6 +634,13 @@
   role="application"
   aria-label="File browser"
 >
+  <input
+    type="file"
+    multiple
+    hidden
+    bind:this={fileInput}
+    onchange={(e) => void onFileInputChange(e)}
+  />
   <div class="tabs" role="tablist">
     {#each spaces as s (s.id)}
       <button
@@ -672,7 +714,7 @@
   {#if showDebug && space !== null}
     <Debug {space} {version} />
   {:else}
-  <div class="panes">
+  <div class="panes" class:has-selection={selected !== null}>
     <div class="pane-tree">
       <div class="pane-head">
         <span class="pane-title">
@@ -684,6 +726,22 @@
           {#if space?.writable === true}
             <button type="button" title="New directory" aria-label="New directory" onclick={newDir}>
               <Icon name="folderPlus" />
+            </button>
+            <!--
+              Drag-in (§8.4) has no touch equivalent (docs/MOBILE.md, stage
+              C). These two reach the same addFiles/pasteText paths a drop
+              or Ctrl+V would, from a tap.
+            -->
+            <button type="button" title="Add files" aria-label="Add files" onclick={() => fileInput?.click()}>
+              <Icon name="upload" />
+            </button>
+            <button
+              type="button"
+              title="Paste from clipboard as a file"
+              aria-label="Paste from clipboard as a file"
+              onclick={() => void pasteFromClipboard()}
+            >
+              <Icon name="clipboard" />
             </button>
           {/if}
           <button
@@ -735,6 +793,7 @@
       {childCount}
       progress={fetchProgress}
       unavailable={isUnavailable}
+      onBack={() => (selected = null)}
     />
   </div>
   {/if}

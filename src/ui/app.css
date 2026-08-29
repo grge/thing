@@ -191,6 +191,27 @@ a {
   letter-spacing: 0.06em;
 }
 
+.pane-head-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/*
+ * Only meaningful on the single-pane layout below (docs/MOBILE.md, stage A) —
+ * on the two-pane desktop layout the tree is already on screen, so there is
+ * nothing to go back to.
+ */
+.preview-back {
+  display: none;
+  align-items: center;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+}
+
 /*
  * Controls that act on the pane they head — creating in this tree, filtering
  * this tree. Scoped here rather than in the status bar, which reports and does
@@ -229,6 +250,33 @@ a {
   background: var(--canvas-sunken);
   border-color: var(--rule-strong);
   color: var(--ink);
+}
+
+/*
+ * Single-pane layout (docs/MOBILE.md, stage A). Below the breakpoint there is
+ * not room for tree and preview side by side, so only one shows at a time:
+ * the tree until something is selected, the preview once it is, with
+ * .preview-back (above) as the way back. Layout only — every gesture is
+ * unchanged, including the ones (drag, keyboard) that a touch device won't
+ * reach; those stay tracked separately (ISSUES I21).
+ */
+@media (max-width: 40rem) {
+  .panes {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
+  }
+
+  .panes:not(.has-selection) .pane-preview {
+    display: none;
+  }
+
+  .panes.has-selection .pane-tree {
+    display: none;
+  }
+
+  .preview-back {
+    display: flex;
+  }
 }
 
 /* ── Tree (§8.1) ───────────────────────────────────────────────────────── */
@@ -306,6 +354,24 @@ a {
   padding: var(--space-2) 0;
   margin: calc(var(--space-2) * -1) 0;
   cursor: pointer;
+}
+
+/*
+ * Same trick as .twisty above, extended to the whole row: on a touch-primary
+ * device the tap target grows via invisible overflow padding, not by
+ * changing --row or the visual row height a mouse user sees. `pointer:
+ * coarse` targets touch specifically, independent of viewport width, so a
+ * touch laptop in a wide window still gets it and a narrow desktop window
+ * does not. Whether this is enough is unverified on a real device
+ * (docs/MOBILE.md).
+ */
+@media (pointer: coarse) {
+  .row {
+    height: auto;
+    min-height: var(--row);
+    padding-block: var(--space-2);
+    margin-block: calc(var(--space-2) * -1);
+  }
 }
 
 .twisty[data-leaf='true'] {
