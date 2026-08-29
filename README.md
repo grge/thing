@@ -44,8 +44,10 @@ one on a phone hotspot) rather than only on the same LAN.
 The app is served over HTTPS, which WebRTC requires; `localhost` is exempt but a
 LAN IP is not, so the deployed URL is the easier path for a real test.
 
-**Use Chromium.** Firefox 99 in this environment gathers no UDP ICE candidates
-and cannot connect at all (FINDINGS F1).
+**Use the deployed HTTPS build for any peer testing.** Firefox will not gather
+usable ICE candidates over plain `http://`, including a LAN IP — so
+`npm run dev -- --host` cannot be used for a two-device test (FINDINGS F1).
+`http://localhost` is fine for single-machine work in Chromium.
 
 ## Layout
 

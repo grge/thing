@@ -11,7 +11,7 @@ that is a guess is labelled a guess.
 
 | Question | Status |
 |---|---|
-| 1. Does WebRTC blob transfer work in practice? | works between browsers; **real networks unmeasured** |
+| 1. Does WebRTC blob transfer work in practice? | works in Chromium and Firefox over HTTPS; **real networks unmeasured** |
 | 2. Does the UUID + LWW-attribute model survive real filesystem operations? | yes, so far — including concurrent writers |
 | 3. Does paste-then-share-a-URL feel good? | flow works end to end; judgement pending |
 
@@ -19,53 +19,57 @@ that is a guess is labelled a guess.
 
 ## Q1 — WebRTC
 
-### F1. Firefox 99 could not gather UDP ICE candidates; Chromium connects immediately
+### F1. Firefox needs a secure context to gather usable ICE candidates
 
-**2026-08-29, stage 4.** Two tabs on one machine, PeerJS 1.5.5, the stage 4
-harness.
+**2026-08-29, stages 4 and 5.** Two observations, and the second corrects the
+first.
 
-Firefox 99 failed every connection. Chromium on the same machine, same harness,
-same moment: `checking` → `connected` in **330 ms**.
-
-The whole diagnosis is in the one candidate Firefox gathered:
+**What was seen at stage 4.** Over `http://localhost:5177`, Firefox 99 failed
+every connection while Chromium on the same machine connected in 330 ms. The one
+candidate Firefox gathered was:
 
 ```
 candidate:0 1 TCP 2105524479 e1fc1710-….local 9 typ host tcptype active
 ```
 
-- **TCP only, no UDP candidates at all.** Not a network problem: a raw STUN
-  binding request from the same machine got a reply from
-  `stun.l.google.com:19302` in under 4 s, so UDP egress works.
-- **Port 9 is the discard port, and `tcptype active` means "I dial out, I cannot
-  be dialled."** A TCP pair needs one `passive` side. Both peers offered
-  `active`, so no candidate pair was ever checkable — which is why
-  `iceConnectionState` went straight to `closed` without entering `checking`.
+TCP only, no UDP candidates at all — and port 9 with `tcptype active` means "I
+dial out, I cannot be dialled". A TCP pair needs one `passive` side; both peers
+offered `active`, so no candidate pair was ever checkable, and
+`iceConnectionState` went straight to `closed` without entering `checking`.
+Signalling was never implicated: offer, answer, and candidate exchange all
+completed.
 
-Signalling was never the problem. Both logs show offer created, answer received,
-remote description set, candidates exchanged and added. Everything up to ICE
-worked.
+**What was seen at stage 5.** The same Firefox, against the HTTPS deployment at
+`grge.github.io`, **works** — sync and blob transfer both.
 
-**Suspected cause:** the profile had exactly one WebRTC pref set —
-`media.peerconnection.ice.proxy_only_if_behind_proxy = true` — with no proxy
-configured anywhere (`gsettings` proxy mode `none`, no `network.proxy` prefs, no
-proxy environment variables). In Firefox 99 this could force ICE onto a
-proxy-only path regardless, and a proxy path carries TCP only. Unconfirmed: not
-retested with the pref cleared.
+**Corrected diagnosis.** The variable is the *secure context*, not the browser
+version. `http://localhost` is treated as secure by Chromium but Firefox is
+stricter about what ICE gathering it permits on a non-HTTPS origin, and the
+symptom matches: obfuscated `.local` hostnames and no UDP host candidates.
 
-Firefox 99 is also roughly four years old at time of writing.
+The stage 4 write-up blamed a stale browser plus
+`media.peerconnection.ice.proxy_only_if_behind_proxy = true`, the profile's only
+WebRTC pref. **That was wrong** — or at least unnecessary. The pref was never
+cleared and retested, and the HTTPS result explains the behaviour without it.
 
 **Consequences:**
 
-1. **Measurements for Q1 should be taken on a current browser**, or they measure
-   a stale browser's config bug rather than WebRTC. Numbers from Firefox 99 here
-   would be misleading.
-2. This is nevertheless a real Q1 data point, just not a NAT-traversal one: a
-   peer can fail to connect for reasons that have nothing to do with topology,
-   and "add a TURN server" — which is what Firefox's own console suggested —
-   would not have helped, since there was no pairable candidate of any kind.
-3. Two tabs on one machine should connect over loopback host candidates with no
-   STUN involved. That this failed locally means it would certainly have failed
-   across a network.
+1. **Test over HTTPS.** This is why the app is deployed to GitHub Pages rather
+   than served from a LAN IP: `http://<lan-ip>` is not a secure context either,
+   so the obvious `npm run dev -- --host` route would have hit the same wall on
+   a second machine.
+2. **The earlier "browser incompatibility" was an artifact of the test setup**,
+   not a property of WebRTC or of Firefox. Worth stating plainly, because a POC
+   measuring viability could easily have recorded a false negative here and
+   concluded something quite wrong about browser support.
+3. Nothing in stage 4's *protocol* findings is affected — the framing work and
+   F3's transfer numbers stand.
+
+**Method note.** The stage 4 diagnosis reasoned carefully from real evidence and
+still reached the wrong cause, because it never varied the one thing that
+mattered. Reading the ICE candidate closely made the mechanism obvious in
+hindsight — `.local` obfuscation is itself a secure-context-adjacent behaviour —
+but the conclusion was fixed before that connection was made.
 
 ### F2. PeerJS is two products, and using both makes Q1 unmeasurable
 

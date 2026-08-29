@@ -42,6 +42,11 @@ worth an afternoon.
 **Deliberately throwaway.** Nothing here survives into stage 4. Resist making it
 good; the point is a number, not a foundation.
 
+**Serve it over HTTPS.** Firefox will not gather usable ICE candidates on a
+plain `http://` origin other than `localhost`, so a spike served from a LAN IP
+reports a failure that is about the test setup rather than about WebRTC
+(FINDINGS F1).
+
 **Output:** a rough connection success rate across whatever machines and networks
 are to hand, and a note on whether TURN looks mandatory.
 
