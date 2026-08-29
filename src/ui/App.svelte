@@ -10,6 +10,8 @@
   import Debug from './Debug.svelte';
   import AskName from './AskName.svelte';
   import ConfirmDelete from './ConfirmDelete.svelte';
+  import Icon from './Icon.svelte';
+  import PeerList from './PeerList.svelte';
   import NewSpace from './NewSpace.svelte';
   import Preview from './Preview.svelte';
   import Tree from './Tree.svelte';
@@ -24,6 +26,7 @@
   let showDebug = $state(false);
   let showNewSpace = $state(false);
   let confirmDelete = $state<SpaceRecord | null>(null);
+  let showPeers = $state(false);
   /** One name prompt, reused for rename and new-directory. */
   let ask = $state<{
     title: string;
@@ -637,10 +640,12 @@
               confirmDelete = s;
             }
           }}
-        >×</span>
+        ><Icon name="x" size={11} /></span>
       </button>
     {/each}
-    <button class="tab-new" title="New space" onclick={() => (showNewSpace = true)}>+</button>
+    <button class="tab-new" title="New space" aria-label="New space" onclick={() => (showNewSpace = true)}>
+      <Icon name="plus" />
+    </button>
 
     <span class="tabs-spacer"></span>
 
@@ -652,14 +657,15 @@
       <button
         type="button"
         aria-pressed={!showDebug}
+        title="Files (Ctrl+`)"
         onclick={() => (showDebug = false)}
-      >Files</button>
+      ><Icon name="files" size={12} /> Files</button>
       <button
         type="button"
         aria-pressed={showDebug}
-        title="Ctrl+`"
+        title="Event log (Ctrl+`)"
         onclick={() => (showDebug = true)}
-      >Log</button>
+      ><Icon name="log" size={12} /> Log</button>
     </div>
   </div>
 
@@ -669,31 +675,41 @@
   <div class="panes">
     <div class="pane-tree">
       <div class="pane-head">
-        <span>
-          {space?.record.name ?? '—'}{#if space !== null && !space.writable} · read-only{/if}
+        <span class="pane-title">
+          {space?.record.name ?? '—'}{#if space !== null && !space.writable}
+            <span class="pane-badge">read-only</span>
+          {/if}
         </span>
         <span class="pane-head-actions">
           {#if space?.writable === true}
-            <button type="button" title="New directory" onclick={newDir}>
-              New dir
-            </button>
-          {/if}
-          {#if space?.record.mode === 'writer'}
-            <span class="share-code" title="Share code — type this on another device">
-              {space.record.id}
-            </span>
-            <button type="button" title="Copy share link" onclick={() => void share()}>
-              Copy link
+            <button type="button" title="New directory" aria-label="New directory" onclick={newDir}>
+              <Icon name="folderPlus" />
             </button>
           {/if}
           <button
             type="button"
             aria-pressed={showDeleted}
-            title="Show tombstoned objects"
+            title={showDeleted ? 'Hide deleted objects' : 'Show deleted objects'}
+            aria-label="Show deleted"
             onclick={() => (showDeleted = !showDeleted)}
-          >Deleted</button>
+          ><Icon name={showDeleted ? 'eye' : 'eyeOff'} /></button>
         </span>
       </div>
+
+      {#if space?.record.mode === 'writer'}
+        <!--
+          The share code gets its own row rather than competing with the pane
+          actions: it is read off this screen and typed into another, so it wants
+          room and a legible size, not a slot in a button cluster.
+        -->
+        <div class="share-bar">
+          <Icon name="link" size={12} />
+          <code class="share-code" title="Type this on another device">{space.record.id}</code>
+          <button type="button" onclick={() => void share()}>
+            <Icon name="copy" size={12} /> Copy link
+          </button>
+        </div>
+      {/if}
       <Tree
         nodes={tree}
         {expanded}
@@ -724,31 +740,56 @@
   {/if}
 
   <div class="status">
-    <span>{space?.record.mode ?? '—'}</span>
-    {#if space?.writerId != null}
-      <span>writer {hex(space.writerId).slice(0, 4)}…</span>
-      <span>seq {space.writerState?.seq ?? 0}</span>
-      <span>lamport {space.writerState?.lamport ?? 0}</span>
-    {:else}
-      <span>read-only</span>
-    {/if}
-    <span>{space === null ? 0 : space.state.objects.size - 1} objects</span>
-    <span>{space?.eventCount ?? 0} events</span>
-    <span>{blobsHeld} blobs</span>
+    <!--
+      Status only, and grouped: identity, then size, then connection. Previously
+      seven equal-weight spans read as a wall of numbers. The writer's seq and
+      lamport moved to the log view, where they belong beside the events they
+      describe.
+    -->
+    <span class="status-group">
+      <span class="status-mode" data-mode={space?.record.mode ?? 'local'}>
+        {space?.record.mode ?? '—'}
+      </span>
+      {#if space !== null && !space.writable}<span>read-only</span>{/if}
+    </span>
+
+    <span class="status-group">
+      <span>{space === null ? 0 : space.state.objects.size - 1} objects</span>
+      <span>{space?.eventCount ?? 0} events</span>
+      <span>{blobsHeld} blobs</span>
+    </span>
+
     {#if space !== null && space.record.mode !== 'local'}
-      <span>
-        {peerCounts[space.record.id] ?? 0} peers
+      <span class="status-group peers-anchor">
+        <button
+          type="button"
+          class="status-button"
+          aria-expanded={showPeers}
+          title="Connected peers"
+          onclick={() => (showPeers = !showPeers)}
+        >
+          <Icon name="users" size={12} />
+          {peerCounts[space.record.id] ?? 0} peers
+        </button>
         {#if (peerCounts[space.record.id] ?? 0) === 0}
-          <span class="status-stale">· stale</span>
+          <span class="status-stale">stale</span>
         {/if}
+        <PeerList
+          open={showPeers}
+          localId={peerIds[space.record.id] ?? null}
+          peers={replication.get(space.record.id)?.peers ?? []}
+          onClose={() => (showPeers = false)}
+        />
       </span>
     {/if}
+
     <span class="status-spacer"></span>
+
     {#if stalls.length > 0}
       <span class="status-stale" title={stalls.join('\n')}>
         {stalls.length} stall{stalls.length === 1 ? '' : 's'}
       </span>
     {/if}
-    {#if message !== null}<span>{message}</span>{/if}
+    {#if message !== null}<span class="status-message">{message}</span>{/if}
   </div>
 </div>

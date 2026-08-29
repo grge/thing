@@ -16,6 +16,7 @@
     "@types/node": "^26.4.0",
     "fake-indexeddb": "^6.2.5",
     "fast-check": "^4.9.0",
+    "lucide-static": "^1.35.0",
     "svelte": "^5.56.10",
     "svelte-check": "^4.7.6",
     "typescript": "^5.9.3",

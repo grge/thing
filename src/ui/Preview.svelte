@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ObjectState } from '../fold/index.js';
   import { hex } from '../fold/index.js';
+  import Icon from './Icon.svelte';
 
   interface Props {
     obj: ObjectState | null;
@@ -127,10 +128,14 @@
         <div class="preview-actions">
           {#if text !== null}
             <button type="button" onclick={copyText}>
+              <Icon name="copy" size={12} />
               {copied ? 'Copied' : 'Copy'}
             </button>
           {/if}
-          <button type="button" onclick={download}>Download</button>
+          <button type="button" onclick={download}>
+            <Icon name="download" size={12} />
+            Download
+          </button>
           {#if copyFailed}
             <span class="action-error">Clipboard unavailable</span>
           {/if}

@@ -75,24 +75,23 @@
     <h2>New space</h2>
 
     <fieldset class="modes">
-      <legend>Kind</legend>
 
       <label class:is-selected={choice === 'local'}>
         <input type="radio" name="mode" value="local" bind:group={choice} bind:this={firstField} />
         <span class="mode-name">Local</span>
-        <span class="mode-desc">Only on this device. No peers, no sharing.</span>
+        <span class="mode-desc">This device only</span>
       </label>
 
       <label class:is-selected={choice === 'writer'}>
         <input type="radio" name="mode" value="writer" bind:group={choice} />
-        <span class="mode-name">Shared — you write</span>
-        <span class="mode-desc">You own it. Others open your link and read along.</span>
+        <span class="mode-name">Shared</span>
+        <span class="mode-desc">You write, others read</span>
       </label>
 
       <label class:is-selected={choice === 'join'}>
         <input type="radio" name="mode" value="join" bind:group={choice} />
-        <span class="mode-name">Join someone's space</span>
-        <span class="mode-desc">Paste a link, or type the 8-character code. Read-only.</span>
+        <span class="mode-name">Join</span>
+        <span class="mode-desc">Open someone's shared space</span>
       </label>
     </fieldset>
 
@@ -109,12 +108,9 @@
         />
       </label>
       {#if url.trim() !== '' && parsed === null}
-        <p class="field-error">
-          Not a share link or code. A code is 8 characters, like
-          <code>k7mfq2xw</code>.
-        </p>
+        <p class="field-error">Not a link or code.</p>
       {:else if parsed !== null}
-        <p class="field-hint">Joins <strong>{parsed.name}</strong> as a reader.</p>
+        <p class="field-hint">Joins <strong>{parsed.name}</strong>, read-only.</p>
       {/if}
     {:else}
       <label class="field">
@@ -122,10 +118,7 @@
         <input type="text" bind:value={name} placeholder="scratch" autocomplete="off" />
       </label>
       {#if choice === 'writer'}
-        <p class="field-hint">
-          Shareable once created — the tree header gets a <strong>Share</strong>
-          button. Readers need you online to join.
-        </p>
+        <p class="field-hint">Readers need you online to join.</p>
       {/if}
     {/if}
 

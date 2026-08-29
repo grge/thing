@@ -218,6 +218,24 @@ absorbed it without special handling. This is weak evidence *for* the design:
 the class of bug that remains possible is "we forgot to send something", not "we
 sent it and the state diverged".
 
+### F9. Open: a space occasionally refuses new files or folders until reload
+
+**2026-08-29, stage 5. Not yet reproduced.** During large-file, delete, move and
+rename testing, a space intermittently reached a state where creating a file or
+directory did nothing. A page refresh cleared it every time.
+
+Not isolated, so the cause is unknown. What the symptom rules in:
+
+- **Refresh fixing it points at in-memory state, not the log.** A reload rebuilds
+  `Space` from storage and re-folds, so whatever was wrong did not survive that
+  — which argues against corrupt events and for a stuck UI or writer object.
+- Candidates worth checking first: `mutate()` returning early because
+  `space.writable` read false, a `Writer` left mid-await, or the `manager`/`space`
+  derivation pointing at a stale instance after a tab switch.
+
+To reproduce, watch the log view (Ctrl+`) when it happens: if the event count
+stops advancing while the tree looks normal, the write never reached the log.
+
 ## Q3 — does it feel good?
 
 **Reachable now, not yet judged.** The full loop works: create a writer space,

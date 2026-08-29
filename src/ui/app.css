@@ -96,6 +96,8 @@ a {
 }
 
 .tab-new {
+  display: flex;
+  align-items: center;
   padding: 0 var(--space-3);
   background: transparent;
   border: 0;
@@ -114,17 +116,24 @@ a {
  * than one toggling label: which view you are in is visible without having to
  * infer it from what the button offers to do next.
  */
+/*
+ * The view switch sits at the end of the tab strip, so it needs enough space
+ * around it to read as a separate control rather than as one more tab.
+ */
 .viewswitch {
   display: flex;
   align-self: center;
-  margin-right: var(--space-2);
+  margin: 0 var(--space-3) 0 var(--space-4);
 }
 
 .viewswitch button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
   font: inherit;
   font-size: var(--text--2);
   padding: 0 var(--space-2);
-  min-height: 1.25rem;
+  min-height: 1.375rem;
   background: transparent;
   border: 1px solid var(--rule);
   color: var(--ink-muted);
@@ -196,10 +205,14 @@ a {
 }
 
 .pane-head-actions button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font: inherit;
   font-size: var(--text--2);
-  padding: 0 var(--space-2);
-  min-height: 1.125rem;
+  padding: 0 var(--space-1);
+  min-width: 1.375rem;
+  min-height: 1.25rem;
   background: transparent;
   border: 1px solid var(--rule);
   color: var(--ink-muted);
@@ -363,6 +376,9 @@ a {
 }
 
 .preview-actions button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
   font: inherit;
   font-size: var(--text--2);
   padding: 0 var(--space-2);
@@ -893,12 +909,236 @@ a {
 }
 
 /* The share code, shown so it can be read off the screen and typed elsewhere. */
-.share-code {
-  font-family: var(--font-data);
-  font-size: var(--text--1);
-  letter-spacing: 0.08em;
-  color: var(--ink);
+/*
+ * The share code is transcribed by hand between devices, so it gets a row of
+ * its own, a legible size, and generous letter-spacing.
+ */
+.share-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--rule);
   background: var(--canvas-raised);
+  color: var(--ink-muted);
+}
+
+.share-code {
+  flex: 1 1 auto;
+  font-family: var(--font-data);
+  font-size: var(--text-0);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--ink);
+  user-select: all;
+}
+
+.share-bar button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font: inherit;
+  font-size: var(--text--2);
+  padding: 0 var(--space-2);
+  min-height: 1.25rem;
+  background: var(--canvas);
   border: 1px solid var(--rule);
+  color: var(--ink-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.share-bar button:hover {
+  color: var(--ink);
+  border-color: var(--rule-strong);
+}
+
+.pane-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pane-badge {
   padding: 0 var(--space-1);
+  border: 1px solid var(--rule-strong);
+  font-size: var(--text--2);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* ── Status bar ────────────────────────────────────────────────────────────
+ * Groups rather than a row of equal-weight spans: identity, size, connection.
+ * Separators are drawn between groups, not between every figure.
+ */
+.status-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.status-group + .status-group::before {
+  content: '';
+  width: 1px;
+  height: 0.875rem;
+  margin-right: var(--space-1);
+  background: var(--rule);
+}
+
+.status-mode {
+  text-transform: lowercase;
+}
+
+.status-mode[data-mode='local'] { color: var(--mode-local); }
+.status-mode[data-mode='writer'] { color: var(--mode-writer); }
+.status-mode[data-mode='reader'] { color: var(--mode-reader); }
+
+.status-button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font: inherit;
+  font-family: var(--font-data);
+  font-size: var(--text--2);
+  padding: 0 var(--space-1);
+  background: transparent;
+  border: 1px solid transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.status-button:hover,
+.status-button[aria-expanded='true'] {
+  color: var(--ink);
+  border-color: var(--rule);
+}
+
+.status-message {
+  color: var(--ink);
+}
+
+/* ── Peer popover ──────────────────────────────────────────────────────── */
+
+.peers-anchor {
+  position: relative;
+}
+
+.popover {
+  position: absolute;
+  bottom: calc(100% + var(--space-2));
+  left: 0;
+  z-index: 20;
+  min-width: 22rem;
+  max-width: min(28rem, calc(100vw - 2rem));
+  background: var(--canvas);
+  border: 1px solid var(--rule-strong);
+  box-shadow: 0 2px 12px rgb(0 0 0 / 0.18);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-1) var(--space-2);
+  background: var(--canvas-raised);
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--font-interface);
+  font-size: var(--text--2);
+  font-weight: 600;
+  color: var(--ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.popover-head button,
+.popover code + button,
+.peer-list button {
+  display: flex;
+  align-items: center;
+  padding: var(--space-1);
+  background: transparent;
+  border: 0;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+
+.popover-head button:hover,
+.popover code + button:hover,
+.peer-list button:hover {
+  color: var(--ink);
+}
+
+.peer-self {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--rule);
+}
+
+.peer-self dt {
+  font-size: var(--text--2);
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.peer-self dd {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  min-width: 0;
+}
+
+.peer-self code,
+.peer-list code {
+  font-family: var(--font-data);
+  font-size: var(--text--2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: all;
+}
+
+.peer-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 12rem;
+  overflow-y: auto;
+}
+
+.peer-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--rule);
+}
+
+.peer-list li:last-child {
+  border-bottom: 0;
+}
+
+.popover-empty {
+  margin: 0;
+  padding: var(--space-2);
+  font-family: var(--font-interface);
+  font-size: var(--text--2);
+  color: var(--ink-faint);
+  line-height: 1.45;
+}
+
+/* ── Icons ─────────────────────────────────────────────────────────────── */
+
+.icon {
+  flex: none;
+  display: block;
 }

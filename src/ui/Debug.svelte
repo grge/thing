@@ -45,7 +45,14 @@
 <div class="debug">
   <div class="pane-head">
     <span>log · {space.record.name}</span>
-    <span>{space.eventCount} events</span>
+    <span>
+      {#if space.writerState !== null}
+        writer {space.writerId === null ? '—' : hex(space.writerId).slice(0, 6)}…
+        · seq {space.writerState.seq} · lamport {space.writerState.lamport}
+      {:else}
+        read-only
+      {/if}
+    </span>
   </div>
 
   <div class="debug-summary">
