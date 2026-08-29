@@ -4,6 +4,11 @@ Evidence gathered while building the POC, against the three questions in
 [SPEC.md](SPEC.md) §0. Companion to [PLAN.md](PLAN.md), which says *what* to
 build; this records *what was learned*.
 
+Findings F1–F9 answer the questions. **F10–F13 do not** — they record design
+pressure discovered by building: places where v0's design is already known to be
+insufficient for where the project is heading. Those are input to the rewrite,
+not v0 obligations.
+
 The POC exists to make three questions answerable with evidence. Anything here
 that is a guess is labelled a guess.
 
@@ -244,6 +249,160 @@ add files, copy the share URL, open it elsewhere, watch it replicate. Whether it
 Q2 it cannot be settled by a test.
 
 The spatial half — paste onto a canvas — needs stage 6 and may not be built.
+
+---
+
+## Design pressure found by building
+
+Not answers to the three questions. These are places where v0's design is
+already known to be insufficient for where the project is heading — recorded
+because §2's envelope and §3.4's handshake are the expensive things to change
+later, and because the canvas work should not quietly assume none of this
+exists.
+
+Nothing here is a v0 obligation. All of it is input to the rewrite.
+
+### F10. MIME is stored per-blob and not replicated — already wrong
+
+**2026-08-29.** `putBlob(hash, bytes, mime)` stores a MIME string beside the
+bytes in IndexedDB. The writer learns it from the browser's `File` object at
+upload; a peer receiving the blob over the wire stores `''` (see
+`replication.ts`, where the `BlobStore.put` adapter has no MIME to pass).
+
+So **the writer and the reader disagree about what a file is.** It is masked
+today only because `isText('')` returns true, so a reader treats everything as
+text — which renders a PNG as mojibake rather than as an image.
+
+This is a live bug, not just a design smell, and the canvas will make it obvious
+because a canvas must decide what every object looks like rather than only the
+selected one.
+
+### F11. Renderer selection: bytes are not enough once objects are apps
+
+**2026-08-29.** The obvious fix to F10 is to sniff the content: a PNG starts
+`89 50 4E 47`, and since blobs are content-addressed the bytes are identical on
+every peer, so **every peer sniffs the same answer with no attribute, no event,
+and no agreement protocol.** That is the right mechanism for passive content and
+costs nothing on the wire.
+
+It does not survive the direction the project is heading. §7.3's Yjs objects have
+no `:content` blob at all — they are a stream of CRDT updates arriving as events,
+so there is nothing to sniff. Worse, two objects could carry byte-identical Yjs
+update streams and still be *different applications*, because what separates a
+text document from a task board is the schema the renderer imposes, not the
+bytes. Content addressing would call them the same blob. They are not the same
+object.
+
+**The split is passive content vs active object**, not derived vs declared:
+
+| | Identity | Type comes from | Replication |
+|---|---|---|---|
+| Passive — PNG, text, PDF | inherent in the bytes | sniffing | blob, on demand |
+| Active — Yjs doc, board, app | a *declaration* plus a live stream | must be replicated | log events |
+
+For an active object the type genuinely **is** an assertion — someone decided
+this thing is a task board — and there is no deriving it. It has to live
+somewhere in the envelope.
+
+`:kind` (§4.6) is already the right-shaped slot: set at creation, advisory,
+telling the UI how to render. It is currently `"file" | "dir"`, which is the
+two-value version of a vocabulary that would need to grow.
+
+**Consequence for the renderer contract.** A renderer for an active object is not
+a view over bytes — it is a participant in replication, with a subscription to a
+slice of the log. That argues for a contract shaped around *"here is your
+object's event stream"* rather than *"here are your bytes"*, with immutable
+content as the degenerate case: a stream with one element.
+
+### F12. §6.1 argues from size, and the size argument expires
+
+**2026-08-29.** §6.1 justifies "all metadata to every peer, blobs on demand"
+with:
+
+> Metadata is small — thousands of events at a few hundred bytes is single-digit
+> megabytes, nothing beside one photo.
+
+That is a **size** argument. The defensible argument is about **nature**: blobs
+are immutable and content-addressed, so they have no history — `sha256(bytes)`
+is the whole of their identity, and there is nothing to order, merge, or
+converge. Putting them in an append-only log would store them in a structure
+whose purpose is sequencing things that have none. Yjs updates are the exact
+opposite: mutable state whose nature is a stream of changes that must all arrive
+and merge, which is what a log is for.
+
+The two justifications disagree about where the boundary sits, and **mode 3
+breaks the size one**: `:yjs` events accumulate without bound, so "the log is the
+small part" stops being true. §5 already concedes this by noting that Yjs
+accumulation needs compaction.
+
+Two further asymmetries follow from having drawn one boundary with two rules:
+
+- **Selectivity exists on one side only.** `WANT`/`BLOB` fetches blobs on demand;
+  nothing fetches log payload on demand. Mode 3 needs an equivalent — "send me
+  this object's `:yjs` events, not every object's" — which is a second, parallel
+  selective-fetch protocol for the same problem.
+- **Completeness tracking exists on the other side only.** A blob has no `prev`,
+  no gap detection, and no version vector, so if a peer holds half a blob nothing
+  in the handshake knows. "Does this peer have what I need" has two answers by
+  two mechanisms.
+
+**A possible unification, unproven:** one log, where some events carry payload by
+*reference* (a `:content` hash, fetched separately) and others *inline* (a `:yjs`
+update, small and needed eagerly). Both are events; they differ in a transport
+decision rather than a structural one. That would let one selectivity mechanism
+cover both and make the blob store an implementation detail rather than a
+parallel subsystem. It may also be unification for its own sake — §6's separation
+buys real simplicity today — but it explains both cases with one rule where the
+current design uses two that contradict at the edges.
+
+### F13. Selective sync breaks what identifies a snapshot
+
+**2026-08-29.** The direction of travel is away from "all metadata to every
+peer": a peer might want to watch one Yjs object, or one busy folder, without
+taking every update in the space. That flexibility collides with §5 harder than
+it first appears.
+
+§5 identifies a snapshot as `{ vv, state }` — the fold of a known event set,
+named by the VV it covers — and says commutativity is what makes it work: a peer
+can apply anything *not covered* by that VV directly. That holds because a VV is
+a **complete** description. `{A: 47}` means every event from A through 47, no
+exceptions, so "not covered" is decidable.
+
+Selective sync destroys that property:
+
+- Knowledge is no longer expressible as a VV. It is a VV *plus a set of
+  exclusions*.
+- **Two peers with identical VVs can hold different state**, contradicting
+  §1.3's framing that the same event *set* yields the same state — they would
+  hold different sets while reporting the same vector.
+- §5's truncation floor ("never drop below the minimum VV of any peer still being
+  served") stops bounding anything, because a VV no longer describes what a peer
+  needs.
+
+So the problem is not that snapshotting gets harder. **The identity of a snapshot
+stops being well-defined**, because the thing identifying it assumed completeness.
+
+**Shape of a fix, tentative.** A snapshot would need identifying by what it
+covers, not only how far it reaches: `{ vv, scope, state }`. The cost is that
+snapshots stop being universally shareable — one is usable only by a peer whose
+interests are a *subset* of its scope, or the receiver is missing events and
+cannot tell. That argues for a small number of coarse, named tiers rather than
+free-form per-peer predicates: coarse scopes compose, arbitrary ones fragment
+into snapshots nobody else can use.
+
+**The bootstrapping constraint, which is the useful part.** §6.1 argues that
+path-based selection is robust *because* it is evaluated locally against complete
+metadata, so a rename automatically moves an object in or out of scope. That
+argument depends on holding complete metadata. If structural events are
+themselves selective, a peer may not hold the `:parent` event that moved an
+object into its subtree of interest — the rename is invisible and the object
+silently never arrives.
+
+Therefore: **whatever determines scope must itself always be replicated in full.**
+The tiering is not "structural vs payload" but *"events that determine what you
+need"* vs *"events that are what you need"* — `:parent` and `:name` necessarily
+complete, `:content` payloads and `:yjs` updates selective. That line is cleaner
+than the current one and, unlike "metadata is small", it survives mode 3.
 
 ---
 
