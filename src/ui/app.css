@@ -690,3 +690,162 @@ a {
   font-size: var(--text--2);
   line-height: 1.5;
 }
+
+/* ── Dialogs ───────────────────────────────────────────────────────────────
+ * Native <dialog>: focus trapping, Escape, and the top layer come free, and
+ * the design system asks for native controls unless a custom one earns its
+ * place. Sized to its content rather than centred in a large panel — this is a
+ * short form, not a page.
+ */
+.sheet {
+  padding: 0;
+  border: 1px solid var(--rule-strong);
+  background: var(--canvas);
+  color: var(--ink);
+  max-width: min(26rem, calc(100vw - 2rem));
+}
+
+.sheet::backdrop {
+  background: rgb(0 0 0 / 0.35);
+}
+
+.sheet form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.sheet h2 {
+  margin: 0;
+  font-size: var(--text-0);
+  font-weight: 600;
+}
+
+.sheet .modes {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--rule);
+  background: var(--rule);
+}
+
+.sheet .modes legend {
+  padding: 0;
+  font-size: var(--text--2);
+  color: var(--ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Each option is a row, so the description is readable rather than a tooltip. */
+.sheet .modes label {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 var(--space-2);
+  padding: var(--space-2);
+  background: var(--canvas);
+  cursor: pointer;
+}
+
+.sheet .modes label.is-selected {
+  background: var(--canvas-raised);
+}
+
+.sheet .modes input {
+  grid-row: span 2;
+  align-self: center;
+  margin: 0;
+}
+
+.mode-name {
+  font-size: var(--text--1);
+  font-weight: 600;
+}
+
+.mode-desc {
+  grid-column: 2;
+  font-size: var(--text--2);
+  color: var(--ink-muted);
+  line-height: 1.4;
+}
+
+.sheet .field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.sheet .field span {
+  font-size: var(--text--2);
+  color: var(--ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.sheet input[type='text'],
+.sheet input[type='url'] {
+  font: inherit;
+  font-family: var(--font-data);
+  font-size: var(--text--1);
+  padding: var(--space-1) var(--space-2);
+  background: var(--canvas);
+  border: 1px solid var(--rule);
+  color: var(--ink);
+}
+
+.sheet input:focus-visible {
+  border-color: var(--focus);
+}
+
+.field-hint,
+.field-error {
+  margin: 0;
+  font-size: var(--text--2);
+  line-height: 1.45;
+  color: var(--ink-muted);
+}
+
+.field-error {
+  color: var(--danger);
+}
+
+.field-hint code,
+.field-error code {
+  font-family: var(--font-data);
+}
+
+.sheet .actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.sheet .actions button {
+  font: inherit;
+  font-size: var(--text--1);
+  padding: var(--space-1) var(--space-3);
+  background: var(--ink);
+  border: 1px solid var(--ink);
+  color: var(--canvas);
+  cursor: pointer;
+}
+
+.sheet .actions button.quiet {
+  background: transparent;
+  border-color: var(--rule);
+  color: var(--ink-muted);
+}
+
+.sheet .actions button.quiet:hover {
+  color: var(--ink);
+  border-color: var(--rule-strong);
+}
+
+.sheet .actions button[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

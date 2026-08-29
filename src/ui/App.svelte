@@ -8,6 +8,8 @@
   import { hex, ROOT, type ObjectState } from '../fold/index.js';
   import { SvelteSet } from 'svelte/reactivity';
   import Debug from './Debug.svelte';
+  import AskName from './AskName.svelte';
+  import NewSpace from './NewSpace.svelte';
   import Preview from './Preview.svelte';
   import Tree from './Tree.svelte';
 
@@ -19,6 +21,14 @@
   let tabDropTarget = $state<string | null>(null);
   /** Debug view shows the raw log for the active space. Per-space, not global. */
   let showDebug = $state(false);
+  let showNewSpace = $state(false);
+  /** One name prompt, reused for rename and new-directory. */
+  let ask = $state<{
+    title: string;
+    initial: string;
+    confirmLabel: string;
+    run: (value: string) => void;
+  } | null>(null);
 
   /** One Replication per mode 2 space, keyed by space id (§8.3: N live). */
   const replication = new Map<string, Replication>();
@@ -291,11 +301,18 @@
     await mutate((s) => s.move(moving.uuid, destination));
   }
 
-  async function renameSelected(): Promise<void> {
+  function renameSelected(): void {
     if (space === null || selectedObj === null) return;
-    const next = prompt('New name', selectedObj.name ?? '');
-    if (next === null || next === '') return;
-    await mutate((s) => s.rename(selectedObj!.uuid, next));
+    const target = selectedObj.uuid;
+    ask = {
+      title: 'Rename',
+      initial: selectedObj.name ?? '',
+      confirmLabel: 'Rename',
+      run: (next) => {
+        ask = null;
+        void mutate((s) => s.rename(target, next));
+      },
+    };
   }
 
   async function deleteSelected(): Promise<void> {
@@ -303,27 +320,44 @@
     await mutate((s) => s.setDeleted(selectedObj!.uuid, !selectedObj!.deleted));
   }
 
-  async function newDir(): Promise<void> {
-    const name = prompt('Directory name', 'untitled');
-    if (name === null || name === '') return;
-    await mutate(async (s) => {
-      await s.createDir(targetDir(), name);
-    });
+  function newDir(): void {
+    ask = {
+      title: 'New directory',
+      initial: 'untitled',
+      confirmLabel: 'Create',
+      run: (name) => {
+        ask = null;
+        void mutate(async (s) => {
+          await s.createDir(targetDir(), name);
+        });
+      },
+    };
   }
 
   /**
    * Mode is fixed at creation (§8.3). There is no promoting a local space to a
    * shared one in v0, so this is the only place a mode is ever chosen.
    */
-  async function newSpace(): Promise<void> {
+  async function createSpace(name: string, mode: SpaceMode): Promise<void> {
     if (manager === null) return;
-    const name = prompt('Space name', 'space');
-    if (name === null || name === '') return;
-    const answer = prompt('Mode: local or writer', 'local');
-    if (answer === null) return;
-    const mode: SpaceMode = answer.trim() === 'writer' ? 'writer' : 'local';
-
+    showNewSpace = false;
     const rec = await manager.create(name, mode);
+    spaces = manager.list;
+    activeId = rec.id;
+    version += 1;
+    void startReplication(rec);
+  }
+
+  /** Adopt a space from a share link (§7.2), the same path an opened URL takes. */
+  async function joinSpace(url: string): Promise<void> {
+    if (manager === null) return;
+    const parsed = parseShareUrl(url);
+    if (parsed === null) {
+      notify('That is not a share link.');
+      return;
+    }
+    showNewSpace = false;
+    const rec = await manager.join(parsed);
     spaces = manager.list;
     activeId = rec.id;
     version += 1;
@@ -437,7 +471,7 @@
         return;
       case 'F2':
         e.preventDefault();
-        if (space?.writable === true) void renameSelected();
+        if (space?.writable === true) renameSelected();
         return;
       case 'Delete':
         e.preventDefault();
@@ -448,6 +482,22 @@
 </script>
 
 <svelte:window onpaste={onPaste} onkeydown={onKey} />
+
+<AskName
+  open={ask !== null}
+  title={ask?.title ?? ''}
+  initial={ask?.initial ?? ''}
+  confirmLabel={ask?.confirmLabel ?? 'OK'}
+  onCancel={() => (ask = null)}
+  onConfirm={(v) => ask?.run(v)}
+/>
+
+<NewSpace
+  open={showNewSpace}
+  onCancel={() => (showNewSpace = false)}
+  onCreate={(name, mode) => void createSpace(name, mode)}
+  onJoin={(url) => void joinSpace(url)}
+/>
 
 <div
   class="app"
@@ -482,7 +532,7 @@
         {s.name} <span class="tab-mode">{s.mode}</span>
       </button>
     {/each}
-    <button class="tab-new" title="New space" onclick={() => void newSpace()}>+</button>
+    <button class="tab-new" title="New space" onclick={() => (showNewSpace = true)}>+</button>
 
     <span class="tabs-spacer"></span>
 
@@ -516,7 +566,7 @@
         </span>
         <span class="pane-head-actions">
           {#if space?.writable === true}
-            <button type="button" title="New directory" onclick={() => void newDir()}>
+            <button type="button" title="New directory" onclick={newDir}>
               New dir
             </button>
           {/if}
