@@ -12,16 +12,31 @@ it, and how does it live out on the internet once it has been handed over?**
 
 ## What the product is
 
-Stated plainly, because several threads below open directions that could quietly
-become the centre of gravity and should not:
+**The floor**, which must always work, and against which any horizon idea that
+would compromise it loses:
 
 > **A website you go to, where you create a space, share it with peers via a
 > link, and drag files into it.**
 
-That is the product. Everything else in this document — other clients, folder
-backing, a Python API, links between spaces — is either in service of that or is
-a direction it *opens*, and should be read that way. When a horizon idea and the
-website pull in different directions, the website wins.
+That is a minimum requirement rather than the end goal. The fuller ambition is
+**a very fast, in-browser, Napster-shaped peer-to-peer network** — with network
+discovery, and eventually collaborative document editing spaces (mode 3, which
+[the CRDT section below](#where-this-is-going-crdts-and-compaction) says is
+deferred, not denied).
+
+Worth recording the tension in that comparison, because it points straight at
+the hardest unsolved piece: **Napster's defining feature was a central index.**
+The peer-to-peer part was the transfer; the *finding* was a server. The systems
+that replaced that index with flooding or a DHT were markedly worse at search,
+and a browser cannot practically run a DHT at all. So "Napster-shaped, in the
+browser" names precisely the problem this project has least answer for — see
+*Discovery may stay thin* under Risks. It is the right ambition to hold, and it
+should be held with that difficulty in view rather than assumed away.
+
+The ordering that follows: the website floor is what each throwaway iteration
+must leave working; discovery is the thing that decides whether the ambition is
+reachable; other clients, folder backing and a Python API are directions this
+*opens* rather than parts of it.
 
 ---
 

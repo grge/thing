@@ -251,15 +251,36 @@ lets Zooko's triangle be dodged rather than solved.
 
 ## 6. Open sub-decisions
 
-**Where the private key lives, and whether it can be exported.** A
-non-extractable WebCrypto key in IndexedDB cannot be exfiltrated by injected
-script, but also cannot be backed up — and losing it means losing the ability to
-ever write to your own space, permanently, with no way to tell readers. Against
-the storage fragility already noted in NEXT.md (Safari evicts storage for sites
-without recent interaction), **I would take extractable keys plus an explicit
-"save your space key" export**, because in this threat model permanent loss of a
-space is worse than the exfiltration risk. Worth deciding deliberately, not by
-default.
+**Where the private key lives — DECIDED: extractable, with an explicit export.**
+
+The tempting alternative is a non-extractable WebCrypto key in IndexedDB, on the
+grounds that injected script cannot then steal it. That reasoning does not
+survive inspection: **a non-extractable key can still be *used* by injected
+script to sign anything it likes.** It is not protected, only unstealable — the
+attacker's forgery lasts as long as their code execution rather than forever.
+Meanwhile the cost is total: no backup, and Safari's eviction of storage for
+sites without recent interaction destroys spaces with no attacker involved at
+all.
+
+So the trade is a *routine, attacker-free* failure mode against a partial
+mitigation of a rare one. Extractable keys plus a deliberate "save your space
+key" export.
+
+The vectors that actually matter, roughly by likelihood: a compromised
+dependency shipping code into the bundle; **XSS from peer-supplied content**,
+which this design uniquely invites because rendering data from strangers is the
+whole job; whoever serves the app; a browser extension with host permissions;
+and last, social-engineered bookmarklet or console paste.
+
+The mitigations that help are therefore the ones that stop script executing on
+the origin, not the ones that hide the key: CSP, subresource integrity,
+dependency discipline, and — highest value for this architecture — **rendering
+peer-supplied content inside a sandboxed iframe with no access to the parent
+origin.** That should be treated as a real constraint on the renderer registry
+(§4.7, [I17](ISSUES.md#i17-renderer-selection-has-no-story-for-active-objects)),
+not an optimisation. Encrypting the key at rest under a passphrase defends a
+stolen laptop or a storage dump, not live script, which can simply wait for the
+user to unlock it.
 
 **Ed25519 availability.** WebCrypto support arrived relatively recently across
 browsers; `@noble/ed25519` is the standard small fallback. Verify current support
