@@ -10,6 +10,7 @@
    * answer it beats one that only accepts input.
    */
   import { hasRelay, iceServers, resetIceServersCache } from '../net/iceservers.js';
+  import { type RelayCheck, runRelayCheck, summarise } from '../net/relaycheck.js';
   import { type Settings, turnCredentialsUrl } from '../app/settings.js';
   import Icon from './Icon.svelte';
 
@@ -31,6 +32,8 @@
   let dialog = $state<HTMLDialogElement | null>(null);
   let testing = $state(false);
   let result = $state<{ ok: boolean; text: string } | null>(null);
+  /** Kept alongside the verdict so the detail is inspectable, not just the answer. */
+  let detail = $state<RelayCheck | null>(null);
 
   $effect(() => {
     const d = dialog;
@@ -44,6 +47,7 @@
       apiKey = t.provider === 'metered' ? t.apiKey : '';
       url = t.provider === 'custom' ? t.url : '';
       result = null;
+      detail = null;
       d.showModal();
     } else if (!open && d.open) {
       d.close();
@@ -69,6 +73,7 @@
   async function test(): Promise<void> {
     testing = true;
     result = null;
+    detail = null;
     try {
       resetIceServersCache();
       const servers = await iceServers(endpoint);
@@ -77,30 +82,10 @@
         return;
       }
 
-      const pc = new RTCPeerConnection({ iceServers: servers, iceTransportPolicy: 'relay' });
-      const started = performance.now();
-      const relayed = await new Promise<boolean>((resolve) => {
-        let seen = false;
-        const done = (v: boolean): void => {
-          pc.close();
-          resolve(v);
-        };
-        pc.addEventListener('icecandidate', (e) => {
-          if (e.candidate === null) {
-            done(seen);
-            return;
-          }
-          if (e.candidate.type === 'relay') seen = true;
-        });
-        pc.createDataChannel('probe');
-        void pc.createOffer().then((o) => pc.setLocalDescription(o));
-        setTimeout(() => done(seen), 12000);
-      });
-      const ms = Math.round(performance.now() - started);
-
-      result = relayed
-        ? { ok: true, text: `Relay candidate found in ${ms} ms — the relay works.` }
-        : { ok: false, text: `No relay candidate after ${ms} ms — credentials fetched, but the relay did not answer.` };
+      const check = await runRelayCheck(servers);
+      const verdict = summarise(check);
+      detail = check;
+      result = { ok: verdict.verdict === 'ok', text: verdict.text };
     } catch (err) {
       result = { ok: false, text: `Could not reach the credential endpoint: ${String(err)}` };
     } finally {
@@ -150,6 +135,16 @@
         <span>API key</span>
         <input type="password" bind:value={apiKey} spellcheck="false" autocomplete="off" />
       </label>
+      <!--
+        Metered issues three kinds of key and only one belongs here. The
+        account secret key fetches credentials happily but is not itself a
+        credential, so the relay then rejects the allocation — which surfaces
+        as a 401 in the test detail rather than as anything obvious.
+      -->
+      <p class="field-hint">
+        The credential-scoped key from <em>Add Credential</em>, not the account
+        secret key on the Developers page.
+      </p>
     {:else if provider === 'custom'}
       <label class="field">
         <span>Credentials URL</span>
@@ -166,6 +161,32 @@
 
     {#if result !== null}
       <p class="field-hint" class:field-error={!result.ok}>{result.text}</p>
+    {/if}
+
+    {#if detail !== null}
+      <!--
+        The detail is the useful half when it fails. Which endpoints were
+        offered says whether the account tier matches them; the ICE errors say
+        whether the relay refused or was never reached at all.
+      -->
+      <details class="relay-detail">
+        <summary>Detail</summary>
+        <p><strong>Servers offered</strong></p>
+        <ul>
+          {#each detail.servers as u (u)}<li>{u}</li>{/each}
+        </ul>
+        {#if detail.errors.length > 0}
+          <p><strong>ICE errors</strong></p>
+          <ul>
+            {#each detail.errors as e, i (i)}<li>{e.code} {e.text} — {e.url}</li>{/each}
+          </ul>
+        {/if}
+        <p>
+          relay candidates {detail.relayCandidates}
+          {#if detail.otherCandidates.length > 0}· without the relay policy: {detail.otherCandidates.join(', ')}{/if}
+          · credentials attached: {detail.credentialed ? 'yes' : 'no'}
+        </p>
+      </details>
     {/if}
 
     <div class="actions">
