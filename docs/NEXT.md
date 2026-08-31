@@ -10,6 +10,19 @@ The question driving it is not a protocol question. It is: **what is a space —
 what does it feel like, how is it shared, how is it found, what can be done to
 it, and how does it live out on the internet once it has been handed over?**
 
+## What the product is
+
+Stated plainly, because several threads below open directions that could quietly
+become the centre of gravity and should not:
+
+> **A website you go to, where you create a space, share it with peers via a
+> link, and drag files into it.**
+
+That is the product. Everything else in this document — other clients, folder
+backing, a Python API, links between spaces — is either in service of that or is
+a direction it *opens*, and should be read that way. When a horizon idea and the
+website pull in different directions, the website wins.
+
 ---
 
 ## Settled
@@ -400,3 +413,108 @@ None cost much now; each is expensive to retrofit.
    special-casing, and keeps §4.5's predicate intact across the truncation
    boundary. v0 already has the right shape one layer below its public API — do
    not let `Acc` become unreachable from outside `fold()`.
+
+---
+
+# Horizon: other clients, and storage as a seam
+
+**Not v1 scope, and not a change of direction.** The product is the website (see
+above). This section records what a second client implementation would buy and
+cost, because two of its constraints — the canonical encoding, and the
+folder-mapping question — are things v1 could foreclose by accident.
+
+The starting observation is that **localStorage is not a design property**. It
+is the most convenient backing for a browser, nothing more. Once storage is a
+seam rather than an assumption, several things follow: a CLI or TUI client, a
+Python API, and spaces backed by an ordinary directory — which is also how a
+pinning peer would work, without ever becoming a privileged role.
+
+## The real payoff is that a second implementation tests the spec
+
+There is currently exactly one implementation, so every ambiguity in SPEC.md is
+silently resolved by whatever the TypeScript happens to do. A second one
+surfaces them immediately, and the important ones are unforgiving:
+
+- **§2.1's canonical encoding must match byte for byte.** A difference in field
+  order, length prefixing or integer encoding means every `EventId` and every
+  `prev` disagrees, and nothing syncs at all. This is the highest-risk interop
+  surface and it bears directly on the protobuf question: fine as a wire format,
+  dangerous as the *hashed* one, because protobuf is not deterministic by spec.
+- **JS numbers are float64; Python integers are arbitrary precision.** `lamport`
+  and `seq` are exact only to 2^53 in a browser. §2.1's "no floats in hashed
+  positions" is currently aspirational; a second implementation is what makes it
+  enforced.
+- Then the subtler ones: the §3.1 contiguity rule, §4.5's `kill`/`live`
+  predicate, and cycle-breaking's tie-break.
+
+This is **mechanically checkable**, in the spirit of §1.3's shuffle test: a
+shared corpus of fixture vectors — event sets in, canonical bytes and folded
+state out — that every implementation must reproduce.
+
+**But a second implementation is a commitment device.** It is enormously
+valuable for spec quality and enormously expensive for spec churn: nobody
+casually rewrites a protocol with three clients. So it belongs *after* the
+throwaway experiments, not during them. Build it when the goal is to stop
+changing things.
+
+## Folder-as-repository and folder-as-working-tree are different features
+
+Git separates these for exactly the reasons that would bite here.
+
+**Folder as repository** — a `.thing/` directory holding the log and
+content-addressed blobs, opaque to the user. Lossless, no mapping problems, and
+it is all a pinning peer actually needs. It also dissolves
+[I2](ISSUES.md#i2-every-write-re-serialises-and-re-folds-the-entire-log): the
+quota was never a design property.
+
+**Folder as working tree** — materialised files edited with ordinary tools. Much
+harder, because the model deliberately permits what no filesystem can represent:
+sibling name collisions (§4.2), a `dir` with content and a `file` with children
+(§4.6), cycle-broken markers (§4.1), tombstoned objects that still exist (§4.5),
+and names that are empty, contain `/`, or collide case-insensitively on macOS
+and Windows. Every one is a case v0 renders deliberately rather than rejecting,
+so materialising means choosing a lossy resolution for each.
+
+**The write direction is worse.** A rename in Finder is indistinguishable from a
+delete-plus-create in a filesystem diff, but the two produce very different
+events: a rename preserves the UUID, its history, and any inbound links pointing
+at it. Git can infer renames heuristically because commits are explicit; here
+events *are* the truth, so a naive watcher generates semantically wrong history.
+First pass should be **explicit CLI verbs** (`thing mv`, `thing rm`), not
+filesystem watching — magic sync needs a sidecar path→UUID index and inode
+tracking, and is a much later problem.
+
+## Transport is already a seam, and that has a payoff
+
+Python speaking WebRTC is awkward — `aiortc`, plus PeerJS's own signalling
+protocol layered on websockets. But it probably is not needed: `peer.ts` is
+written against a `Channel`/`PeerLink` interface with PeerJS behind it, and
+FINDINGS' method notes already credit that indirection for localising a failure
+in one step. HELLO/EVENTS/GAP/WANT/BLOB can travel over a plain websocket.
+
+Which yields something worth noticing: **an always-on peer with a public address
+needs no NAT traversal at all.** Browsers open a websocket to it directly. A
+space with one public peer in it is reachable by everyone, with no hole-punching,
+no ICE, no TURN. That does not remove the need for TURN — two phones talking
+directly still need it — but the "keep something online" problem and the
+connectivity problem partly solve each other.
+
+Such a peer is privileged in **reachability** but not in **protocol** — same
+messages, same role, no special path — which keeps it inside §9's constraint.
+Worth stating that way explicitly so the distinction survives contact.
+
+## Where the seams are today
+
+- `peer.ts` already defines `BlobStore` and `EventLog` **interfaces**, so the
+  transport half is abstracted from storage.
+- `storage.ts` is flat free functions calling `localStorage` and `indexedDB`
+  directly, and `Space` imports them straight in — so **no storage seam exists at
+  the `Space` layer**. That is the concrete refactor this direction implies, and
+  it is modest: an interface with a localStorage implementation behind it.
+
+## The direction it opens
+
+A Python API makes spaces a substrate for automation and data interchange — a
+script publishing results into a space, a dataset shared without a bucket —
+which is a different thing from human file-sharing. Worth being conscious of as
+a possibility without letting it displace the website.
