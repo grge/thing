@@ -148,7 +148,45 @@ itself always be replicated in full"): a link determines what you might want
 next, so it is scope-determining and belongs in metadata as a **`:link`
 attribute** rather than in a blob.
 
-Two sub-decisions attached: whether links target a space or an object within one
+**Where a link lives — recommendation: an attribute any object may carry, not a
+special kind of object, and not a sidecar.**
+
+Three candidates were considered.
+
+*A sidecar list of links outside the filesystem* is the one to reject, on two
+grounds. It has nowhere to live: the model has no space-level state, so it would
+mean inventing a second kind of state beside the object tree. And it cannot be
+laid out — a sidecar entry has no `:pos`, which kills the index-as-map idea
+below, where curating an index means both selecting *and positioning* what it
+points at. Everything else a sidecar would need — naming, organising, deleting,
+moving — already exists for objects and would have to be rebuilt in parallel.
+
+*A dedicated link object type* — an object with a reserved `:type` and no
+`:content` — works, and inherits naming, parenting, `:pos`, tombstones and
+cross-space moves for free. But it is unnecessarily narrow.
+
+*`:link` as an attribute any object may carry* is better for the same cost. An
+object with `:link` and no `:content` is what the UI presents as a portal; an
+object with **both** is a card that shows a thumbnail and goes somewhere, which
+is exactly what a good index entry looks like. It also fits the existing model,
+where objects are bags of attributes and `:kind` is explicitly advisory (§4.6),
+and it degrades gracefully in a client that does not implement links — which
+matters once a second implementation exists.
+
+Proposed value: `:link = { space: <pubkey>, object?: <uuid> }`. Identity only —
+**no locator hints**, since locators are ephemeral and resolving them is the
+resolver's job ([ADDRESSING.md](ADDRESSING.md) §5.2). The link object's `:name`
+is then the *linker's* petname for the target, which is the right person to be
+labelling it.
+
+**Space-level metadata has a home already, and it dissolves the sidecar's one
+real advantage.** [F6](FINDINGS.md#f6-root-is-materialised-as-an-object-by-a-total-fold)
+established that `ROOT` is materialised as an object by a total fold. So
+**attributes on `ROOT` are space-level attributes** — no new concept required.
+That is where a space's suggested name ([ADDRESSING.md](ADDRESSING.md) §5.6)
+belongs, and where a fork could record `:link` back to what it forked from.
+
+Two sub-decisions remain: whether links target a space or an object within one
 (deep links are natural given stable UUIDs, but break across cross-space moves,
 which mint fresh UUIDs — [I12](ISSUES.md#i12-cross-space-move-is-a-copy-and-delete-not-a-move)),
 and the fact that **backlinks are impossible** — nobody can know who links to
@@ -608,11 +646,17 @@ separable things:
    accumulated history, not only current activity.
 4. **No friction** — arrive and type; no account, no setup.
 
-**The crux is (1), and it is where the models genuinely differ.** YWOT's feel
-comes from a *single shared coordinate space*, which is exactly what its server
-provides. This project is many independent spaces with no shared coordinate
-system and therefore no adjacency — and without adjacency you cannot wander, you
-can only jump.
+**But YWOT is a hybrid, not purely spatial.** It also has *named* worlds that
+link to each other, so wandering there is already a mix of roaming a continuous
+surface and jumping between named places. That matters, because the named-jump
+half is the part this project can do natively — the achievable version is closer
+to the reference than a purely spatial reading would suggest.
+
+**The spatial half is still where the models genuinely differ.** YWOT's
+continuity comes from a *single shared coordinate space*, which is exactly what
+its server provides. This project is many independent spaces with no shared
+coordinate system and therefore no adjacency — and without adjacency you cannot
+roam, you can only jump.
 
 Two ways to get there, and they are not the same thing:
 
@@ -658,3 +702,33 @@ shared reference point, everyone wandering separately in different rooms, and
 the population of any one map too thin to ever bump into anyone. **Which of
 those it turns out to be is a real question, and probably only answerable by
 building one and seeing whether it feels populated.**
+
+## IRC, and the limit of the social model
+
+The other precedent worth holding is **IRC**: within a channel you hear about
+other channels, they have different permission models, and access is negotiated
+socially — you ask someone you already know.
+
+What transfers, and cheaply:
+
+- **Discovery by mention, not by directory.** Hearing about a place *inside*
+  another place is word of mouth rather than a registry, and it is exactly the
+  index-as-a-space shape above, informally. IRC has `/list`, and on most networks
+  it is discouraged and unusable — the informal path is the one that works.
+- **Two of IRC's channel modes already exist here for free.** `+k` (keyed) is the
+  share code; `+i` (invite-only) is simply not publishing the link. Admission by
+  handing someone a capability is the model this project already has.
+
+**What does not transfer is the op.** IRC's social texture depends on someone
+being able to kick and ban — to say no *after* the fact and have it stick. That
+requires a chokepoint and an authority, which is exactly what uncontrollability
+gives up. So the IRC feel is available for **admission** and not for
+**exclusion**: "invite-only" here degrades to "I chose who to hand it to, and
+after that it is out of my hands."
+
+The eventual shape for exclusion, if it is ever wanted, is not moderation but
+**key rotation**: re-key the content going forward, so a removed reader keeps
+everything they already had and receives nothing new. That is how secure group
+messaging handles the same problem, and it is honest about what it can and
+cannot undo — which suits the rest of this design better than a moderator role
+would.
