@@ -229,3 +229,174 @@ on getting the link model right.
 experiment, but the felt experience of a space going dark is "my stuff
 disappeared", and that is the usual reason peer-to-peer systems lose to hosted
 ones.
+
+---
+
+# Where this is going: CRDTs and compaction
+
+**Not v1 scope.** Both are deliberately out of the next iteration. This section
+exists because the *destination* constrains what v1 should avoid foreclosing,
+and because the reasoning is expensive to reconstruct. The short version is at
+the bottom, as five things worth preserving.
+
+They break different layers, and the damage is asymmetric.
+
+## CRDTs (mode 3)
+
+**What survives — more than §7.3 implies.** The envelope claim is true:
+`{target, attr: ":yjs", value: <bytes>}` needs no change to §2. Per-writer hash
+chains do not care what events contain. Version vectors do not care. And §1.3
+survives: Yjs updates are commutative, associative and idempotent among
+themselves, so a fold that accumulates them stays order-independent, and
+`fold.test.ts`'s shuffle extends to cover them.
+
+**What breaks:**
+
+1. **The fold's resolution rule.** `Acc` in `fold.ts` is `(value, winningKey)`
+   per attribute — *"every field is a max over a set, hence commutative"*. LWW is
+   baked in as *the* operator. A `:yjs` attribute is the inverse: retain and
+   merge every update, never discard the loser. The fold goes from one operator
+   to **one operator per attribute**. Real, but additive, and both operators are
+   commutative so the correctness argument composes.
+
+2. **Volume, which breaks first and least elegantly.** §4.5 requires the deleted
+   predicate be computed over the whole set, never incrementally, and the fold
+   honours that by recomputing everything. [I2](ISSUES.md#i2-every-write-re-serialises-and-re-folds-the-entire-log)
+   already records `JSON.stringify(all events)` *and* `fold(all events)` per
+   write, with the localStorage quota around 28k events. Keystroke-granularity
+   updates hit that in one editing session. The practical wall arrives long
+   before any question of elegance.
+
+3. **Network and trust, which §7.3 does not mention.** Many writers means the
+   star topology (§3.4) has no centre, the reader/writer tab split (§8.6) stops
+   being binary, and [I5](ISSUES.md#i5-lamport-clocks-are-unenforceable-so-a-malicious-peer-wins-every-conflict)/[I6](ISSUES.md#i6-hello-is-unauthenticated-any-peer-can-claim-any-writer-id)
+   go from bounded to unbounded — I5 says so itself. **Signing becomes
+   mandatory**, which the direction above already assumes.
+
+## Compaction
+
+**What survives.** Commutativity is what *makes* snapshots work (§5 says so).
+Blobs are unaffected — immutable, no history. The fold's purity is unaffected;
+it is seeded with a state rather than an empty one.
+
+**What breaks:**
+
+1. **The hash chain and gap-fill — the sharpest break.** §3.2 chains by `prev`;
+   §3.3 holds unmatched events aside and re-issues `GAP` forever with no timeout,
+   deliberately ([I10](ISSUES.md#i10-a-permanently-missing-event-stalls-a-writers-chain-forever)).
+   Compaction deliberately deletes events. The protocol **cannot distinguish
+   "missing, in flight" from "gone, compacted"**, so a peer asking for a
+   truncated range stalls permanently, loudly. Needs a new wire concept —
+   `TRUNCATED { writer, upto, snapshot }` or similar — plus a fold that can start
+   from a snapshot rather than genesis.
+
+2. **The VV stops answering one question.** §3.1 is "highest contiguous seq
+   held". After truncation a peer *knows* the effect of A@0–20 but cannot *serve*
+   them. That needs two quantities: a **knowledge frontier** and a **retention
+   floor**. This is [I11](ISSUES.md#i11-version-vectors-cannot-express-i-hold-this-event-but-not-its-predecessor)'s
+   expressiveness gap from the other side.
+
+3. **§5's safety rule becomes unimplementable under the stance above.** §5 says
+   truncation must never drop below the minimum VV of any peer still being
+   served, with a pinning peer tracking known-peer VVs and holding a floor. But
+   a shared space is now uncontrollable and its peers unenumerable — **you
+   cannot hold a floor for peers you cannot see**. So compaction here is
+   necessarily unsafe-by-default, and snapshots stop being an optimisation and
+   become the *only* recovery path for a peer that fell behind. §5 needs
+   rewriting, not just implementing.
+
+4. **Compaction pulls against signing.** If identity is verified through the
+   signed chain, a compacting peer asserting "this is the fold of A@0–20" is not
+   A, and a reader trusting only A's key cannot verify it. Resolution: **only the
+   writer may compact its own chain**, and a snapshot is a writer-signed
+   checkpoint referencing the last event's hash, becoming a new genesis.
+   Single-writer-per-space makes that invariant free.
+
+## The circularity
+
+Mode 3 **requires** compaction (§5 and §7.3 both concede Yjs accumulation is
+unbounded), and compaction gets **harder** under mode 3, because a shared space
+spans many chains each needing its own author's attestation, so "only the writer
+compacts" stops being simple.
+
+Therefore: **compaction is cheap now and expensive after mode 3.** If both are
+wanted eventually, snapshots are substantially easier while spaces are still
+single-writer — even though CRDTs are the more interesting feature. Worth
+resisting the instinct to sequence by excitement.
+
+## What Yjs already does, and why it does not rescue the outer log
+
+Yjs does a lot of this internally, and knowing which parts matters.
+
+**It does compact.** Garbage collection is on by default: deleted content is
+dropped and replaced by a struct retaining only the id range. Deletions live in
+a range-encoded *delete set*, so tombstones compress to intervals rather than
+one per character. `Y.mergeUpdates()` collapses a set of updates into one
+equivalent update. `Y.encodeStateAsUpdate(doc)` produces a single update that
+reconstructs the whole document — effectively a snapshot. It even has the same
+shape of machinery as §3.1: item ids are `(client, clock)`, and
+`Y.encodeStateVector()` plus a diffing `encodeStateAsUpdate(doc, sv)` is exactly
+"send me what I lack".
+
+**What it does not compact away:** the identity skeleton. Even under GC the id
+ranges of deleted items survive, because a concurrent update referring to a
+deleted position must still resolve. Documents grow monotonically with edit
+history — far slower than a naive op log, but they do not shrink to the size of
+their content.
+
+**The part that matters here:** there are two logs, and Yjs only compacts one.
+If each update is wrapped as an outer event in a per-writer hash chain, **the
+outer log accumulates one event per update forever and Yjs's GC cannot touch
+it** — the outer log sees opaque bytes chained by hash, and compacting it means
+deleting from a hash chain, which is breakage (1) above. Yjs's compaction
+operates on precisely the structure the outer log refuses to let it have: the
+append-only, hash-chained, gap-detectable properties are what forbid merging the
+updates in place.
+
+**So the natural architecture is to stop wrapping every update as an event.**
+Let Yjs be the log for `:yjs` attributes: live collaboration rides the data
+channel directly (Yjs update exchange, state-vector diffed), and the outer log
+carries only **occasional checkpoint events** holding
+`Y.encodeStateAsUpdate(doc)` — merged and GC'd. The outer log's job becomes
+durability, handoff and replay rather than real-time transport. This is roughly
+what `y-webrtc` plus `y-indexeddb` do together, and it dodges most of the
+breakage above by never putting keystroke-granularity events in the chain.
+
+Two honest costs of that shape:
+
+- **Checkpoints are merges, so authorship blurs.** A checkpoint of concurrently
+  edited state is a function of several writers' contributions; whoever signs it
+  attests "I observed this state", not "I authored this". For a trust model whose
+  point is provenance, that is a real semantic downgrade, and it is the place
+  where multi-writer and signing genuinely conflict.
+- **Intermediate history is not recoverable.** A peer that was offline receives
+  the checkpoint, not the keystrokes. Normal for collaborative editors, but it
+  means the event log stops being a complete history for `:yjs` objects, which
+  contradicts the append-only-log-is-the-truth framing elsewhere.
+
+Resolution rule for such an attribute is not LWW but "merge every checkpoint
+held" — commutative and idempotent, so §1.3 still holds.
+
+*(Yjs specifics above are from general knowledge and worth re-verifying against
+the current library before anything is designed on top of them.)*
+
+## Five cheap things to preserve
+
+None cost much now; each is expensive to retrofit.
+
+1. **Make the per-attribute resolution rule dispatchable**, not hardcoded LWW —
+   even while every attribute is LWW.
+2. **Let the wire express "gone" as distinct from "missing"**, even if nothing
+   sends it yet.
+3. **Split the VV's two meanings in the type** — knowledge frontier, retention
+   floor — even while they are always equal.
+4. **Hold "only the writer compacts its own chain" as an invariant.** Free under
+   single-writer, and it is what keeps snapshots verifiable once signing lands.
+5. **Snapshot the accumulator, not the rendered state.** `Acc` carries
+   `(value, winningKey)` per attribute plus `kill`/`live`; `ObjectState` — what
+   `fold()` returns — **drops every key**. A snapshot of `State` is therefore
+   lossy: a straggler with an earlier lamport cannot be resolved against it. A
+   snapshot of the `Acc` map merges late arrivals by the same max rules with no
+   special-casing, and keeps §4.5's predicate intact across the truncation
+   boundary. v0 already has the right shape one layer below its public API — do
+   not let `Acc` become unreachable from outside `fold()`.
