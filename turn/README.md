@@ -38,6 +38,21 @@ cannot ask visitors to bring their own TURN server. The eventual answer is
 either a shipped default relay, which costs money, or a credential service like
 the one in `auth/`, which needs somewhere to run.
 
+**Two things about Metered specifically, both of which produce a relay that
+fetches credentials fine and then refuses to allocate:**
+
+- **Three kinds of key exist and only one belongs in a browser.** The
+  account-scoped *secret key* (Dashboard → Developers) is server-side only; the
+  credential-scoped *apiKey*, returned when a credential is created, is the one
+  that is safe for front-end use and the only one the Get Credential endpoint
+  takes. Using the wrong one still returns an ICE server array, so the mistake
+  only shows up later as a 401 at allocation time.
+- **The free plan is entitled to `standard.relay.metered.ca` only.** Region and
+  global endpoints are paid-plan features. If the dashboard hands back
+  `global.relay.metered.ca` on a free account, allocation can fail against a
+  host the account cannot use. The relay check reports which endpoints were
+  offered for exactly this reason.
+
 The custom-URL option is what makes the coturn deployment below reachable
 without a code change: `src/net/iceservers.ts` accepts both the bare array a
 managed provider returns and the `{ iceServers }` that `auth/` returns.
