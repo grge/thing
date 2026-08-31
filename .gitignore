@@ -1,3 +1,7 @@
 node_modules/
 dist/
 *.local
+
+# Local env; may contain a provider key.
+.env.local
+.env

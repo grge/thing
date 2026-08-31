@@ -16,6 +16,27 @@ says so in a comment). That measurement has been taken informally and the
 answer looks like "phones mostly fail", which is what carrier-grade NAT does.
 The next iteration assumes a relay instead of measuring its absence.
 
+## Current state: a managed provider
+
+**A Metered free-tier server is in use** while the question is simply *does a
+relay fix phone-to-phone at all*. The app reads its ICE servers from
+`VITE_TURN_CREDENTIALS_URL` (see `.env.example`), so switching between the
+managed provider and the coturn deployment here is a config change rather than
+a code change — `src/net/iceservers.ts` accepts both response shapes.
+
+Two things to know about that arrangement:
+
+- **The provider's API key is public.** It ships in the client bundle and is
+  readable by anyone who loads the page. That is inherent to a static site with
+  no backend, not a mistake — but it means the key is a rotatable throwaway and
+  someone else can spend the quota. Self-hosting what is in this directory is
+  what removes that property, because then the *secret* stays server-side and
+  only short-lived HMAC credentials reach the browser.
+- **The free tier is metered by bandwidth**, and relayed traffic is doubled —
+  every byte in is a byte out. That is fine for answering the question and not
+  fine for bulk blob transfer at any scale, which is the point at which the
+  coturn deployment below earns its keep.
+
 ## Shape
 
 | | |

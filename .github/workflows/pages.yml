@@ -30,6 +30,12 @@ jobs:
       - run: npm run build
         env:
           BASE_PATH: /thing/
+          # A repo *variable*, deliberately not a secret. The value ships in the
+          # client bundle and is readable by anyone who loads the page, so
+          # storing it as a secret would only buy false comfort — GitHub would
+          # mask it in logs while the deployed app hands it to every visitor.
+          # Treat it as rotatable. Self-hosting (turn/) is what makes it private.
+          VITE_TURN_CREDENTIALS_URL: ${{ vars.TURN_CREDENTIALS_URL }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

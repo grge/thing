@@ -20,6 +20,7 @@
  */
 import { Peer } from 'peerjs';
 import type { DataConnection } from 'peerjs';
+import { iceServers } from './iceservers.js';
 import type { LinkDiagnostics, PeerLink, Signalling } from './signalling.js';
 
 class PeerJsLink implements PeerLink {
@@ -156,20 +157,18 @@ export class PeerJsSignalling implements Signalling {
     return this.peer?.id ?? null;
   }
 
-  start(preferredId?: string): Promise<string> {
+  async start(preferredId?: string): Promise<string> {
+    /*
+     * Resolved before the peer exists, because PeerJS takes its ICE config at
+     * construction and never re-reads it. See `iceservers.ts` for why the
+     * credentials are fetched rather than bundled, and why a failed fetch
+     * degrades to STUN instead of throwing.
+     */
+    const servers = await iceServers();
+
     return new Promise((resolve, reject) => {
-      /*
-       * Explicit STUN, and deliberately no TURN: question 1 asks what fraction
-       * of peer pairs fail *without* a relay, so configuring one would destroy
-       * the measurement (§9).
-       */
       const options = {
-        config: {
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-          ],
-        },
+        config: { iceServers: servers },
         debug: 1 as const,
       };
       const peer = preferredId != null ? new Peer(preferredId, options) : new Peer(options);
