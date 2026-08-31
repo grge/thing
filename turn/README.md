@@ -72,7 +72,28 @@ Nothing is stored on either side; the username carries its own expiry. Rotating
 the secret invalidates every outstanding credential without a redeploy of the
 app.
 
-## The Fly caveat, which is real
+## Where this should run — not Fly
+
+Fly was the original plan and is the wrong tool. It is a port-mapped platform,
+and TURN wants a machine with a public IP and a UDP port range: each concurrent
+allocation consumes one relay port, and Fly wants every port declared rather
+than handed a range. `fly.toml` is kept here as a working-but-capped
+configuration and a record of why the approach was abandoned; it is **not the
+recommended path**.
+
+**A small VPS with a real public IPv4 is the boring correct answer** — full UDP
+range, no port declarations, straightforward Let's Encrypt for the TLS on
+5349/443. Bandwidth is what should drive the choice rather than CPU, because
+relayed traffic is doubled and this workload is multi-megabyte blobs rather
+than voice; Hetzner's included allowance is an order of magnitude past the
+usual $5 tier.
+
+It is also the same box a future always-on peer would live on. A peer with a
+public address needs no NAT traversal at all — browsers open a websocket
+straight to it — so one machine covers both the relay and the persistence
+problem that "keep a tab open" is currently standing in for.
+
+## The Fly caveat, in detail
 
 **coturn wants a public IP with a wide UDP port range. Fly's port model fights
 that.** Each concurrent TURN allocation consumes one relay port, and Fly wants
@@ -97,7 +118,7 @@ Three honest options:
 
 The config is the same for 1 and 2; only the wrapper differs.
 
-## Deploying to Fly
+## Deploying to Fly (kept for reference)
 
 ```sh
 fly launch --no-deploy                  # or: fly apps create <name>
