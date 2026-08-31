@@ -19,23 +19,28 @@ The next iteration assumes a relay instead of measuring its absence.
 ## Current state: a managed provider
 
 **A Metered free-tier server is in use** while the question is simply *does a
-relay fix phone-to-phone at all*. The app reads its ICE servers from
-`VITE_TURN_CREDENTIALS_URL` (see `.env.example`), so switching between the
-managed provider and the coturn deployment here is a config change rather than
-a code change — `src/net/iceservers.ts` accepts both response shapes.
+relay fix phone-to-phone at all*.
 
-Two things to know about that arrangement:
+**The credentials are entered in the app, not built into it.** Settings →
+Relay takes either a Metered subdomain and API key or a custom credentials URL,
+and stores it in `localStorage` on that device only (`src/app/settings.ts`). It
+never enters a space, never replicates, and is never committed.
 
-- **The provider's API key is public.** It ships in the client bundle and is
-  readable by anyone who loads the page. That is inherent to a static site with
-  no backend, not a mistake — but it means the key is a rotatable throwaway and
-  someone else can spend the quota. Self-hosting what is in this directory is
-  what removes that property, because then the *secret* stays server-side and
-  only short-lived HMAC credentials reach the browser.
-- **The free tier is metered by bandwidth**, and relayed traffic is doubled —
-  every byte in is a byte out. That is fine for answering the question and not
-  fine for bulk blob transfer at any scale, which is the point at which the
-  coturn deployment below earns its keep.
+That is a deliberate consequence of having no server: a key baked into the
+bundle would be published to everyone who loads the page, and they would spend
+the quota. Keeping it device-local means the key belongs to whoever entered it
+— the same shape as everything else in a local-first app.
+
+**The cost, stated plainly:** a deployment where the visitor has entered no
+credentials has no relay, and is exactly as unreachable for them as it is
+today. That is correct for an experiment and has an expiry — a public app
+cannot ask visitors to bring their own TURN server. The eventual answer is
+either a shipped default relay, which costs money, or a credential service like
+the one in `auth/`, which needs somewhere to run.
+
+The custom-URL option is what makes the coturn deployment below reachable
+without a code change: `src/net/iceservers.ts` accepts both the bare array a
+managed provider returns and the `{ iceServers }` that `auth/` returns.
 
 ## Shape
 

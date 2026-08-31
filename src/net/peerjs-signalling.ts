@@ -148,6 +148,13 @@ class PeerJsDiagnostics implements LinkDiagnostics {
 }
 
 export class PeerJsSignalling implements Signalling {
+  /**
+   * Where to fetch ICE servers from, or null for STUN only. Supplied by the
+   * app layer (`app/settings.ts`) rather than read here — `net/` knows nothing
+   * about storage or configuration.
+   */
+  constructor(private credentialsUrl: string | null = null) {}
+
   private peer: Peer | null = null;
   private peerHandlers: ((l: PeerLink) => void)[] = [];
   private errorHandlers: ((e: string) => void)[] = [];
@@ -164,7 +171,7 @@ export class PeerJsSignalling implements Signalling {
      * credentials are fetched rather than bundled, and why a failed fetch
      * degrades to STUN instead of throwing.
      */
-    const servers = await iceServers();
+    const servers = await iceServers(this.credentialsUrl);
 
     return new Promise((resolve, reject) => {
       const options = {

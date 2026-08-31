@@ -8,6 +8,7 @@ import { type Event, hex } from '../fold/index.js';
 import { Transport, type BlobStore, type EventLog } from '../net/peer.js';
 import type { WireEvent } from '../net/protocol.js';
 import { PeerJsSignalling } from '../net/peerjs-signalling.js';
+import { loadSettings, turnCredentialsUrl } from './settings.js';
 import { getBlob, putBlob, fromStored, toStored, type StoredEvent } from './storage.js';
 import type { Space } from './space.js';
 
@@ -52,7 +53,12 @@ export class Replication {
     private space: Space,
     private events: ReplicationEvents = {},
   ) {
-    this.transport = new Transport(new PeerJsSignalling(), blobStore, {
+    // Read at construction: a settings change takes effect for spaces opened
+    // after it, which is when the user would expect it to, and avoids
+    // reconfiguring a connection that is already up.
+    const credentials = turnCredentialsUrl(loadSettings());
+
+    this.transport = new Transport(new PeerJsSignalling(credentials), blobStore, {
       onOpen: (p) => this.events.onPeerOpen?.(p),
       onClose: (p) => this.events.onPeerClose?.(p),
       onError: (e) => this.events.onError?.(e),
