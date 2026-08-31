@@ -16,10 +16,14 @@ import type { Event } from '../fold/index.js';
 
 /** A PeerLink seen as the byte pipe blobtransfer.ts needs. */
 class LinkChannel implements Channel {
-  constructor(private link: PeerLink) {}
+  constructor(
+    private link: PeerLink,
+    private onSent?: (bytes: number) => void,
+  ) {}
 
   sendFrame(frame: ArrayBuffer): void {
     this.link.send(frame);
+    this.onSent?.(frame.byteLength);
   }
 
   get bufferedAmount(): number {
@@ -82,7 +86,21 @@ export class Transport {
     private events: TransportEvents = {},
   ) {
     signalling.onPeer((link) => this.adopt(link));
-    signalling.onError((err) => this.events.onError?.(err));
+    signalling.onError((err) => {
+      metrics.note('error', err);
+      this.events.onError?.(err);
+    });
+  }
+
+  /**
+   * The only place a channel is made, so byte counting cannot be forgotten in
+   * one of the five call sites that need it.
+   */
+  private channelFor(link: PeerLink): LinkChannel {
+    return new LinkChannel(link, (n) => {
+      const attempt = metrics.latestFor(link.peerId);
+      if (attempt !== undefined) attempt.bytesSent += n;
+    });
   }
 
   /**
@@ -108,7 +126,7 @@ export class Transport {
       for (const gap of this.pending.gaps()) {
         this.events.onStall?.(gap.writer, gap.from, gap.to);
         for (const link of this.links.values()) {
-          sendControl(new LinkChannel(link), {
+          sendControl(this.channelFor(link), {
             type: 'GAP',
             writer: gap.writer,
             from: gap.from,
@@ -124,7 +142,7 @@ export class Transport {
     if (this.log === null || events.length === 0) return;
     const wire = events.map((e) => this.log!.toWire(e));
     for (const link of this.links.values()) {
-      sendControl(new LinkChannel(link), { type: 'EVENTS', events: wire });
+      sendControl(this.channelFor(link), { type: 'EVENTS', events: wire });
     }
   }
 
@@ -136,8 +154,17 @@ export class Transport {
     return [...this.links.keys()];
   }
 
-  start(id?: string): Promise<string> {
-    return this.signalling.start(id);
+  async start(id?: string): Promise<string> {
+    try {
+      const assigned = await this.signalling.start(id);
+      metrics.note('registered', `peer id ${assigned}`);
+      return assigned;
+    } catch (err) {
+      // Failing to register is invisible in the connection table, because no
+      // connection is ever attempted — so it has to be recorded here.
+      metrics.note('error', `could not register with signalling: ${String(err)}`);
+      throw err;
+    }
   }
 
   /** Dial a peer. The attempt is recorded whether or not it succeeds. */
@@ -157,7 +184,23 @@ export class Transport {
 
   private adopt(link: PeerLink): void {
     const diag = this.signalling.diagnostics(link);
-    diag?.onIceStateChange((state) => this.events.onIce?.(link.peerId, state));
+
+    /*
+     * An outbound dial already recorded its attempt in connect(). An inbound
+     * one has recorded nothing — and in mode 2 the writer only ever accepts,
+     * so without this its own tab would show no connections at all, which is
+     * precisely the tab someone debugging would be watching.
+     */
+    let attempt = metrics.latestFor(link.peerId);
+    if (attempt === undefined || attempt.connectedAt !== null || attempt.failedAt !== null) {
+      attempt = metrics.beginConnection(link.peerId, 'accepted');
+    }
+    const record = attempt;
+
+    diag?.onIceStateChange((state) => {
+      record.iceStates.push(state);
+      this.events.onIce?.(link.peerId, state);
+    });
 
     link.onData((data) => void this.receive(link, data));
     link.onError((err) => this.events.onError?.(`${link.peerId}: ${err}`));
@@ -168,8 +211,15 @@ export class Transport {
 
     link.onOpen(() => {
       this.links.set(link.peerId, link);
+      if (record.connectedAt === null) record.connectedAt = Date.now();
+      // Asynchronous and best-effort: the pair is only in the stats once the
+      // connection is actually up, so it cannot be read any earlier.
+      void (async () => {
+        record.usedRelay = (await diag?.usedRelay()) ?? record.usedRelay;
+        record.pair = (await diag?.pairDetail()) ?? record.pair;
+      })();
       // The handshake: announce what we hold, so the peer can send the rest.
-      sendControl(new LinkChannel(link), {
+      sendControl(this.channelFor(link), {
         type: 'HELLO',
         space: this.space,
         protocol: PROTOCOL_VERSION,
@@ -183,11 +233,16 @@ export class Transport {
   want(hash: string): void {
     const fromChunk = this.receiving.get(hash)?.resumeFrom ?? 0;
     for (const link of this.links.values()) {
-      sendControl(new LinkChannel(link), { type: 'WANT', hash, fromChunk });
+      sendControl(this.channelFor(link), { type: 'WANT', hash, fromChunk });
     }
   }
 
   private async receive(link: PeerLink, data: ArrayBuffer | string): Promise<void> {
+    const inbound = metrics.latestFor(link.peerId);
+    if (inbound !== undefined) {
+      inbound.bytesReceived += typeof data === 'string' ? data.length : data.byteLength;
+    }
+
     const frame = decodeFrame(data);
     if (frame === null) {
       // A peer's bytes are never trusted to be well-formed (§3.5 in spirit).
@@ -239,7 +294,7 @@ export class Transport {
   }
 
   private async control(link: PeerLink, msg: Message): Promise<void> {
-    const channel = new LinkChannel(link);
+    const channel = this.channelFor(link);
 
     switch (msg.type) {
       case 'HELLO': {

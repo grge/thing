@@ -1316,3 +1316,20 @@ a {
 .actions-spacer {
   flex: 1 1 auto;
 }
+
+/* The log screen's own Events/Network switch, inside a pane head. */
+.viewswitch--inline {
+  margin: 0;
+  align-self: center;
+}
+
+.viewswitch--inline button {
+  min-height: 1.125rem;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.debug-note--inline {
+  margin: 0;
+  flex: 1 1 auto;
+}

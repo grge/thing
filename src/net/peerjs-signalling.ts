@@ -21,6 +21,7 @@
 import { Peer } from 'peerjs';
 import type { DataConnection } from 'peerjs';
 import { iceServers } from './iceservers.js';
+import type { PairDetail } from './metrics.js';
 import type { LinkDiagnostics, PeerLink, Signalling } from './signalling.js';
 
 class PeerJsLink implements PeerLink {
@@ -125,6 +126,34 @@ class PeerJsDiagnostics implements LinkDiagnostics {
       );
     };
     attach();
+  }
+
+  /**
+   * The succeeding candidate pair, in detail: which candidate types won, over
+   * which protocol, and — when relayed — how the client reached the TURN
+   * server. This is the "how was this negotiated" answer, and it is read from
+   * stats rather than inferred from configuration.
+   */
+  async pairDetail(): Promise<PairDetail | null> {
+    const pc = this.link.peerConnection;
+    if (pc === null) return null;
+    try {
+      const stats = (await pc.getStats()) as unknown as Map<string, Record<string, unknown>>;
+      for (const report of stats.values()) {
+        if (report['type'] !== 'candidate-pair' || report['state'] !== 'succeeded') continue;
+        const local = stats.get(report['localCandidateId'] as string);
+        const remote = stats.get(report['remoteCandidateId'] as string);
+        return {
+          local: (local?.['candidateType'] as string | undefined) ?? null,
+          remote: (remote?.['candidateType'] as string | undefined) ?? null,
+          protocol: (local?.['protocol'] as string | undefined) ?? null,
+          relayProtocol: (local?.['relayProtocol'] as string | undefined) ?? null,
+        };
+      }
+    } catch {
+      // Best effort; a missing number beats a thrown one.
+    }
+    return null;
   }
 
   /** Read from live ICE stats rather than assumed — this is the Q1 number. */
