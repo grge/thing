@@ -5,6 +5,7 @@
   import type { SpaceMode, SpaceRecord } from '../app/storage.js';
   import { parseShareUrl, peerIdForCode, shareUrl } from '../app/storage.js';
   import { Replication } from '../app/replication.js';
+  import { loadSettings, saveSettings, type Settings as AppSettings } from '../app/settings.js';
   import { hex, ROOT, type ObjectState } from '../fold/index.js';
   import { SvelteSet } from 'svelte/reactivity';
   import Debug from './Debug.svelte';
@@ -13,6 +14,7 @@
   import Icon from './Icon.svelte';
   import PeerList from './PeerList.svelte';
   import NewSpace from './NewSpace.svelte';
+  import Settings from './Settings.svelte';
   import Preview from './Preview.svelte';
   import Tree from './Tree.svelte';
 
@@ -27,6 +29,8 @@
   let showNewSpace = $state(false);
   let confirmDelete = $state<SpaceRecord | null>(null);
   let showPeers = $state(false);
+  let showSettings = $state(false);
+  let settings = $state<AppSettings>(loadSettings());
   /** One name prompt, reused for rename and new-directory. */
   let ask = $state<{
     title: string;
@@ -426,6 +430,27 @@
   }
 
   /**
+   * Apply new settings and reconnect.
+   *
+   * PeerJS takes its ICE configuration at construction and never re-reads it,
+   * so a relay added in settings would otherwise not apply until reload.
+   * Tearing the connections down and redialling is disruptive, but it is what
+   * the user just asked for by pressing Save.
+   */
+  function applySettings(next: AppSettings): void {
+    settings = next;
+    saveSettings(next);
+    showSettings = false;
+
+    for (const rep of replication.values()) rep.stop();
+    replication.clear();
+    peerIds = {};
+    peerCounts = {};
+    for (const rec of spaces) void startReplication(rec);
+    notify('Settings saved — reconnecting.');
+  }
+
+  /**
    * Mode is fixed at creation (§8.3). There is no promoting a local space to a
    * shared one in v0, so this is the only place a mode is ever chosen.
    */
@@ -620,6 +645,13 @@
   onConfirm={() => confirmDelete !== null && void deleteSpace(confirmDelete)}
 />
 
+<Settings
+  open={showSettings}
+  {settings}
+  onCancel={() => (showSettings = false)}
+  onSave={applySettings}
+/>
+
 <NewSpace
   open={showNewSpace}
   onCancel={() => (showNewSpace = false)}
@@ -709,6 +741,14 @@
         onclick={() => (showDebug = true)}
       ><Icon name="log" size={12} /> Log</button>
     </div>
+
+    <button
+      class="tab-settings"
+      type="button"
+      title="Settings"
+      aria-label="Settings"
+      onclick={() => (showSettings = true)}
+    ><Icon name="settings" size={13} /></button>
   </div>
 
   {#if showDebug && space !== null}

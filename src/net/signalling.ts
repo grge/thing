@@ -11,6 +11,8 @@
  * hard dependency on one broker would make that harder than it needs to be.
  */
 
+import type { PairDetail } from './metrics.js';
+
 /**
  * A live bidirectional link to one peer.
  *
@@ -37,6 +39,11 @@ export interface PeerLink {
 /** Whether a link needed a TURN relay — the headline number for question 1. */
 export interface LinkDiagnostics {
   usedRelay(): Promise<boolean | null>;
+  /**
+   * How the succeeding candidate pair was formed. Read from live ICE stats, so
+   * it says what actually happened rather than what was configured.
+   */
+  pairDetail(): Promise<PairDetail | null>;
   iceState(): string | null;
   onIceStateChange(handler: (state: string) => void): void;
 }

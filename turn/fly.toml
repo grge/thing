@@ -1,0 +1,79 @@
+# Fly deployment. Read the "Deploying" section of README.md first — Fly's port
+# model and coturn's relay-port range are in genuine tension, and the narrow
+# range below is the compromise that makes it work.
+
+app = "turn"
+primary_region = "syd"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  TURN_REALM = "turn.example.com"
+  TURN_MIN_PORT = "49160"
+  TURN_MAX_PORT = "49200"
+  # TURN_EXTERNAL_IP is set from the allocated dedicated IPv4 — see README.
+  # TURN_SECRET is a secret: fly secrets set TURN_SECRET=...
+
+# One machine, always on. A TURN server that has scaled to zero is a TURN
+# server that is not there when the connection it exists for is attempted.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+# ── STUN/TURN, plain ──────────────────────────────────────────────────────
+[[services]]
+  internal_port = 3478
+  protocol = "udp"
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+  [[services.ports]]
+    port = 3478
+
+[[services]]
+  internal_port = 3478
+  protocol = "tcp"
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+  [[services.ports]]
+    port = 3478
+
+# ── TLS, including 443 ────────────────────────────────────────────────────
+# 443 is the one that matters. Networks that block everything else still let
+# HTTPS out, and those are precisely the networks whose users need the relay.
+[[services]]
+  internal_port = 5349
+  protocol = "tcp"
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+  [[services.ports]]
+    port = 5349
+
+[[services]]
+  internal_port = 443
+  protocol = "tcp"
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+  [[services.ports]]
+    port = 443
+
+# ── Relay range ───────────────────────────────────────────────────────────
+# Fly wants every port declared, and coturn wants a range. 41 ports is a
+# deliberate compromise: enough for a POC's concurrency, few enough to write
+# out. Keep in sync with TURN_MIN_PORT / TURN_MAX_PORT above.
+#
+# If this becomes the limit, that is the signal to move to a plain VPS with a
+# real public IP rather than to grow this list — see README.
+[[services]]
+  internal_port = 49160
+  protocol = "udp"
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+  [[services.ports]]
+    start_port = 49160
+    end_port = 49200
