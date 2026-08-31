@@ -11,6 +11,7 @@ Throwaway proof of concept.
 | [PLAN.md](docs/PLAN.md) | The build order — what gets built when |
 | [MOBILE.md](docs/MOBILE.md) | Plan for making the UI usable on a phone |
 | [NEXT.md](docs/NEXT.md) | Notes toward the next experiment. Pre-spec |
+| [ADDRESSING.md](docs/ADDRESSING.md) | Addressing and identity — a proposal, for decision |
 | [FINDINGS.md](docs/FINDINGS.md) | Evidence — what was learned. Append-only |
 | [ISSUES.md](docs/ISSUES.md) | State — what is currently wrong. Mutable |
 
