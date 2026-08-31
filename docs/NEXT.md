@@ -533,3 +533,128 @@ A Python API makes spaces a substrate for automation and data interchange — a
 script publishing results into a space, a dataset shared without a bucket —
 which is a different thing from human file-sharing. Worth being conscious of as
 a possibility without letting it displace the website.
+
+---
+
+# Discovery, indexes, and what wandering should feel like
+
+## The tension
+
+Two things already settled pull against each other:
+
+- **Uncontrollability**: once shared, a space's creator cannot see where it went,
+  cannot enumerate who holds it, and cannot recall it.
+- **The Napster-shaped ambition**: people should be able to *find* things they
+  were never handed a link to.
+
+Findable-by-strangers and invisible-to-its-author are not obviously compatible.
+A global index would resolve it by contradicting the first, and a central
+registry is against the project's grain regardless.
+
+## The resolution: an index is just a space someone publishes
+
+A signalling server — or anyone at all — may choose to publish an index, and
+**the index is itself an ordinary space**. Same protocol, same fold, same
+replication, no privileged mechanism.
+
+This works because it needs *nothing new*. Given links as `:link` attributes and
+spaces that anyone can publish, **an index is an emergent artifact rather than a
+feature**: a space whose contents are links to other spaces.
+
+It resolves the tension by making listing a **curatorial act by a third party**,
+not a global property of a space:
+
+- A creator does not control whether they are listed — consistent with
+  uncontrollability.
+- Being listed requires *someone else* to have chosen to list you — so discovery
+  is opt-in on the curator's side, and plural.
+- Many indexes can coexist, overlap and disagree. An index can be forked,
+  linked, and curated differently, like anything else.
+
+The precedent is the pre-search-engine web: curated directories, webrings,
+del.icio.us. Napster's index was one server; this is many, and none of them is
+load-bearing.
+
+**Wrinkles worth knowing:**
+
+- **Link rot is the whole operational cost.** An index lists spaces; spaces go
+  dark when nobody serves them. Without pruning, an index decays into a
+  graveyard, and pruning means the curator actively probing. An index is only
+  as good as its curator's diligence.
+- **A signalling server is unusually well placed to build one automatically**,
+  because it already sees which rendezvous slots are claimed and joined. "Spaces
+  I have seen peers for recently" is nearly free for it to produce.
+- **Which makes "unlisted" a concept that has to exist.** That capability is not
+  new leakage — the signalling layer already sees rendezvous traffic — but
+  publishing it turns incidental knowledge into deliberate exposure. It bears
+  directly on [ADDRESSING.md](ADDRESSING.md) §5.3's open sub-decision: a
+  rendezvous code *derived* from the key means anyone holding the key can find
+  you and the signalling server can enumerate activity, whereas an *independent*
+  code can be kept out of band. Wanting unlisted spaces argues for keeping the
+  independent option alive.
+
+## The feel: Your World of Text
+
+The reference for how discovery plus mode 3 should feel is **yourworldoftext** —
+wandering, and serendipitously finding interesting things other people are
+working on in real time. Worth decomposing, because its feel is made of four
+separable things:
+
+1. **Spatial continuity** — one continuous coordinate space, so wandering is
+   movement rather than search. Discovery is a side effect of travelling.
+2. **Ambient presence** — other people visibly there, live. The place feels
+   inhabited.
+3. **Persistent traces** — what people made stays, so wandering finds
+   accumulated history, not only current activity.
+4. **No friction** — arrive and type; no account, no setup.
+
+**The crux is (1), and it is where the models genuinely differ.** YWOT's feel
+comes from a *single shared coordinate space*, which is exactly what its server
+provides. This project is many independent spaces with no shared coordinate
+system and therefore no adjacency — and without adjacency you cannot wander, you
+can only jump.
+
+Two ways to get there, and they are not the same thing:
+
+- **Links as adjacency.** Wandering means traversing `:link`s. Web-shaped or
+  webring-shaped: real serendipity, no continuity. You hop rather than roam.
+  Cheap, and already in scope.
+- **A shared coordinate space.** Requires a coordinate system spanning spaces,
+  which sounds like it needs a global namespace — against the grain.
+
+**Except it does not, and the pieces are already lying around.** `:pos` already
+exists (§4.4) and the fold already resolves it; the canvas was v0's stage 6 and
+was never built. An **index space whose entries carry `:pos` is a map**: a
+curator both selects *and lays out* a set of spaces, and you pan around their
+world and enter what you find. Many maps can exist, each a different curated
+world, with no global namespace and no authority.
+
+That gives a much stronger reason to build the canvas than it previously had.
+Stage 6 was "a different view of a file tree"; this makes it **the way you wander
+the network**.
+
+## Presence is not mode 3, and presence is cheap
+
+Item (2) above is worth separating out, because it is easy to assume it needs
+collaborative editing and it does not. **Presence is ephemeral**: who is here,
+where they are looking, maybe a cursor. It never needs to enter the log, never
+needs compaction, never needs a CRDT — it is transient state exchanged over the
+data channel and discarded.
+
+So a large fraction of the YWOT feel — the sense that a place is *inhabited* —
+is available long before mode 3, at a fraction of the cost. Worth knowing when
+sequencing: if the goal is the feel, presence buys more of it per unit of work
+than collaborative editing does.
+
+## The honest difference
+
+YWOT is server-based and that is not incidental: one server is what makes one
+coordinate space, one presence fan-out, and one persistent world possible.
+Getting the feel without it means accepting that a "world" is a **curated,
+partial, forkable view** rather than the canonical one.
+
+That may be better — many worlds, no owner, anyone can make one — or worse: no
+shared reference point, everyone wandering separately in different rooms, and
+the population of any one map too thin to ever bump into anyone. **Which of
+those it turns out to be is a real question, and probably only answerable by
+building one and seeing whether it feels populated.**
