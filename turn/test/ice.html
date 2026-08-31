@@ -1,0 +1,130 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TURN relay check</title>
+<style>
+  :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }
+  body { margin: 0; padding: 1rem; max-width: 52rem; }
+  h1 { font-size: 1.125rem; margin: 0 0 .25rem; }
+  p.note { color: #666; font-size: .8125rem; margin: 0 0 1rem; }
+  label { display: block; font-size: .8125rem; margin: .5rem 0 .125rem; }
+  input { width: 100%; padding: .375rem; font: inherit; font-family: ui-monospace, monospace; font-size: .8125rem; }
+  button { margin-top: .75rem; padding: .375rem .75rem; font: inherit; cursor: pointer; }
+  .verdict { margin: 1rem 0; padding: .625rem .75rem; border-left: 3px solid #888; font-weight: 600; }
+  .verdict.pass { border-color: #1f6f3f; }
+  .verdict.fail { border-color: #a22b2b; }
+  .verdict.wait { border-color: #c76b00; }
+  table { border-collapse: collapse; width: 100%; font-size: .8125rem; font-family: ui-monospace, monospace; }
+  th, td { text-align: left; padding: .25rem .5rem; border-bottom: 1px solid #8884; vertical-align: top; }
+  td.relay { font-weight: 700; }
+  pre { font-size: .75rem; background: #8881; padding: .5rem; overflow-x: auto; }
+</style>
+
+<h1>TURN relay check</h1>
+<p class="note">
+  Gathers ICE candidates against the server and reports whether a
+  <strong>relay</strong> candidate appears. A relay candidate is the only proof
+  that TURN is actually working — <code>srflx</code> only proves STUN works, which
+  it already did.
+</p>
+
+<label for="auth">Credential endpoint (returns <code>{ iceServers }</code>)</label>
+<input id="auth" value="https://turn-auth.example.workers.dev/">
+
+<label for="manual">…or paste ICE servers directly as JSON (overrides the above)</label>
+<input id="manual" placeholder='[{"urls":"turn:host:3478","username":"...","credential":"..."}]'>
+
+<button id="run">Run check</button>
+
+<div class="verdict wait" id="verdict">Not started.</div>
+
+<table>
+  <thead><tr><th>Type</th><th>Protocol</th><th>Address</th><th>Related</th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+
+<pre id="log"></pre>
+
+<script type="module">
+  const $ = (id) => document.getElementById(id);
+  const log = (m) => { $('log').textContent += m + '\n'; };
+
+  function setVerdict(cls, text) {
+    const el = $('verdict');
+    el.className = 'verdict ' + cls;
+    el.textContent = text;
+  }
+
+  async function iceServers() {
+    const manual = $('manual').value.trim();
+    if (manual !== '') {
+      log('using pasted ICE servers');
+      return JSON.parse(manual);
+    }
+    const url = $('auth').value.trim();
+    log(`fetching credentials from ${url}`);
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`credential endpoint returned ${res.status}`);
+    const body = await res.json();
+    log(`credentials expire at ${new Date((body.expiresAt ?? 0) * 1000).toISOString()}`);
+    return body.iceServers ?? [{ urls: body.urls, username: body.username, credential: body.credential }];
+  }
+
+  $('run').addEventListener('click', async () => {
+    $('rows').innerHTML = '';
+    $('log').textContent = '';
+    setVerdict('wait', 'Gathering…');
+
+    let servers;
+    try {
+      servers = await iceServers();
+    } catch (err) {
+      setVerdict('fail', `Could not get credentials: ${err.message}`);
+      return;
+    }
+
+    // iceTransportPolicy:'relay' discards host and srflx candidates outright,
+    // so anything that arrives had to come through the TURN server. Without it
+    // a working STUN path masks a broken relay.
+    const pc = new RTCPeerConnection({ iceServers: servers, iceTransportPolicy: 'relay' });
+    let sawRelay = false;
+    const started = performance.now();
+
+    pc.addEventListener('icecandidate', (e) => {
+      if (e.candidate === null) {
+        const ms = Math.round(performance.now() - started);
+        if (sawRelay) setVerdict('pass', `Relay candidate found — TURN is working (${ms} ms)`);
+        else setVerdict('fail', `No relay candidate after ${ms} ms — TURN is not working`);
+        pc.close();
+        return;
+      }
+      const c = e.candidate;
+      const row = document.createElement('tr');
+      const cells = [c.type ?? '?', c.protocol ?? '?', `${c.address ?? '?'}:${c.port ?? '?'}`, c.relatedAddress ?? ''];
+      cells.forEach((v, i) => {
+        const td = document.createElement('td');
+        td.textContent = v;
+        if (i === 0 && c.type === 'relay') td.className = 'relay';
+        row.append(td);
+      });
+      $('rows').append(row);
+      if (c.type === 'relay') sawRelay = true;
+    });
+
+    pc.addEventListener('icecandidateerror', (e) => {
+      // 701 is the usual "TURN server rejected us" — most often a bad or
+      // expired credential, which is worth distinguishing from unreachable.
+      log(`ICE error ${e.errorCode}: ${e.errorText} (${e.url ?? 'no url'})`);
+    });
+
+    pc.createDataChannel('probe');
+    await pc.setLocalDescription(await pc.createOffer());
+
+    setTimeout(() => {
+      if (pc.iceGatheringState !== 'complete') {
+        setVerdict(sawRelay ? 'pass' : 'fail', sawRelay ? 'Relay candidate found — TURN is working' : 'Timed out with no relay candidate');
+        pc.close();
+      }
+    }, 15000);
+  });
+</script>

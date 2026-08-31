@@ -1,0 +1,13 @@
+name = "turn-auth"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+[vars]
+# Both entries matter: 3478 for the common case, 443 over TLS for networks
+# that allow nothing else — which are the networks that needed a relay anyway.
+TURN_URLS = "turn:turn.example.com:3478,turns:turn.example.com:443"
+ALLOW_ORIGIN = "*"
+TTL_SECONDS = "3600"
+
+# TURN_SECRET is a secret, never a var:
+#   wrangler secret put TURN_SECRET

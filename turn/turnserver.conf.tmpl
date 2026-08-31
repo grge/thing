@@ -1,0 +1,63 @@
+# Rendered from this template at boot by entrypoint.sh. Do not edit in place.
+
+listening-port=3478
+tls-listening-port=5349
+# 443 as well: the whole point of TLS relay is getting through networks that
+# permit nothing but HTTPS. A TURN server without it fails exactly the users
+# who needed a relay most.
+alt-tls-listening-port=443
+
+# The address peers dial. Left half public, right half what the container sees.
+external-ip=${TURN_EXTERNAL_IP}
+
+realm=${TURN_REALM}
+
+# ── Authentication ────────────────────────────────────────────────────────
+# HMAC / "TURN REST API" credentials, not static ones. The client is a public
+# web page: a static username and password shipped in its bundle is an open
+# relay with your name on the bandwidth bill. Instead a credential service
+# mints short-lived pairs from this secret (see auth/).
+use-auth-secret
+static-auth-secret=${TURN_SECRET}
+
+# ── Relay range ───────────────────────────────────────────────────────────
+# Deliberately narrow. Each concurrent allocation consumes one port, so this
+# caps concurrency — fine for a POC, and it is what makes a port-mapped host
+# like Fly viable at all. See README.
+min-port=${TURN_MIN_PORT}
+max-port=${TURN_MAX_PORT}
+
+# ── Hardening ─────────────────────────────────────────────────────────────
+fingerprint
+no-multicast-peers
+no-loopback-peers
+
+# An open relay that can reach private ranges is a proxy into every internal
+# network it can see — including cloud metadata at 169.254.169.254. Deny them
+# explicitly; the default is not restrictive enough to rely on.
+denied-peer-ip=0.0.0.0-0.255.255.255
+denied-peer-ip=10.0.0.0-10.255.255.255
+denied-peer-ip=100.64.0.0-100.127.255.255
+denied-peer-ip=127.0.0.0-127.255.255.255
+denied-peer-ip=169.254.0.0-169.254.255.255
+denied-peer-ip=172.16.0.0-172.31.255.255
+denied-peer-ip=192.0.0.0-192.0.0.255
+denied-peer-ip=192.0.2.0-192.0.2.255
+denied-peer-ip=192.168.0.0-192.168.255.255
+denied-peer-ip=198.18.0.0-198.19.255.255
+denied-peer-ip=198.51.100.0-198.51.100.255
+denied-peer-ip=203.0.113.0-203.0.113.255
+denied-peer-ip=240.0.0.0-255.255.255.255
+denied-peer-ip=::1
+denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+
+# ── Quotas ────────────────────────────────────────────────────────────────
+# Bulk blob transfer, not voice: allocations are few and fat rather than many
+# and thin. These are starting guesses to be revised against real numbers.
+user-quota=12
+total-quota=1200
+
+no-cli
+no-tlsv1
+no-tlsv1_1
