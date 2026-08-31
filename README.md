@@ -10,6 +10,7 @@ Throwaway proof of concept.
 | [SPEC.md](docs/SPEC.md) | The design — what v0 is |
 | [PLAN.md](docs/PLAN.md) | The build order — what gets built when |
 | [MOBILE.md](docs/MOBILE.md) | Plan for making the UI usable on a phone |
+| [NEXT.md](docs/NEXT.md) | Notes toward the next experiment. Pre-spec |
 | [FINDINGS.md](docs/FINDINGS.md) | Evidence — what was learned. Append-only |
 | [ISSUES.md](docs/ISSUES.md) | State — what is currently wrong. Mutable |
 
