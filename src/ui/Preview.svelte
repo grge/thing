@@ -1,6 +1,7 @@
 <script lang="ts">
-  import type { ObjectState } from '../fold/index.js';
+  import type { Link, ObjectState } from '../fold/index.js';
   import { hex } from '../fold/index.js';
+  import { codeForSpace } from '../app/address.js';
   import { downloadType, effectiveType, parseType } from '../app/mime.js';
   import Icon from './Icon.svelte';
   import { rendererFor } from './renderers/registry.js';
@@ -8,6 +9,8 @@
 
   interface Props {
     obj: ObjectState | null;
+    /** Follow a link to its target space. Absent in contexts that cannot. */
+    onFollow?: (link: Link) => void;
     path: string;
     /** Resolved blob bytes, or null when this peer does not hold it. */
     blob: Uint8Array | null;
@@ -27,6 +30,7 @@
 
   let {
     obj,
+    onFollow,
     path,
     blob,
     loading,
@@ -42,6 +46,26 @@
    * markdown bytes, so only the assertion distinguishes them (FINDINGS F11).
    */
   let type = $derived(effectiveType(obj?.type ?? null, obj?.name ?? null));
+
+  /**
+   * The target's short code, derived rather than stored so it cannot drift from
+   * the identity it names. Async, hence an effect.
+   */
+  let linkCode = $state<string | null>(null);
+  $effect(() => {
+    const link = obj?.link ?? null;
+    if (link === null) {
+      linkCode = null;
+      return;
+    }
+    let stale = false;
+    void codeForSpace(hex(link.space)).then((c) => {
+      if (!stale) linkCode = c;
+    });
+    return () => {
+      stale = true;
+    };
+  });
   let renderer = $derived(rendererFor(type));
 
   function size(n: number): string {
@@ -145,6 +169,24 @@
         {/if}
       </div>
 
+      {#if obj.link !== null}
+        <!--
+          A link is identity, not a location, so what is shown is the target's
+          code — the same derived, typeable handle the share bar shows — rather
+          than the 64-character key it derives from (DESIGN.md §4.3).
+        -->
+        <div class="preview-link">
+          <Icon name="link" size={12} />
+          <code>{linkCode ?? '········'}</code>
+          {#if obj.link.object !== undefined}
+            <span class="preview-link-deep" title="Points at one object inside that space">
+              /{hex(obj.link.object).slice(0, 6)}…
+            </span>
+          {/if}
+          <button type="button" onclick={() => onFollow?.(obj!.link!)}>Open</button>
+        </div>
+      {/if}
+
       {#if blob !== null}
         <div class="preview-actions">
           {#if copyable}
@@ -168,10 +210,24 @@
       {#if previewState === 'rendered' && renderer !== null && blob !== null}
         <renderer.component bytes={blob} {type} name={obj.name} />
       {:else if previewState === 'no-content'}
-        <div class="state" data-state="no-content">No content.</div>
-        <div class="state-detail">
-          {obj.kind === 'dir' ? `A directory with ${childCount} children.` : 'An object holding no blob.'}
-        </div>
+        {#if obj.link !== null}
+          <!--
+            A portal holds no blob, but "no content" describes an empty file and
+            reads as a fault. What this object is *for* is the link, so say that
+            instead (DESIGN.md §2.1).
+          -->
+          <div class="state" data-state="no-content">A link.</div>
+          <div class="state-detail">
+            {obj.link.object === undefined
+              ? 'Points at another space. Open to go there.'
+              : 'Points at one object in another space. Open to go there.'}
+          </div>
+        {:else}
+          <div class="state" data-state="no-content">No content.</div>
+          <div class="state-detail">
+            {obj.kind === 'dir' ? `A directory with ${childCount} children.` : 'An object holding no blob.'}
+          </div>
+        {/if}
       {:else if previewState === 'fetching'}
         <div class="state" data-state="fetching">Fetching…</div>
         {#if progress !== null}

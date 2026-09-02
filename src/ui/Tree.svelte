@@ -32,6 +32,17 @@
     if (n.obj.kind === 'dir') return String(n.children.length);
     return n.obj.content === null ? '—' : '·';
   }
+
+  /**
+   * What a link on this row is. An object with a link and no content is a
+   * portal; one with both is a card — a thumbnail that goes somewhere
+   * (DESIGN.md §2.1). Worth distinguishing in the tree, because they behave
+   * differently when selected.
+   */
+  function linkKind(n: TreeNode): 'portal' | 'card' | null {
+    if (n.obj.link === null) return null;
+    return n.obj.content === null ? 'portal' : 'card';
+  }
 </script>
 
 {#snippet row(n: TreeNode)}
@@ -88,6 +99,15 @@
       >{isDir ? (expanded.has(n.key) ? '▾' : '▸') : '·'}</span>
 
       <span class="row-name">{n.obj.name ?? '(unnamed)'}</span>
+
+      {#if linkKind(n) !== null}
+        <span
+          class="badge badge-link"
+          title={linkKind(n) === 'card'
+            ? 'Has content and points at another space'
+            : 'Points at another space'}>→</span
+        >
+      {/if}
 
       {#if n.obj.cycleBroken}
         <span class="badge" title="Re-parented to root to break a cycle (§4.1)">cycle</span>

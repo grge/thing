@@ -103,6 +103,20 @@ describe('joining', () => {
     expect(m.confirmIdentity(rec, 'b'.repeat(64)).ok).toBe(false);
   });
 
+  it('following a link joins the space its key names, as a reader', async () => {
+    const m = await Spaces.load();
+    const target = (await m.create('holiday', 'writer')).id;
+
+    // What followLink does: resolve the link's space as a key, with the
+    // linking object's name as the petname (DESIGN.md §2.1).
+    const rec = await m.resolve({ kind: 'key', id: target, name: '' }, 'a friend');
+    expect(rec!.id).toBe(target);
+    expect(rec!.mode).toBe('reader');
+    expect(rec!.name).toBe('a friend');
+    // Verified by key, so nothing to pin.
+    expect(rec!.handle).toBeUndefined();
+  });
+
   it('a link-joined space has nothing to confirm', async () => {
     const m = await Spaces.load();
     const id = (await m.create('photos', 'writer')).id;

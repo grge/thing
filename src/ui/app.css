@@ -423,6 +423,50 @@ a {
   line-height: 1.2;
 }
 
+/*
+  A link is an ordinary property of an object, not a fault, so it does not
+  borrow the base badge's danger colour — that is reserved for `cycle`, which
+  reports the fold having intervened.
+*/
+.preview-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+  color: var(--ink-muted);
+  font-size: var(--text--1);
+}
+
+.preview-link code {
+  font-family: var(--font-data);
+  color: var(--ink);
+  letter-spacing: 0.14em;
+}
+
+.preview-link-deep {
+  font-family: var(--font-data);
+}
+
+.preview-link button {
+  margin-left: auto;
+  font: inherit;
+  font-size: var(--text--2);
+  padding: 0 var(--space-2);
+  min-height: 1.25rem;
+  background: var(--canvas);
+  border: 1px solid var(--rule);
+  color: var(--ink-muted);
+}
+
+.preview-link button:hover {
+  color: var(--ink);
+}
+
+.badge-link {
+  color: var(--ink-muted);
+  border-color: var(--rule);
+}
+
 /* ── Preview (§8.2) ────────────────────────────────────────────────────── */
 
 .preview-head {

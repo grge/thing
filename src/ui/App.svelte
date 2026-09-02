@@ -6,7 +6,7 @@
   import { codeForSpace, defaultLocator, parseShareInput, shareUrl } from '../app/address.js';
   import { Replication } from '../app/replication.js';
   import { loadSettings, saveSettings, type Settings as AppSettings } from '../app/settings.js';
-  import { hex, ROOT, type ObjectState } from '../fold/index.js';
+  import { fromHex, hex, ROOT, type Link, type ObjectState } from '../fold/index.js';
   import { SvelteSet } from 'svelte/reactivity';
   import Debug from './Debug.svelte';
   import AskName from './AskName.svelte';
@@ -468,6 +468,69 @@
     await mutate((s) => s.setDeleted(selectedObj!.uuid, !selectedObj!.deleted));
   }
 
+  /**
+   * Follow a link: join the space it names, as a reader.
+   *
+   * A link carries identity, so this is the verified path — the same one an
+   * opened share link takes, with the key known before contact (DESIGN.md
+   * §4.4). Idempotent: following a link to a space already open just switches
+   * to it rather than joining twice.
+   */
+  async function followLink(link: Link, name?: string): Promise<void> {
+    if (manager === null) return;
+    const id = hex(link.space);
+    const existing = manager.list.find((r) => r.id === id);
+    if (existing !== undefined) {
+      activeId = existing.id;
+      // A deep link names an object; select it if this space holds it. It may
+      // not — the target may have been moved across spaces, which mints a fresh
+      // uuid and leaves the link dangling (I12).
+      selected = link.object === undefined ? null : hex(link.object);
+      return;
+    }
+    // The linking object's own name is the linker's petname for the target
+    // (DESIGN.md §2.1) — a better handle than "shared", and the only name this
+    // device has for a space it has never met.
+    const resolved = await manager.resolve({ kind: 'key', id, name: '' }, name);
+    if (resolved === null) return;
+    const rec = await manager.join(resolved);
+    spaces = manager.list;
+    activeId = rec.id;
+    selected = link.object === undefined ? null : hex(link.object);
+    version += 1;
+    void startReplication(rec);
+  }
+
+  /**
+   * Link to another space. The input is a share link or a typed code, the same
+   * two forms the join dialog takes — but only a link can be turned into a
+   * `:link`, because a code names a rendezvous slot rather than an identity and
+   * there is nothing verifiable to record (DESIGN.md §4.4).
+   */
+  function newLink(): void {
+    ask = {
+      title: 'Link to a space',
+      initial: '',
+      confirmLabel: 'Link',
+      run: (input) => {
+        ask = null;
+        const parsed = parseShareInput(input);
+        if (parsed === null) {
+          notify('That is not a share link.');
+          return;
+        }
+        if (parsed.kind !== 'key') {
+          notify('A typed code names where to look, not what to link to. Paste the full link.');
+          return;
+        }
+        void mutate(async (sp) => {
+          const name = parsed.name === '' ? 'a space' : parsed.name;
+          await sp.createLink(targetDir(), name, { space: fromHex(parsed.id) });
+        });
+      },
+    };
+  }
+
   function newDir(): void {
     ask = {
       title: 'New directory',
@@ -825,6 +888,9 @@
             <button type="button" title="New directory" aria-label="New directory" onclick={newDir}>
               <Icon name="folderPlus" />
             </button>
+            <button type="button" title="Link to a space" aria-label="Link to a space" onclick={newLink}>
+              <Icon name="link" />
+            </button>
             <!--
               Drag-in (§8.4) has no touch equivalent (docs/MOBILE.md, stage
               C). These two reach the same addFiles/pasteText paths a drop
@@ -898,6 +964,7 @@
       progress={fetchProgress}
       unavailable={isUnavailable}
       onBack={() => (selected = null)}
+      onFollow={(link) => void followLink(link, selectedObj?.name ?? undefined)}
     />
   </div>
   {/if}

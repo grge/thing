@@ -15,6 +15,7 @@ import {
   type Hash,
   hex,
   type Kind,
+  type Link,
   pathOf,
   ROOT,
   sha256,
@@ -134,6 +135,26 @@ export class Space {
     const w = this.requireWriter();
     const id = newUuid();
     this.commit([await w.setKind(id, 'dir'), await w.setName(id, name), await w.setParent(id, parent)]);
+    return id;
+  }
+
+  /**
+   * Create an object that points at another space (DESIGN.md §2.1).
+   *
+   * `:kind` is `file` because a portal is a leaf, not a container — it has no
+   * children of its own, and `:kind` is advisory anyway (§4.6). The name is the
+   * *linker's* petname for the target, which is the right person to be
+   * labelling it.
+   */
+  async createLink(parent: Uuid, name: string, link: Link): Promise<Uuid> {
+    const w = this.requireWriter();
+    const id = newUuid();
+    this.commit([
+      await w.setKind(id, 'file'),
+      await w.setName(id, name),
+      await w.setParent(id, parent),
+      await w.setLink(id, link),
+    ]);
     return id;
   }
 

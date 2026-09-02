@@ -173,3 +173,35 @@ describe('validation', () => {
     expect(() => validateEvent(bad)).toThrow(/:link takes a link/);
   });
 });
+
+describe('what the UI needs from a link', () => {
+  it('a portal and a card are distinguishable without extra state', () => {
+    // The tree badges these differently and the preview words them
+    // differently, so the distinction has to be derivable from the object
+    // alone — no side table, no second attribute.
+    const a = new TestWriter(writer('alice'));
+    const portal = uuid('portal');
+    const card = uuid('card');
+    const events = [
+      a.link(portal, { space: TARGET }),
+      a.link(card, { space: TARGET }),
+      a.content(card, contentHash('thumb')),
+    ];
+    const s = fold(events);
+    const p = s.objects.get(hex(portal))!;
+    const c = s.objects.get(hex(card))!;
+    expect(p.link !== null && p.content === null).toBe(true);
+    expect(c.link !== null && c.content !== null).toBe(true);
+  });
+
+  it('a deep link into a space that does not hold that object is dangling', () => {
+    // Following it lands in the right space with nothing selected. That is the
+    // I12 consequence — honest, not an error to suppress.
+    const a = new TestWriter(writer('alice'));
+    const p = uuid('portal');
+    const missing = uuid('moved-away');
+    const link = get([a.link(p, { space: TARGET, object: missing })], p).link!;
+    const targetSpace = fold([new TestWriter(TARGET).name(uuid('something-else'), 'x')]);
+    expect(targetSpace.objects.has(hex(link.object!))).toBe(false);
+  });
+});

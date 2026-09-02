@@ -108,7 +108,7 @@ everything below except `:link`.
 | `:type` | `string \| null` | Replicated format hint |
 | `:link` | `{ space, object? }` | **Decided, not built** — see below |
 
-### 2.1 `:link` — **Decided**
+### 2.1 `:link` — **Built**
 
 A link is **an attribute any object may carry**, not a special object type and
 not a sidecar. Decided in [NEXT.md](NEXT.md#open); the short version:
@@ -128,9 +128,27 @@ a link determines what you might want next, so it is scope-determining, and
 [F13](FINDINGS.md#f13-selective-sync-breaks-what-identifies-a-snapshot)'s rule
 applies — whatever determines scope must itself always be replicated in full.
 
-**Open:** whether links may target an object within a space as well as a space.
-Deep links are natural given stable UUIDs but break across cross-space moves,
-which mint fresh UUIDs ([I12](ISSUES.md#i12-cross-space-move-is-a-copy-and-delete-not-a-move--limit)).
+**Deep links are in, with the object optional — settled.** They are natural
+given stable UUIDs and break only across cross-space moves, which mint fresh
+UUIDs ([I12](ISSUES.md#i12-cross-space-move-is-a-copy-and-delete-not-a-move--limit)).
+That leaves a dangling link, which the UI shows honestly — following it lands in
+the right space with nothing selected — rather than a reason to forbid the
+shape. Restricting later is easier than adding.
+
+**`:link` is a live-attr event** (§4.5), unlike `:kind` and `:type`. Setting a
+link is authoring — it is what the object is *for* — so it revives a tombstoned
+object exactly as writing `:content` does, and for the same reason: a
+resurrected object is recoverable by re-deleting, whereas an authored link
+vanishing behind a tombstone looks like data loss.
+
+**How it is built.** The encoding uses a presence byte for the optional object
+rather than a length prefix — two shapes, both fixed-size, and a second
+implementation must reproduce it byte for byte (ADDRESSING.md §6); an all-zero
+UUID therefore cannot encode as no UUID. In the UI a link is a badge in the
+tree, and the preview shows the target's *code* (never the key) with an Open
+button. Following a link takes the verified path — the key is known before
+contact — and carries the linking object's name across as the petname for a
+space this device has never met.
 
 **Backlinks are impossible.** Nobody can know who links to them without being
 told, exactly as on the pre-webmention web. That constrains how networked the
