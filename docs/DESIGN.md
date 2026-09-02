@@ -391,6 +391,14 @@ lands on per-subtree encryption.
 Stated plainly so it is not promised as more than it is: **encryption gates who
 can read; nothing gates who can retain.**
 
+**A nearer job than access control.** [RESOLUTION.md](RESOLUTION.md) §7 proposes
+a hub relaying for two peers that cannot reach each other — replacing TURN. The
+catch is that a TURN server relays ciphertext it cannot read, whereas a hub that
+serves a space is a peer: it holds the key, folds the log, reads everything. So
+encryption is the precondition for that substitution being safe by default,
+which is a more concrete first customer than "publishing should not imply
+public".
+
 ### 5.4 Key loss — **Open, and the biggest risk here**
 
 If identity is a keypair in browser storage, clearing site data permanently
@@ -449,6 +457,11 @@ The relay is coturn with HMAC ephemeral credentials (`turn/`), fetched from a
 credential endpoint, with TURN settings stored per-device rather than baked into
 the build.
 
+[RESOLUTION.md](RESOLUTION.md) §7 proposes an alternative for the same case — a
+hub seeding the space so both peers sync through it — which trades TURN's
+blindness for durability and a third replica. Not a free win: the hub reads
+everything it relays. Proposal, not decided.
+
 > **The formal Q1 number was never collected and is not going to be.** v0/PLAN.md
 > stages 4 and 5 ask for a peer-pair failure rate across real networks. It stands
 > unmeasured, and settling TURN in retires the question rather than deferring it.
@@ -492,12 +505,12 @@ pattern until someone answers. Opting in *is* claiming a slot. Degrades honestly
 makes squatting possible, which at this scale is itself worth observing. It is
 also the fix for [I22](ISSUES.md#i22-one-writer-two-tabs-the-second-cannot-claim-the-rendezvous-slot--limit),
 so the two should be decided together
-([RESOLUTION.md](RESOLUTION.md#83-whether-and-how-peer-lists-are-shared)).
+([RESOLUTION.md](RESOLUTION.md#103-whether-and-how-peer-lists-are-shared)).
 
 **Whether there is a gossip layer, and what it carries — Open.** Resolution is
 space-granular (*where is space K?*); `HAVE` is object-granular (*who holds blob
 H?*). Whether those are one mechanism with a parameter or two that merely rhyme
-is [RESOLUTION.md](RESOLUTION.md#84-is-there-a-gossip-layer-and-what-does-it-carry)'s
+is [RESOLUTION.md](RESOLUTION.md#104-is-there-a-gossip-layer-and-what-does-it-carry)'s
 last open question, and the next thing worth deciding.
 
 ---
