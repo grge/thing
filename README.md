@@ -24,7 +24,7 @@ Throwaway proof of concept. v0 is built and working; v1 is in progress.
 npm install
 npm run dev      # the app          → /
                  # transport harness → /transport.html
-npm test         # 286 tests
+npm test         # 297 tests
 npm run check    # tsc --noEmit
 ```
 

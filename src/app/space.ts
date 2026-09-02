@@ -34,6 +34,7 @@ import {
   type SpaceRecord,
 } from './storage.js';
 import { newUuid, Writer } from './writer.js';
+import { acquireWriteLock, type ReleaseLock } from './writelock.js';
 
 export class Space {
   private events: Event[];
@@ -41,14 +42,39 @@ export class Space {
 
   state: State;
 
+  /**
+   * Why this space is read-only, when it is. Null when writable, or when
+   * read-only is simply what the space *is* (a reader). The UI needs the
+   * difference: "someone else has this open" is recoverable and worth saying,
+   * where a reader tab being read-only is not news.
+   */
+  readonly readOnlyReason: 'locked-by-other-tab' | 'key-missing' | null;
+
   private constructor(
     readonly record: SpaceRecord,
     events: Event[],
     writer: Writer | null,
+    readOnlyReason: Space['readOnlyReason'] = null,
+    private releaseLock: ReleaseLock | null = null,
   ) {
     this.events = events;
     this.writer = writer;
+    this.readOnlyReason = readOnlyReason;
     this.state = fold(events);
+  }
+
+  /**
+   * Give up the write lock, if this space holds one, so another tab can take
+   * over rather than waiting for this one to close.
+   *
+   * Awaitable because releasing is not synchronous: a caller that closes and
+   * immediately reopens the same space would otherwise meet its own stale hold
+   * and open read-only.
+   */
+  async close(): Promise<void> {
+    const release = this.releaseLock;
+    this.releaseLock = null;
+    await release?.();
   }
 
   static async open(record: SpaceRecord): Promise<Space> {
@@ -75,18 +101,42 @@ export class Space {
     // - `local`: the id is a UUID and the key is incidental, so minting on
     //   demand is harmless.
     let writer: Writer | null = null;
-    if (record.mode === 'writer') {
-      const key = loadSpaceKey(record.id);
-      if (key === null) {
-        console.error(`space ${record.id}: writer key missing; opening read-only`);
-      } else {
-        writer = await Writer.resume(key, events);
+    let reason: Space['readOnlyReason'] = null;
+    let release: ReleaseLock | null = null;
+
+    if (record.mode !== 'reader') {
+      // One writer per space per origin (I23). Two tabs sharing localStorage
+      // would otherwise both resume at the same seq and fork the chain, so the
+      // second tab to open a space reads rather than writes.
+      release = await acquireWriteLock(record.id);
+      if (release === null) {
+        reason = 'locked-by-other-tab';
+        console.warn(`space ${record.id}: another tab is writing; opening read-only`);
       }
-    } else if (record.mode === 'local') {
-      writer = await Writer.resume(await loadOrMintLocalKey(record.id), events);
     }
 
-    return new Space(record, events, writer);
+    if (release !== null) {
+      if (record.mode === 'writer') {
+        const key = loadSpaceKey(record.id);
+        if (key === null) {
+          reason = 'key-missing';
+          console.error(`space ${record.id}: writer key missing; opening read-only`);
+        } else {
+          writer = await Writer.resume(key, events);
+        }
+      } else if (record.mode === 'local') {
+        writer = await Writer.resume(await loadOrMintLocalKey(record.id), events);
+      }
+    }
+
+    // Holding a lock we cannot write under helps nobody — release it so another
+    // tab can try, rather than sitting on it because of a missing key.
+    if (writer === null && release !== null) {
+      await release();
+      release = null;
+    }
+
+    return new Space(record, events, writer, reason, release);
   }
 
   /** True when this space's UI accepts write gestures (§8.6). */

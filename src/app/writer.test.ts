@@ -54,11 +54,14 @@ describe('Writer signs what it emits (DESIGN.md §5)', () => {
   });
 });
 
-describe('two tabs on one key fork the chain (I23)', () => {
-  it('produces two different events at the same seq with the same prev', async () => {
-    // Documents a known bug rather than asserting desired behaviour. The space
-    // key lives in localStorage, which same-origin tabs share, so two tabs
-    // resume from one log and both hold the same seq and prev in memory.
+describe('why one writer per space is enforced elsewhere (I23)', () => {
+  // These pin the *hazard*, not a bug: they show what two concurrent writers on
+  // one key would do, which is why Space takes an exclusive write lock
+  // (writelock.ts). Nothing above the Writer prevents this, so if the lock is
+  // ever removed or bypassed, this is what comes back.
+  it('two Writers on one key produce a fork, and nothing here stops them', async () => {
+    // The Writer is deliberately not the layer that prevents this: it has no
+    // idea whether another one exists. Coordination is Space's job.
     const key = await generateKeyPair();
     const seed = await (await Writer.resume(key, [])).setName(newUuid(), 'shared');
 
@@ -77,9 +80,10 @@ describe('two tabs on one key fork the chain (I23)', () => {
     expect(await verifyEvent(b)).toBe(true);
   });
 
-  it('is not caught by checkWriterLamports', async () => {
-    // That check looks for one lamport reused across *different* seqs. A fork
-    // is the same lamport at the same seq, which slips through.
+  it('and validation would not catch it either', async () => {
+    // checkWriterLamports looks for one lamport reused across *different* seqs.
+    // A fork is the same lamport at the same seq, which slips through — which
+    // is why the fix has to be prevention rather than detection.
     const key = await generateKeyPair();
     const seed = await (await Writer.resume(key, [])).setName(newUuid(), 'shared');
     const a = await (await Writer.resume(key, [seed])).setName(newUuid(), 'A');

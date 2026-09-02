@@ -336,6 +336,15 @@ another writer's id in the handshake (I6).
 must be able to export and move an identity, which non-extractable WebCrypto keys
 would prevent.
 
+**One writer per space, per origin.** A key in localStorage is shared by every
+same-origin tab, and two tabs resuming from one log both hold the same `seq` and
+`prev` — so both emit a different event there, validly signed, forking the
+per-writer chain. Signing cannot catch this and neither can `checkWriterLamports`
+([I23](ISSUES.md#i23-two-tabs-holding-one-space-key-fork-the-writers-hash-chain--fixed-2026-09-03)).
+An exclusive Web Lock per space settles it: the first tab writes, later ones open
+read-only. Local coordination, no protocol. Two devices holding the same exported
+key still fork, which no lock can prevent — that is §5.4's territory.
+
 ### 5.1 `WriterId` is the full public key — **settled**
 
 **32 bytes, the Ed25519 public key itself**, not a hash of one.

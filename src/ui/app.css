@@ -1103,6 +1103,16 @@ a {
   text-transform: none;
 }
 
+/*
+  A reader tab being read-only is the normal state and stays quiet. A *writer*
+  space that cannot be written to is a condition the user can act on — another
+  tab holds it, or the key is gone — so it is marked rather than blending in.
+*/
+.pane-badge.is-warning {
+  color: var(--danger);
+  border-color: currentColor;
+}
+
 /* ── Status bar ────────────────────────────────────────────────────────────
  * Groups rather than a row of equal-weight spans: identity, size, connection.
  * Separators are drawn between groups, not between every figure.

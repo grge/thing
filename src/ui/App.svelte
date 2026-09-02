@@ -290,10 +290,33 @@
     setTimeout(() => (message = null), 4000);
   }
 
+  /** The badge beside a space's name when it cannot be written to. */
+  function readOnlyLabel(s: Space): string {
+    switch (s.readOnlyReason) {
+      case 'locked-by-other-tab':
+        return 'open elsewhere';
+      case 'key-missing':
+        return 'key missing';
+      default:
+        return 'read-only';
+    }
+  }
+
+  function readOnlyTitle(s: Space): string {
+    switch (s.readOnlyReason) {
+      case 'locked-by-other-tab':
+        return 'Another tab has this space open and is writing to it. Close that tab to write here.';
+      case 'key-missing':
+        return 'The key for this space is not on this device, so it cannot be written to.';
+      default:
+        return 'You hold no key for this space, so it is read-only.';
+    }
+  }
+
   async function mutate(fn: (s: Space) => Promise<void>): Promise<void> {
     if (space === null) return;
     if (!space.writable) {
-      notify('This space is read-only.');
+      notify(readOnlyTitle(space));
       return;
     }
     await fn(space);
@@ -880,7 +903,16 @@
       <div class="pane-head">
         <span class="pane-title">
           {space?.record.name ?? '—'}{#if space !== null && !space.writable}
-            <span class="pane-badge">read-only</span>
+            <!--
+              A writer space that is read-only is news; a reader tab being
+              read-only is not. Say which, because "another tab has this open"
+              is recoverable and looks like a bug otherwise (I23).
+            -->
+            <span
+              class="pane-badge"
+              class:is-warning={space.readOnlyReason !== null}
+              title={readOnlyTitle(space)}>{readOnlyLabel(space)}</span
+            >
           {/if}
         </span>
         <span class="pane-head-actions">

@@ -245,18 +245,19 @@ off a random code rather than the key; deriving the code from the key
 It surfaces more readily now only because the same key on two devices derives
 the same slot deterministically, where v0's random code differed per space.
 
-**The slot has been accidentally preventing something worse — see
-[I23](#i23-two-tabs-holding-one-space-key-fork-the-writers-hash-chain--bug).**
-Making "the slot is taken" survivable, as this issue asks, would let a second
-tab replicate — and two tabs holding the same key fork the per-writer chain.
-Fix I23 first; this issue is only about reachability once that is safe.
+**The slot was accidentally preventing something worse — see
+[I23](#i23-two-tabs-holding-one-space-key-fork-the-writers-hash-chain--fixed-2026-09-03),
+now fixed.** Making "the slot is taken" survivable would let a second tab
+replicate, and before I23 that meant forking the per-writer chain. With the
+write lock in place a second tab cannot write at all, so this issue is now
+purely about reachability.
 
 After that, the slot pattern [NEXT.md](NEXT.md#open) sketches is the wrong fix
 anyway. [RESOLUTION.md](RESOLUTION.md#103-whether-and-how-peer-lists-are-shared--resolved-they-are-not-a-separate-thing)
 settles that reachability comes from announcing rather than from claiming a
 slot, which makes a taken slot a non-event rather than a case to handle.
 
-### I23. Two tabs holding one space key fork the writer's hash chain — **Bug**
+### I23. Two tabs holding one space key fork the writer's hash chain — **Fixed 2026-09-03**
 *Found 2026-09-02, reasoning from [I22](#i22-one-writer-two-tabs-the-second-cannot-claim-the-rendezvous-slot--limit). Reproduced.*
 
 A space key lives in localStorage, which every same-origin tab shares. Two tabs
@@ -284,11 +285,26 @@ replicates both events inherits the ambiguity permanently.
 second tab fails to replicate (I22) and its events stay local. That is luck
 rather than design, and it stops being true the moment I22 is addressed.
 
-**Fix: the Web Locks API.** Same-origin tabs contend for one write lock per
-space; the holder is the writer and the others open read-only. That is local
-coordination for a local problem, needs no protocol, and is unrelated to
-rendezvous — which is the argument for fixing it here rather than folding it
-into the mesh work.
+**Fixed with the Web Locks API** (`src/app/writelock.ts`). Same-origin tabs
+contend for one exclusive lock per space; the first to open it writes and later
+ones open read-only, badged *"open elsewhere"* so the state is legible rather
+than looking like a bug. Local coordination for a local problem: no protocol, no
+rendezvous.
+
+Two details the implementation turned up, both verified against the real API
+rather than assumed:
+
+- **A held lock is a callback that never settles**, and the browser releases it
+  automatically when the tab closes. There is no cleanup path that can leak a
+  lock and shut a user out of their own space.
+- **Releasing is asynchronous.** Settling the callback does not free the lock in
+  the same turn, so a caller that closes and immediately reopens a space meets
+  its *own* stale hold and opens read-only. `Space.close()` is therefore
+  awaitable, and `Spaces.openOne` awaits it before reopening.
+
+A space that cannot write for another reason — a missing key — releases the lock
+rather than sitting on it, since holding a lock it cannot use only blocks other
+tabs.
 
 Two devices with the same exported key remain a genuine fork that no lock can
 prevent; that is the key-loss/key-export territory of

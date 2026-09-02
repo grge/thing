@@ -43,7 +43,20 @@ export class Spaces {
   }
 
   private async openOne(rec: SpaceRecord): Promise<void> {
+    // Release any space this replaces before opening the new one, or the old
+    // one's write lock would keep the new one read-only (I23).
+    await this.open.get(rec.id)?.close();
+    this.open.delete(rec.id);
     this.open.set(rec.id, await Space.open(rec));
+  }
+
+  /**
+   * Release every space's write lock. For a runtime that tears down without a
+   * page unload — tests, and eventually a headless client — where the
+   * automatic release a closing tab gets does not happen.
+   */
+  async closeAll(): Promise<void> {
+    await Promise.all([...this.open.values()].map((s) => s.close()));
   }
 
   get list(): readonly SpaceRecord[] {
@@ -139,6 +152,9 @@ export class Spaces {
    * it. Returns how many were freed.
    */
   async forget(spaceId: string): Promise<{ blobsFreed: number }> {
+    // Give up the write lock before dropping the space, so another tab can take
+    // over immediately rather than waiting for this one to close (I23).
+    await this.open.get(spaceId)?.close();
     this.open.delete(spaceId);
     this.records = this.records.filter((r) => r.id !== spaceId);
     forgetSpace(spaceId);
