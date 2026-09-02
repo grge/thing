@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateKeyPair, hex, verifyEvent } from '../fold/index.js';
+import { checkWriterLamports, generateKeyPair, hex, verifyEvent } from '../fold/index.js';
 import { newUuid, Writer } from './writer.js';
 
 describe('Writer signs what it emits (DESIGN.md §5)', () => {
@@ -51,5 +51,40 @@ describe('Writer signs what it emits (DESIGN.md §5)', () => {
     const w = await Writer.resume(a, []);
     const e = await w.setName(newUuid(), 'x');
     expect(await verifyEvent({ ...e, writer: b.publicKey })).toBe(false);
+  });
+});
+
+describe('two tabs on one key fork the chain (I23)', () => {
+  it('produces two different events at the same seq with the same prev', async () => {
+    // Documents a known bug rather than asserting desired behaviour. The space
+    // key lives in localStorage, which same-origin tabs share, so two tabs
+    // resume from one log and both hold the same seq and prev in memory.
+    const key = await generateKeyPair();
+    const seed = await (await Writer.resume(key, [])).setName(newUuid(), 'shared');
+
+    const tabA = await Writer.resume(key, [seed]);
+    const tabB = await Writer.resume(key, [seed]);
+    const a = await tabA.setName(newUuid(), 'from tab A');
+    const b = await tabB.setName(newUuid(), 'from tab B');
+
+    expect(a.seq).toBe(b.seq);
+    expect(hex(a.prev!)).toBe(hex(b.prev!));
+    expect(hex(a.sig)).not.toBe(hex(b.sig));
+
+    // Signing cannot catch this: the writer really did sign both. I5 and I6
+    // were about a hostile peer; this is an honest writer contradicting itself.
+    expect(await verifyEvent(a)).toBe(true);
+    expect(await verifyEvent(b)).toBe(true);
+  });
+
+  it('is not caught by checkWriterLamports', async () => {
+    // That check looks for one lamport reused across *different* seqs. A fork
+    // is the same lamport at the same seq, which slips through.
+    const key = await generateKeyPair();
+    const seed = await (await Writer.resume(key, [])).setName(newUuid(), 'shared');
+    const a = await (await Writer.resume(key, [seed])).setName(newUuid(), 'A');
+    const b = await (await Writer.resume(key, [seed])).setName(newUuid(), 'B');
+
+    expect(() => checkWriterLamports([seed, a, b])).not.toThrow();
   });
 });

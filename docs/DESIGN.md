@@ -505,12 +505,12 @@ pattern until someone answers. Opting in *is* claiming a slot. Degrades honestly
 makes squatting possible, which at this scale is itself worth observing. It is
 also the fix for [I22](ISSUES.md#i22-one-writer-two-tabs-the-second-cannot-claim-the-rendezvous-slot--limit),
 so the two should be decided together
-([RESOLUTION.md](RESOLUTION.md#103-whether-and-how-peer-lists-are-shared)).
+([RESOLUTION.md](RESOLUTION.md#103-whether-and-how-peer-lists-are-shared--resolved-they-are-not-a-separate-thing)).
 
 **Whether there is a gossip layer, and what it carries — Open.** Resolution is
 space-granular (*where is space K?*); `HAVE` is object-granular (*who holds blob
 H?*). Whether those are one mechanism with a parameter or two that merely rhyme
-is [RESOLUTION.md](RESOLUTION.md#104-is-there-a-gossip-layer-and-what-does-it-carry)'s
+is [RESOLUTION.md](RESOLUTION.md#104-is-there-a-gossip-layer--resolved-two-and-they-relay-oppositely)'s
 last open question, and the next thing worth deciding.
 
 ---

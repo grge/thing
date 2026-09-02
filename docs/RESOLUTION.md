@@ -375,85 +375,149 @@ A note on where hints belong, since the two cases pull opposite ways:
 
 ---
 
-## 10. Open questions
+## 10. The questions this raised, and where they landed
 
-These are the next set of changes to think about, not this one.
+Four questions were left open in the first draft. A second reading settled all
+four; the positions and their arguments are below, with what genuinely remains
+in §10.5. Still proposal — settled here means *the reasoning is closed*, not
+that anything is built or that a real network has been near it.
 
-### 10.1 Does a hub answer for spaces it does not serve?
+### 10.1 Does a hub answer for spaces it does not serve? — **resolved: yes, one hop**
 
-Pure relay of resolution knowledge makes discovery markedly better and makes
-hubs a target for pollution. Serve-only is safe and thin but keeps the
-resolution graph shallow.
+**Serve-only plus whatever it learned from directly-connected peers. One hop, no
+transit.** Promoted from instinct to decision, on an argument that makes the
+pollution worry smaller than it first looks.
 
-**Instinct: serve-only, plus whatever it learned from directly-connected peers —
-one hop, no transit.** Stated as instinct rather than decision because it is
-exactly the kind of thing that is hard to walk back once two implementations
-exist.
+**What a bad entry costs is bounded.** A wrong locator cannot make you *believe*
+anything — signing sees to that ([DESIGN.md](DESIGN.md) §5), so a peer that
+answers with an impostor's address serves you events that fail verification. It
+can only make you *dial* something. So the cost of a hostile or mistaken
+resolver is wasted dials, and wasted dials are bounded by three caps: a dial
+timeout, a cap on entries per code, and **a cap on entries per announcer** — the
+last being the one that stops a single peer crowding out the real entry.
 
-### 10.2 "I don't know" versus "nobody is serving it"
+**Transit is where that bound breaks.** A relayed-of-relayed entry is one that
+nobody in the chain can vouch for. At one hop, every entry a peer hands you is
+about a connection it is *currently holding*, so it has recent evidence and can
+fail fast at `via` if you ask.
 
-These are different answers and a client that cannot tell them apart cannot
-decide whether to ask elsewhere. The resolution response should say which. Cheap
-now, expensive once there is a second implementation — the same class of
-decision as [ADDRESSING.md](ADDRESSING.md) §6's note on canonical bytes.
+**And the rendezvous role turns out to be this same mechanism.** A hub that
+knows Alice's session announced code K, without holding K itself, is exactly
+serve-only-plus-one-hop applied to a hub. There is no separate rendezvous
+mechanism to design: a popular hub becomes a good resolver by having many direct
+edges, which is the ultrapeer pattern arriving for free rather than being built.
 
-### 10.3 Whether and how peer lists are shared
+Still open, and correctly so: **the numbers.** Timeout, per-code cap,
+per-announcer cap. Those belong in [FINDINGS.md](FINDINGS.md) once there is a
+network to measure, not in a design document.
 
-The unresolved half of [F14](FINDINGS.md#f14-peer-meshing-in-mode-2--three-separable-things-not-one),
-and the thing §4's announce mechanism quietly assumes. F14's objection stands:
-peer ids become **de-facto membership with no way to leave**, which makes
-[I7](ISSUES.md#i7-share-codes-cannot-be-revoked-or-rotated--rewrite) worse
-rather than better.
+### 10.2 What an empty answer says — **resolved: three answers, one dated**
 
-Two things have changed since F14, and they pull in opposite directions:
+Not two answers but three:
 
-- [NEXT.md](NEXT.md#settled) settled that **peer list sharing is product, not
-  optimisation**, and consciously accepted the uncontrollability cost.
-- Signing now exists, which was F14's precondition for revisiting this.
+| Answer | Means | Client should |
+|---|---|---|
+| `unknown` | I do not track this code | stop asking *this* resolver |
+| `none-serving` + **last seen** | I track it; no live entries | keep asking elsewhere |
+| entries | here they are | dial them (§6) |
 
-F14's cheaper middle is still the most attractive concrete shape: announce peers
-*currently connected* — no persistence, no roster, just "these are alive now" —
-so readers can mesh while a writer is up and those connections outlive its
-departure. Combined with §3.1's TTL, "currently" becomes expressible rather than
-implied.
+The addition worth having is **`last seen` on `none-serving`**. A hub that
+watched every entry for a code expire knows *when* it expired, and "someone was
+serving this three hours ago" is a materially different thing to tell a user
+than "nobody is serving this". It is a few bytes in a response being defined
+anyway, and it turns *gone* from a guess into a fact with a date.
 
-Open: whether opting in is explicit, and whether a peer can meaningfully opt
-out. [NEXT.md](NEXT.md#open)'s slot-probing sketch (`thing-<code>-2`, `-3`, …)
-is one answer where **opting in is claiming a slot** — and it is also the fix
-for [I22](ISSUES.md#i22-one-writer-two-tabs-the-second-cannot-claim-the-rendezvous-slot--limit),
-so the two should be decided together.
+It is also the input §10.4's honest-liveness display needs, which is the second
+reason to put it in now: wire format, so it wants settling before a second
+implementation exists — the same class of decision as
+[ADDRESSING.md](ADDRESSING.md) §6's note on canonical bytes.
 
-### 10.4 Is there a gossip layer, and what does it carry?
+### 10.3 Whether and how peer lists are shared — **resolved: they are not a separate thing**
 
-The sharpest version: **which objects within a space are held by which peers?**
+**Peer list sharing is resolution pointed at the current mesh.** There is no
+fourth mechanism to design.
 
-Resolution (§1–§6) answers *where is this space*. That is space-granular. But
-[F14](FINDINGS.md#f14-peer-meshing-in-mode-2--three-separable-things-not-one)
-established that a version vector describes **events, never blobs**, so two
-peers with identical VVs may hold completely different blob sets — and `WANT`
-has no routing, because a peer cannot know whom to ask. `HAVE` is the
-object-granular answer to the same shape of question.
+[F14](FINDINGS.md#f14-peer-meshing-in-mode-2--three-separable-things-not-one)'s
+objection was to a **roster**: a durable list that makes membership permanent
+and unleavable, "a worse version of a share code nobody can revoke". With
+TTL'd, announcement-driven entries (§4) there is no roster:
 
-So there are plausibly two gossip layers with the same mechanics at different
-granularity:
+- a peer that wants to be reachable **announces**;
+- one that does not, does not, and is reachable only by whoever it dialled;
+- one that changes its mind **stops announcing and is gone within one TTL**.
 
-| | Question | Granularity | Where it lives |
-|---|---|---|---|
-| Resolution | where is space K? | space | §1–§6 |
-| `HAVE` | who holds blob H? | object | F14's item 2 |
+That is a real opt-out, which a claimed slot is not — a slot you have taken is a
+slot you are still in. And "readers mesh while the writer is up" becomes: ask
+whoever you are connected to *who serves K*, get the readers who announced, dial
+them. Nothing new.
 
-Open: whether they are genuinely one mechanism with a parameter, or two things
-that merely rhyme. Worth resisting a premature merge — they have different
-cardinalities (a handful of spaces, potentially thousands of blobs), which
-usually means different encodings, a list versus a Bloom filter.
+**Two defaults follow, and they are worth stating because they are not obvious.**
 
-Also open, and noted in [NEXT.md](NEXT.md#what-becomes-load-bearing): once blob
-availability is answerable, **"is this space alive?" stops being binary.**
-Metadata can be complete while specific blobs are permanently gone. *"This space
-is mostly here, and these three files are probably gone"* is a new state, and it
-is the honest face of a properly distributed system.
+*Readers should serve by default* while their tab is open, with a per-space
+toggle and a visible "serving to N peers". If readers do not serve, the mesh
+never forms and the writer stays the single point of failure
+[I9](ISSUES.md#i9-star-topology-makes-the-writer-a-single-point-of-failure--rewrite)
+already complains about. Per-session ids keep the privacy cost low: nothing
+persists past a reload.
+
+*[I7](ISSUES.md#i7-share-codes-cannot-be-revoked-or-rotated--rewrite) is not made
+worse by this.* F14 worried that peer lists would compound it. But
+[DESIGN.md](DESIGN.md) §9 has since settled that a shared space is out of its
+creator's control permanently — so there is no revocation left to undermine.
+What is actually worth protecting is narrower and more personal: **an individual
+peer's ability not to be dialable.** Announce-as-opt-in gives exactly that, and
+it is a better guarantee than F14 was asking for.
+
+### 10.4 Is there a gossip layer? — **resolved: two, and they relay oppositely**
+
+Resolution and `HAVE` are **two mechanisms**, not one with a parameter. The
+first draft reached for cardinality as the argument — a handful of spaces versus
+thousands of blobs — but the decisive difference is **scope**, and it settles the
+question rather than merely suggesting an answer:
+
+| | Resolution | `HAVE` |
+|---|---|---|
+| Question | where is space K? | who holds blob H? |
+| About peers you are | **not** connected to | **are** connected to |
+| Must cross connections | yes — that is its whole purpose | no |
+| Relayed | one hop (§10.1) | **never** |
+| Escalation when it fails | ask more peers | *more peers* — i.e. resolution |
+| Shape | list of locators + TTL | Bloom filter per space |
+
+Resolution exists to find someone to dial, so it *has* to cross connections, and
+one hop is how far it crosses. `HAVE` routes `WANT` inside the mesh you already
+have and never needs to travel further — because if nobody you are connected to
+holds the blob, the answer is not wider `HAVE` gossip, it is **more peers**,
+which is resolution's job. Opposite relaying rules is what makes them two things.
+
+So `HAVE` is **per-connection state**: a Bloom filter per space, exchanged on
+`HELLO` and on change, never relayed. For a hub that seeds a space it collapses
+to a single "all" flag. A false positive costs one failed request, which is the
+right price.
+
+**And the non-binary liveness state falls out of the union of the two.** For each
+blob: *held by me* / *held by someone connected* (`HAVE`) / *held by a known seed*
+(`:seeds`, §6.1) / *held by nobody reachable* — with the last annotated by
+§10.2's **last seen**. That is the whole of what
+[NEXT.md](NEXT.md#what-becomes-load-bearing) asks for when it says *"this space
+is mostly here, and these three files are probably gone"* — **derived from the
+two mechanisms rather than tracked as its own thing.**
 
 ---
+
+### 10.5 What is left open
+
+Everything above is a position, not a build. What genuinely remains:
+
+- **The numbers** (§10.1): dial timeout, per-code cap, per-announcer cap, TTL
+  defaults, Bloom filter sizing. These belong in [FINDINGS.md](FINDINGS.md),
+  measured, not chosen here.
+- **`:seeds`** (§6.1) is the least-settled part of this document and was not
+  among the four questions above.
+- **Encryption** (§7.2) — whether hub-relaying waits for it, or ships opt-in
+  with an interface honest about what a hub reads.
+- **Whether any of this survives contact with a real network.** None of it has
+  been built.
 
 ## 11. Difficulties worth naming
 

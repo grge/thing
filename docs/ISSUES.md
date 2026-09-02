@@ -245,11 +245,54 @@ off a random code rather than the key; deriving the code from the key
 It surfaces more readily now only because the same key on two devices derives
 the same slot deterministically, where v0's random code differed per space.
 
-Worth fixing where the mesh work lands rather than here: the slot pattern
-[NEXT.md](NEXT.md#open) sketches — a peer willing to serve claims
-`thing-<code>-2`, `-3`, … and a joiner probes until someone answers — makes
-"the slot is taken" the normal case rather than an error, and is the same
-mechanism peer-list opt-in needs.
+**The slot has been accidentally preventing something worse — see
+[I23](#i23-two-tabs-holding-one-space-key-fork-the-writers-hash-chain--bug).**
+Making "the slot is taken" survivable, as this issue asks, would let a second
+tab replicate — and two tabs holding the same key fork the per-writer chain.
+Fix I23 first; this issue is only about reachability once that is safe.
+
+After that, the slot pattern [NEXT.md](NEXT.md#open) sketches is the wrong fix
+anyway. [RESOLUTION.md](RESOLUTION.md#103-whether-and-how-peer-lists-are-shared--resolved-they-are-not-a-separate-thing)
+settles that reachability comes from announcing rather than from claiming a
+slot, which makes a taken slot a non-event rather than a case to handle.
+
+### I23. Two tabs holding one space key fork the writer's hash chain — **Bug**
+*Found 2026-09-02, reasoning from [I22](#i22-one-writer-two-tabs-the-second-cannot-claim-the-rendezvous-slot--limit). Reproduced.*
+
+A space key lives in localStorage, which every same-origin tab shares. Two tabs
+open on one writer space each `Writer.resume` from the same log, so both hold
+the same `seq` and the same `prev` in memory. Both then write, and produce **two
+different events at the same seq with the same prev, both validly signed**.
+
+Reproduced directly: two `Writer`s resumed from one log both emitted seq 1 with
+identical `prev`, different content, and both passed `verifyEvent`.
+
+**Signing does not catch this**, and cannot: the writer really did sign both.
+[I5](#i5-lamport-clocks-are-unenforceable-so-a-malicious-peer-wins-every-conflict--fixed-in-v1)
+and [I6](#i6-hello-is-unauthenticated-any-peer-can-claim-any-writer-id--fixed-in-v1)
+were about a *hostile* peer; this is the honest writer contradicting itself.
+
+`checkWriterLamports` does not catch it either. It looks for one lamport reused
+across *different* seqs; a fork is the same lamport at the same seq, which slips
+through. Both events survive into the fold.
+
+The consequence is that §3.2's per-writer hash chain stops being a chain, so
+"this writer's history" is no longer well defined — and every peer that
+replicates both events inherits the ambiguity permanently.
+
+**Not currently reachable in the app**, because the rendezvous slot means a
+second tab fails to replicate (I22) and its events stay local. That is luck
+rather than design, and it stops being true the moment I22 is addressed.
+
+**Fix: the Web Locks API.** Same-origin tabs contend for one write lock per
+space; the holder is the writer and the others open read-only. That is local
+coordination for a local problem, needs no protocol, and is unrelated to
+rendezvous — which is the argument for fixing it here rather than folding it
+into the mesh work.
+
+Two devices with the same exported key remain a genuine fork that no lock can
+prevent; that is the key-loss/key-export territory of
+[DESIGN.md](DESIGN.md) §5.4 and wants a different answer.
 
 ---
 
