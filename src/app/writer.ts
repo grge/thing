@@ -14,6 +14,7 @@ import {
   type Hash,
   type KeyPair,
   type Kind,
+  type Link,
   type Pos,
   signEvent,
   SIG_LEN,
@@ -124,6 +125,15 @@ export class Writer {
   }
   setType(target: Uuid, mime: string): Promise<Event> {
     return this.emit(target, ':type', { t: 'string', v: mime });
+  }
+  /**
+   * Point this object at another space, or at one object within it.
+   *
+   * The target is an identity, never a locator — where that space can be
+   * reached is the resolver's problem and changes constantly (DESIGN.md §4.2).
+   */
+  setLink(target: Uuid, link: Link): Promise<Event> {
+    return this.emit(target, ':link', { t: 'link', v: link });
   }
 }
 

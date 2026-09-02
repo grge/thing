@@ -8,7 +8,7 @@
  * here rather than as a silent acceptance.
  */
 import { describe, expect, it } from 'vitest';
-import { generateKeyPair, verifyEvent, type Event } from '../fold/index.js';
+import { generateKeyPair, hex, verifyEvent, type Event } from '../fold/index.js';
 import { fromStored, toStored } from '../app/storage.js';
 import { newUuid, Writer } from '../app/writer.js';
 
@@ -48,6 +48,34 @@ describe('inbound verification', () => {
     const e = await w.setContent(id, new Uint8Array(32).fill(1));
     const swapped = roundTrip({ ...e, value: { t: 'hash', v: new Uint8Array(32).fill(2) } });
     expect(await verifyEvent(swapped)).toBe(false);
+  });
+
+  it('a link survives the wire round-trip intact', async () => {
+    const key = await generateKeyPair();
+    const w = await Writer.resume(key, []);
+    const target = (await generateKeyPair()).publicKey;
+    const inner = newUuid();
+
+    for (const link of [{ space: target }, { space: target, object: inner }]) {
+      const e = await w.setLink(newUuid(), link);
+      const back = roundTrip(e);
+      expect(await verifyEvent(back)).toBe(true);
+      expect(back.value.t).toBe('link');
+      const v = back.value as { t: 'link'; v: { space: Uint8Array; object?: Uint8Array } };
+      expect(hex(v.v.space)).toBe(hex(target));
+      expect(v.v.object === undefined ? null : hex(v.v.object)).toBe(
+        link.object === undefined ? null : hex(link.object),
+      );
+    }
+  });
+
+  it('drops an event whose link target was swapped in transit', async () => {
+    const key = await generateKeyPair();
+    const w = await Writer.resume(key, []);
+    const e = await w.setLink(newUuid(), { space: (await generateKeyPair()).publicKey });
+    const elsewhere = (await generateKeyPair()).publicKey;
+    const forged = roundTrip({ ...e, value: { t: 'link', v: { space: elsewhere } } });
+    expect(await verifyEvent(forged)).toBe(false);
   });
 
   it('drops an event with the signature stripped', async () => {

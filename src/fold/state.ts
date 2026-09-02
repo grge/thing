@@ -1,7 +1,7 @@
 /**
  * The folded state: what a set of events means (§4).
  */
-import type { Hash, Kind, Pos, Uuid } from './types.js';
+import type { Hash, Kind, Link, Pos, Uuid } from './types.js';
 
 export interface ObjectState {
   readonly uuid: Uuid;
@@ -23,6 +23,14 @@ export interface ObjectState {
    * it degrades by suffix and then by base type. Null if never asserted.
    */
   readonly type: string | null;
+  /**
+   * Where this object points, or null if it points nowhere (DESIGN.md §2.1).
+   *
+   * An object with a link and no content is a portal; one with both is a card
+   * — a thumbnail that goes somewhere. Identity only: resolving the target to
+   * somewhere reachable is the resolver's job, not this value's.
+   */
+  readonly link: Link | null;
   /**
    * True if this object was re-parented to ROOT to break a cycle (§4.1).
    * Fold-local state, never an event. Recomputed on every fold, so it vanishes

@@ -41,7 +41,8 @@ export type AttrName =
   | ':pos'
   | ':deleted'
   | ':kind'
-  | ':type';
+  | ':type'
+  | ':link';
 
 export type Kind = 'file' | 'dir';
 
@@ -55,6 +56,26 @@ export interface Pos {
 }
 
 /**
+ * Where a link points (DESIGN.md §2.1).
+ *
+ * **Identity only, no locator hints.** A locator is ephemeral and resolving one
+ * is the resolver's job (§4.2); baking one in here would freeze a guess about
+ * where a space lives into data that outlives it.
+ *
+ * `object` is optional. Present, it is a deep link to one object within the
+ * target space; absent, the link names the space itself. Deep links are natural
+ * given stable UUIDs but do not survive a cross-space move, which mints a fresh
+ * UUID (I12) — that leaves a dangling link, which is a thing the UI must show
+ * honestly rather than a reason to forbid the shape.
+ */
+export interface Link {
+  /** The target space's identity: an Ed25519 public key. */
+  readonly space: WriterId;
+  /** An object within it, or absent to mean the space as a whole. */
+  readonly object?: Uuid;
+}
+
+/**
  * An attribute value. Which variant is legal depends on `attr`; see §4 and
  * `validateEvent` in ./validate.ts.
  */
@@ -65,7 +86,8 @@ export type Value =
   | { readonly t: 'null' }
   | { readonly t: 'pos'; readonly v: Pos }
   | { readonly t: 'bool'; readonly v: boolean }
-  | { readonly t: 'kind'; readonly v: Kind };
+  | { readonly t: 'kind'; readonly v: Kind }
+  | { readonly t: 'link'; readonly v: Link };
 
 /**
  * A single assertion: this attribute of this object now has this value (§1.2).

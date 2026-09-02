@@ -24,6 +24,7 @@ export {
   type Event,
   type Hash,
   type Kind,
+  type Link,
   type Pos,
   ROOT,
   SHORT_HASH_LEN,

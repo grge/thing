@@ -12,7 +12,7 @@
 import { hex } from './hash.js';
 import { compareKeys, greater, type Key, keyOf, type MaybeKey, maxKey } from './key.js';
 import type { ObjectState, State } from './state.js';
-import { type Event, type Hash, type Kind, type Pos, ROOT, type Uuid } from './types.js';
+import { type Event, type Hash, type Kind, type Link, type Pos, ROOT, type Uuid } from './types.js';
 
 /** Per-object accumulator. Every field is a max over a set, hence commutative. */
 interface Acc {
@@ -35,6 +35,8 @@ interface Acc {
 
   type: string | null;
   typeKey: MaybeKey;
+  link: Link | null;
+  linkKey: MaybeKey;
 
   /**
    * §4.5. `kill` is the max key over `:deleted = true` events; `live` is the max
@@ -60,6 +62,8 @@ function emptyAcc(uuid: Uuid): Acc {
     kindKey: null,
     type: null,
     typeKey: null,
+    link: null,
+    linkKey: null,
     kill: null,
     live: null,
   };
@@ -156,6 +160,22 @@ export function fold(events: Iterable<Event>): State {
         break;
       }
 
+      case ':link': {
+        if (e.value.t !== 'link') break;
+        if (greater(key, a.linkKey)) {
+          a.link = e.value.v;
+          a.linkKey = key;
+        }
+        // Unlike `:kind` and `:type`, this **is** a live-attr event. Setting a
+        // link is authoring — it is what the object is *for* — so it revives a
+        // tombstoned object exactly as writing `:content` does. The reasoning
+        // in §4.5 applies unchanged: a resurrected object is recoverable by
+        // re-deleting, whereas an authored link vanishing behind a tombstone
+        // looks like data loss.
+        a.live = maxKey(a.live, key);
+        break;
+      }
+
       case ':deleted': {
         if (e.value.t !== 'bool') break;
         if (e.value.v) {
@@ -184,6 +204,7 @@ export function fold(events: Iterable<Event>): State {
       deleted: a.kill !== null && greater(a.kill, a.live),
       kind: a.kind,
       type: a.type,
+      link: a.link,
       cycleBroken: resolved.broken,
     });
   }

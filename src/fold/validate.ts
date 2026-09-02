@@ -74,6 +74,17 @@ export function validateEvent(e: Event): void {
       // hashed into every EventId and an unbounded string there is a footgun.
       if (v.v.length > 255) throw new InvalidEvent(`:type must be at most 255 chars`);
       break;
+    case ':link':
+      if (v.t !== 'link') throw new InvalidEvent(`:link takes a link`);
+      // The target space is an identity — a public key — never a locator and
+      // never a short code (DESIGN.md §2.1, §4).
+      if (v.v.space.length !== WRITER_LEN) {
+        throw new InvalidEvent(`:link space must be ${WRITER_LEN} bytes`);
+      }
+      if (v.v.object !== undefined && v.v.object.length !== UUID_LEN) {
+        throw new InvalidEvent(`:link object must be ${UUID_LEN} bytes`);
+      }
+      break;
   }
 }
 

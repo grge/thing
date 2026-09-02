@@ -2,7 +2,7 @@
  * Test helpers: building event sequences without hand-writing envelopes.
  * Not part of the shipped fold.
  */
-import type { AttrName, Event, Hash, Kind, Pos, Uuid, Value, WriterId } from './types.js';
+import type { AttrName, Event, Hash, Kind, Link, Pos, Uuid, Value, WriterId } from './types.js';
 import { CONTENT_HASH_LEN, SIG_LEN, UUID_LEN, WRITER_LEN } from './types.js';
 
 /** Deterministic 16-byte id from a short label, so tests read legibly. */
@@ -82,5 +82,8 @@ export class TestWriter {
   }
   type(target: Uuid, mime: string, at?: number): Event {
     return this.next(target, ':type', { t: 'string', v: mime }, at);
+  }
+  link(target: Uuid, link: Link, at?: number): Event {
+    return this.next(target, ':link', { t: 'link', v: link }, at);
   }
 }

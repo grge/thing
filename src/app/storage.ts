@@ -85,13 +85,26 @@ function encodeValue(v: Value): unknown {
       return { t: 'null' };
     case 'pos':
       return { t: 'pos', x: v.v.x, y: v.v.y };
+    case 'link':
+      // Byte arrays as hex, like every other one here. `object` is omitted
+      // rather than nulled when absent, so the two shapes stay distinguishable.
+      return v.v.object === undefined
+        ? { t: 'link', space: hex(v.v.space) }
+        : { t: 'link', space: hex(v.v.space), object: hex(v.v.object) };
     default:
       return { t: v.t, v: v.v };
   }
 }
 
 function decodeValue(raw: unknown): Value {
-  const o = raw as { t: string; v?: unknown; x?: number; y?: number };
+  const o = raw as {
+    t: string;
+    v?: unknown;
+    x?: number;
+    y?: number;
+    space?: string;
+    object?: string;
+  };
   switch (o.t) {
     case 'uuid':
       return { t: 'uuid', v: fromHex(o.v as string) };
@@ -107,6 +120,12 @@ function decodeValue(raw: unknown): Value {
       return { t: 'bool', v: o.v as boolean };
     case 'kind':
       return { t: 'kind', v: o.v as 'file' | 'dir' };
+    case 'link': {
+      const space = fromHex(o.space as string);
+      return o.object === undefined
+        ? { t: 'link', v: { space } }
+        : { t: 'link', v: { space, object: fromHex(o.object as string) } };
+    }
     default:
       throw new Error(`unknown stored value type: ${o.t}`);
   }

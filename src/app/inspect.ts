@@ -43,6 +43,12 @@ function showValue(v: Value, state: State): string {
       return v.v;
     case 'string':
       return JSON.stringify(v.v);
+    case 'link':
+      // Space first, since that is the identity; the object, when present, is a
+      // deep link within it.
+      return v.v.object === undefined
+        ? `→ ${short(hex(v.v.space))}`
+        : `→ ${short(hex(v.v.space))}/${short(hex(v.v.object))}`;
   }
 }
 

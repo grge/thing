@@ -19,6 +19,12 @@ function snapshot(s: State): string {
         `pos=${o.pos === null ? '-' : `${o.pos.x},${o.pos.y}`}`,
         `deleted=${o.deleted}`,
         `kind=${o.kind ?? '-'}`,
+        `type=${o.type ?? '-'}`,
+        `link=${
+          o.link === null
+            ? '-'
+            : `${hex(o.link.space)}${o.link.object === undefined ? '' : '/' + hex(o.link.object)}`
+        }`,
         `cycleBroken=${o.cycleBroken}`,
       ];
       return parts.join(' ');
@@ -52,6 +58,12 @@ describe('commutativity (§1.3)', () => {
       a.parent(d, ROOT),
       b.deleted(f, true),
       a.content(f, contentHash('v3')),
+      // Links join the shuffle: concurrent writes to the same slot, a deep link
+      // racing a space link, and a link landing on a tombstoned object — which
+      // revives it, since setting a link is authoring (§4.5).
+      a.link(d, { space: writer('elsewhere') }),
+      b.link(d, { space: writer('other'), object: uuid('deep') }),
+      a.link(f, { space: writer('elsewhere') }),
     ];
 
     const expected = snapshot(fold(events));

@@ -22,6 +22,7 @@ const ATTR_TAG: Record<AttrName, number> = {
   ':deleted': 5,
   ':kind': 6,
   ':type': 7,
+  ':link': 8,
 };
 
 const VALUE_TAG = {
@@ -32,6 +33,7 @@ const VALUE_TAG = {
   pos: 5,
   bool: 6,
   kind: 7,
+  link: 8,
 } as const;
 
 const KIND_TAG = { file: 1, dir: 2 } as const;
@@ -117,6 +119,23 @@ function encodeValue(w: Writer, value: Value): void {
     case 'kind':
       w.u8(KIND_TAG[value.v]);
       return;
+    case 'link': {
+      // Fixed-width space key, then a presence byte for the optional object.
+      // A presence byte rather than a length prefix because there are exactly
+      // two shapes and both are fixed-size; this keeps the encoding readable
+      // for a second implementation, which has to reproduce it byte for byte
+      // (ADDRESSING.md §6).
+      expectLen(value.v.space, WRITER_LEN, 'link space');
+      w.bytes(value.v.space);
+      if (value.v.object === undefined) {
+        w.u8(0);
+      } else {
+        expectLen(value.v.object, UUID_LEN, 'link object');
+        w.u8(1);
+        w.bytes(value.v.object);
+      }
+      return;
+    }
   }
 }
 
