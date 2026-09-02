@@ -244,6 +244,14 @@ moment. The signalling layer becomes a **resolver**: *given a space key, produce
 candidate locators.* Swapping PeerJS out changes which locator kinds exist and
 nothing else — no address anyone has ever shared breaks.
 
+[RESOLUTION.md](RESOLUTION.md) works this interface out: two flat locator shapes
+(`{ws}` for a directly-dialable hub, `{via, peer}` for a browser reachable
+through a signalling server), announce-on-serve with TTL, and how a client
+collates a *list* of candidates. It also records the reason links need no
+rendezvous of their own — resolution knowledge propagates along the same edges
+the link graph does — and three things the current code should widen before
+anything persists a locator (§7 there). Proposal, not built.
+
 ### 4.3 The short code survives, demoted
 
 The 8-character code stays, same alphabet and typeability, but is **only a
@@ -481,7 +489,16 @@ face of a properly distributed system.
 **Peer list opt-in — Open.** The cheap shape with no roster and no identity: a
 peer willing to serve claims `thing-<code>-2`, `-3`, …; a joiner probes the
 pattern until someone answers. Opting in *is* claiming a slot. Degrades honestly,
-makes squatting possible, which at this scale is itself worth observing.
+makes squatting possible, which at this scale is itself worth observing. It is
+also the fix for [I22](ISSUES.md#i22-one-writer-two-tabs-the-second-cannot-claim-the-rendezvous-slot--limit),
+so the two should be decided together
+([RESOLUTION.md](RESOLUTION.md#83-whether-and-how-peer-lists-are-shared)).
+
+**Whether there is a gossip layer, and what it carries — Open.** Resolution is
+space-granular (*where is space K?*); `HAVE` is object-granular (*who holds blob
+H?*). Whether those are one mechanism with a parameter or two that merely rhyme
+is [RESOLUTION.md](RESOLUTION.md#84-is-there-a-gossip-layer-and-what-does-it-carry)'s
+last open question, and the next thing worth deciding.
 
 ---
 

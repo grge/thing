@@ -15,6 +15,7 @@ Throwaway proof of concept. v0 is built and working; v1 is in progress.
 | [FINDINGS.md](docs/FINDINGS.md) | Evidence — what was learned. Append-only |
 | [NEXT.md](docs/NEXT.md) | Product reasoning behind the design. Pre-spec |
 | [ADDRESSING.md](docs/ADDRESSING.md) | The addressing argument in full |
+| [RESOLUTION.md](docs/RESOLUTION.md) | Hubs, locators and gossip — proposal, for decision |
 | [docs/v0/](docs/v0/) | Archived — what the proof of concept was |
 
 ## Running
