@@ -1,18 +1,23 @@
 # Findings — v0 POC
 
 Evidence gathered while building the POC, against the three questions in
-[SPEC.md](SPEC.md) §0. Companion to [PLAN.md](PLAN.md), which says *what* to
-build; this records *what was learned*.
+[SPEC.md](v0/SPEC.md) §0. Companion to [PLAN.md](v0/PLAN.md), which says *what*
+to build; this records *what was learned*.
+
+**Still current, despite the v0 label.** The evidence here is not archived —
+F10–F14 are load-bearing input to the current design, which cites them
+throughout ([DESIGN.md](DESIGN.md)).
 
 **Append-only.** A finding is evidence, dated, and is never rewritten when the
 thing it describes is fixed — the reasoning is the point, including where it was
 wrong (see F1). What is *currently* broken lives in [ISSUES.md](ISSUES.md),
 which is mutable and links back here.
 
-Findings F1–F9 answer the questions. **F10–F13 do not** — they record design
+Findings F1–F9 answer the questions. **F10–F14 do not** — they record design
 pressure discovered by building: places where v0's design is already known to be
-insufficient for where the project is heading. Those are input to the rewrite,
-not v0 obligations.
+insufficient for where the project is heading. Those are input to v1, not v0
+obligations. ([V1.md](V1.md) settles that v1 is reached by editing v0 in place;
+where these findings say "the rewrite", read "v1".)
 
 The POC exists to make three questions answerable with evidence. Anything here
 that is a guess is labelled a guess.
@@ -24,6 +29,14 @@ that is a guess is labelled a guess.
 | 1. Does WebRTC blob transfer work in practice? | works in Chromium and Firefox over HTTPS; **real networks unmeasured** |
 | 2. Does the UUID + LWW-attribute model survive real filesystem operations? | yes, so far — including concurrent writers |
 | 3. Does paste-then-share-a-URL feel good? | flow works end to end; judgement pending |
+
+**Q1's remaining measurement is retired, not outstanding.** The "real networks
+unmeasured" above stands as an accurate record of where the POC got to, but the
+number is no longer wanted: [NEXT.md](NEXT.md#settled) settled that the next
+round assumes a TURN relay rather than measuring how often peers fail without
+one, and that relay is now built (`turn/`, [DESIGN.md](DESIGN.md) §7). The
+informal answer that drove the decision — phones mostly fail, consistent with
+carrier-grade NAT — is recorded there.
 
 ---
 
@@ -416,7 +429,7 @@ than the current one and, unlike "metadata is small", it survives mode 3.
 **2026-08-29. Open thinking, not a decision.** The idea: the writer shares its
 peer list, readers connect to each other, and the resulting mesh keeps the space
 reachable after the writer closes its tab — addressing
-[ISSUES I9](ISSUES.md#i9-star-topology-makes-the-writer-a-single-point-of-failure).
+[ISSUES I9](ISSUES.md#i9-star-topology-makes-the-writer-a-single-point-of-failure--rewrite).
 
 The mechanism is sound and mostly already supported. §3.2 guarantees a relaying
 peer cannot forge, because chains are per-writer and hash-linked; §3.4's protocol
@@ -429,7 +442,7 @@ with quite different costs, and they should be decided independently.
 a set (§1.3), `EVENTS`/`GAP` are already symmetric, and a reader holding A@0–47
 can serve them. Nothing structural changes.
 
-This alone addresses [I10](ISSUES.md#i10-a-permanently-missing-event-stalls-a-writers-chain-forever): a gap can be filled by any peer holding the
+This alone addresses [I10](ISSUES.md#i10-a-permanently-missing-event-stalls-a-writers-chain-forever--rewrite): a gap can be filled by any peer holding the
 missing event, not only by an absent writer.
 
 **2. Blob mesh — one new message.** This is where I9 actually bites, and it is
@@ -459,13 +472,13 @@ merely reduces how often one is needed.
 
 - **Peer ids become de-facto membership, with no way to leave.** Readers learn
   who else joined and can dial them directly, forever. This makes
-  [I7](ISSUES.md#i7-share-codes-cannot-be-revoked-or-rotated) worse rather than better.
+  [I7](ISSUES.md#i7-share-codes-cannot-be-revoked-or-rotated--rewrite) worse rather than better.
 - **A reader who joined once can rejoin without the code**, through any peer that
   remembers it. Whether that is a feature or a hole depends on whether the code
   was meant as access control — and today it is the only access control there is.
 - **PeerJS ids are ephemeral**, one per session unless claimed. A durable peer
   list goes stale immediately, so it implies stable per-reader identity, which is
-  [I6](ISSUES.md#i6-hello-is-unauthenticated-any-peer-can-claim-any-writer-id).
+  [I6](ISSUES.md#i6-hello-is-unauthenticated-any-peer-can-claim-any-writer-id--fixed-in-v1).
 
 **A cheaper middle, worth considering:** the writer includes in `HELLO` the ids of
 peers *currently* connected — no persistence, no roster, just "these are alive
@@ -481,7 +494,7 @@ improvements that fit the existing design. Durable peer lists drag in identity
 and revocation — a roster nobody can leave is a worse version of a share code
 nobody can revoke — so they belong with signing (§9) rather than ahead of it.
 
-This touches §3.4, which [I18](ISSUES.md#i18-two-selective-fetch-mechanisms-with-incompatible-completeness-models) already argues should be reconsidered as a whole
+This touches §3.4, which [I18](ISSUES.md#i18-two-selective-fetch-mechanisms-with-incompatible-completeness-models--rewrite) already argues should be reconsidered as a whole
 rather than piecemeal.
 
 ---

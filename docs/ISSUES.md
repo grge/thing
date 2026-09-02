@@ -1,6 +1,7 @@
 # Known issues — v0 POC
 
-What is currently wrong, how much it matters, and whether v0 should care.
+What is currently wrong, how much it matters, and whether v0 should care. The
+design these are measured against is [DESIGN.md](DESIGN.md).
 
 **Relationship to [FINDINGS.md](FINDINGS.md).** Findings record *evidence* — what
 happened, when, with what data — and are append-only: a finding is never edited
@@ -15,6 +16,12 @@ Severity is about v0, the throwaway POC — not about a product.
 | **Bug** | Wrong behaviour reachable today. Fix or record why not. |
 | **Limit** | Works as designed; the design runs out. Bounded by POC scale. |
 | **Rewrite** | v0's design is insufficient for where this is going. Not a v0 obligation. |
+| **Fixed in v1** | Was a Rewrite; the v1 work that resolves it has landed. Kept for the reasoning. |
+
+**"Rewrite" is a scheduling label, not a verdict on the codebase.** It means the
+issue is deferred past v0, not that v1 starts from an empty directory — see
+[V1.md](V1.md), which settles that v1 is reachable by incremental edits to v0's
+source, with no migration owed to anything v0 wrote.
 
 ---
 
@@ -66,8 +73,11 @@ local log.
 
 ## Open — accepted for v0, input to the rewrite
 
-### I5. Lamport clocks are unenforceable, so a malicious peer wins every conflict — **Rewrite**
+### I5. Lamport clocks are unenforceable, so a malicious peer wins every conflict — **Fixed in v1**
+
 *[FINDINGS F5](FINDINGS.md#f5-lamport-writer-is-only-a-total-order-because-a-writers-own-lamports-strictly-increase), SPEC §2.2*
+
+**Fixed by signing (v1 step 1).** An inflated Lamport stamp changes the signed preimage, so the event no longer verifies and is dropped at the wire boundary. See [DESIGN.md](DESIGN.md) §5.
 
 LWW resolves on `(lamport, writer)`. Nothing on the wire constrains `lamport`, so
 a peer that stamps `MAX_INT` wins every conflict on every attribute, forever.
@@ -82,8 +92,11 @@ Note the blast radius is bounded by who can write: in mode 2 the writer is the
 only legitimate writer, so this matters when readers can forge (I6), and in mode
 3 where everyone writes.
 
-### I6. `HELLO` is unauthenticated; any peer can claim any writer id — **Rewrite**
+### I6. `HELLO` is unauthenticated; any peer can claim any writer id — **Fixed in v1**
+
 *SPEC §7.2, §9, §10.1*
+
+**Fixed by signing (v1 step 1).** Every event is verified against the key in its own `writer` field, so claiming another writer's id fails on its own terms. `HELLO` itself is still unauthenticated, but it no longer grants anything — a peer that lies in the handshake still cannot produce events that verify. See [DESIGN.md](DESIGN.md) §5.
 
 Mode 2's "readers do not write" is convention. A modified client can forge events
 under the writer's id and the space accepts them; the hash chain does not help,
@@ -209,7 +222,7 @@ The useful constraint out of F13: **whatever determines scope must itself always
 be replicated in full.**
 
 ### I21. No touch path for re-parent or cross-space move — **Limit**
-*[MOBILE.md](MOBILE.md)*
+*[MOBILE.md](v0/MOBILE.md)*
 
 Re-parenting a tree entry and moving a file across space tabs (§8.5) are both
 native HTML5 drag-and-drop, which mobile browsers don't make touch-operable.
@@ -218,12 +231,32 @@ non-drag content-in — is planned to work on a phone; these two gestures are
 deliberately left desktop-only for v0 rather than attempting a touch
 drag-and-drop implementation, which is a separate UI problem on its own.
 
+### I22. One writer, two tabs: the second cannot claim the rendezvous slot — **Limit**
+*Observed 2026-09-02 while testing v1 step 2. Pre-existing since v0.*
+
+A writer registers with signalling under the peer id its code names, so a second
+tab holding the same space finds the slot taken and PeerJS aborts
+(`Error: ID "thing-…" is taken`). The tab still works locally — the log, the
+fold and all write gestures are unaffected — but it does not replicate.
+
+**Not introduced by derived codes.** v0 had the same single-claimant slot, keyed
+off a random code rather than the key; deriving the code from the key
+(DESIGN.md §4.3) changed what the string is, not how many peers may claim it.
+It surfaces more readily now only because the same key on two devices derives
+the same slot deterministically, where v0's random code differed per space.
+
+Worth fixing where the mesh work lands rather than here: the slot pattern
+[NEXT.md](NEXT.md#open) sketches — a peer willing to serve claims
+`thing-<code>-2`, `-3`, … and a joiner probes until someone answers — makes
+"the slot is taken" the normal case rather than an error, and is the same
+mechanism peer-list opt-in needs.
+
 ---
 
 ## Closed
 
 ### I19. MIME stored per-blob and never replicated — *fixed 2026-08-29*
-*[FINDINGS F10](FINDINGS.md#f10-mime-is-stored-per-blob-and-not-replicated--already-wrong-fixed)*
+*[FINDINGS F10](FINDINGS.md#f10-mime-is-stored-per-blob-and-not-replicated--already-wrong)*
 
 Format is now a `:type` attribute on the object (SPEC §4.7), replicated with the
 metadata. The blob store holds bytes and nothing else.
@@ -249,9 +282,20 @@ Ordered by how soon a real user hits it, not by severity:
 
 ---
 
-## For the rewrite
+## For v1
 
 The envelope (§2), the handshake (§3.4), and the blob/log boundary (§6) should be
 reconsidered **together**. They are the expensive things to change later, and
 I5, I6, I11, I13, I17 and I18 all land on one of the three. Fixing them
 piecemeal means paying the migration cost repeatedly.
+
+**Since updated by [V1.md](V1.md), on two points.** First, the blob/log boundary
+no longer has to move: [NEXT.md](NEXT.md#settled) settles that mode 3 is out,
+which drops the log/blob dichotomy, snapshots and compaction back to optional.
+What remains is the envelope and the handshake, changing together in one step.
+Second, "paying the migration cost repeatedly" overstates the cost to zero:
+there is **no migration obligation at all**, because nothing in v1 has to read,
+convert or interoperate with anything v0 wrote.
+
+None of this makes the issues above less real. It changes only the remedy: they
+are resolved by editing v0 in place, in the sequence [V1.md](V1.md) sets out.

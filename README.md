@@ -3,17 +3,19 @@
 A namespaced, append-only event log replicated between browser peers over
 WebRTC, folded into a filesystem.
 
-Throwaway proof of concept.
+Throwaway proof of concept. v0 is built and working; v1 is in progress.
+
+**Start with [DESIGN.md](docs/DESIGN.md).**
 
 | Doc | What it is |
 |---|---|
-| [SPEC.md](docs/SPEC.md) | The design — what v0 is |
-| [PLAN.md](docs/PLAN.md) | The build order — what gets built when |
-| [MOBILE.md](docs/MOBILE.md) | Plan for making the UI usable on a phone |
-| [NEXT.md](docs/NEXT.md) | Notes toward the next experiment. Pre-spec |
-| [ADDRESSING.md](docs/ADDRESSING.md) | Addressing and identity — a proposal, for decision |
-| [FINDINGS.md](docs/FINDINGS.md) | Evidence — what was learned. Append-only |
+| [DESIGN.md](docs/DESIGN.md) | **The design** — model, addressing, transport, crypto |
+| [V1.md](docs/V1.md) | Why v1 is not a rewrite, and the sequence it goes in |
 | [ISSUES.md](docs/ISSUES.md) | State — what is currently wrong. Mutable |
+| [FINDINGS.md](docs/FINDINGS.md) | Evidence — what was learned. Append-only |
+| [NEXT.md](docs/NEXT.md) | Product reasoning behind the design. Pre-spec |
+| [ADDRESSING.md](docs/ADDRESSING.md) | The addressing argument in full |
+| [docs/v0/](docs/v0/) | Archived — what the proof of concept was |
 
 ## Running
 
@@ -21,8 +23,8 @@ Throwaway proof of concept.
 npm install
 npm run dev      # the app          → /
                  # transport harness → /transport.html
-npm test         # 145 tests
-npm run check    # tsc + svelte-check
+npm test         # 264 tests
+npm run check    # tsc --noEmit
 ```
 
 ## Live
@@ -45,9 +47,9 @@ Delete a space with the **×** on its tab. That clears its log and writer identi
 and frees any blobs no other space still references.
 
 Both devices need to reach the PeerJS broker. They do **not** need to reach each
-other directly unless a relay is unavailable — whether they can is exactly what
-POC question 1 is measuring, so try it across different networks (one on wifi,
-one on a phone hotspot) rather than only on the same LAN.
+other directly — a TURN relay (`turn/`) carries the traffic when they cannot, which
+is the usual case for a phone on cellular. Worth trying across different networks
+(one on wifi, one on a phone hotspot) rather than only on the same LAN.
 
 The app is served over HTTPS, which WebRTC requires; `localhost` is exempt but a
 LAN IP is not, so the deployed URL is the easier path for a real test.
@@ -61,7 +63,8 @@ usable ICE candidates over plain `http://`, including a LAN IP — so
 
 | Path | What |
 |---|---|
-| `src/fold/` | The fold: event set → state. Pure, no I/O (§1–§4) |
+| `src/fold/` | The fold: event set → state. Pure, no I/O (DESIGN §1–§3) |
 | `src/app/` | Storage, spaces, tree derivation, replication wiring |
 | `src/net/` | Protocol, framing, blob transfer, sync, signalling |
 | `src/ui/` | Svelte two-pane browser, debug log view, transport harness |
+| `turn/` | coturn TURN relay — HMAC ephemeral credentials, deploy config |

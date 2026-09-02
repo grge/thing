@@ -1,5 +1,14 @@
 # Spec — v0 (mode 1 + mode 2 POC)
 
+> **Archived — the v0 record.** This is what v0 was, kept because it is the
+> reference every other document cites by section number (§4.7, §6.1, and so
+> on) and because the reasoning is worth preserving. It is **not** the current
+> design and is not being updated.
+>
+> The current design is [../DESIGN.md](../DESIGN.md), which states which parts
+> of this carry forward unchanged, which are superseded, and which were POC
+> scaffolding that simply ends here.
+
 Status: draft. Scoped to a throwaway proof of concept. The POC exists to answer
 three questions; everything else is deliberately deferred.
 

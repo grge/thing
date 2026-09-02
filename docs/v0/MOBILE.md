@@ -1,5 +1,14 @@
 # Mobile mode — plan
 
+> **Archived — the v0 record.** Stages A and C are built and shipped; the
+> descriptions below are accurate as a record of what was done and why.
+>
+> Stage B is closed unbuilt. It was a two-real-devices measurement feeding POC
+> question 1, and [../NEXT.md](../NEXT.md) has since settled that TURN is in
+> rather than measured — so the number it would have produced is no longer
+> wanted. Touch parity for re-parent and cross-space move remains genuinely
+> open: [../ISSUES.md](../ISSUES.md#i21-no-touch-path-for-re-parent-or-cross-space-move--limit).
+
 Companion to [PLAN.md](PLAN.md) and [SPEC.md](SPEC.md) §8. The UI as built is
 desktop-only; this plans what "usable on a phone" means for v0 and in what
 order it gets built. Not a new mode in the §7 sense — no new event shape, no
@@ -60,7 +69,7 @@ a narrower scope doesn't already get. Proposed split:
   what's missing is a non-drag way to get a file or pasted text in.
 - **Won't, this pass** — touch drag-to-reparent, touch drag-to-move across
   space tabs (§8.5). Left desktop-only and tracked
-  ([ISSUES I21](ISSUES.md#i21-no-touch-path-for-re-parent-or-cross-space-move--limit)),
+  ([ISSUES I21](../ISSUES.md#i21-no-touch-path-for-re-parent-or-cross-space-move--limit)),
   the same way §8.5 already narrows the drag-into-reader-tab gesture rather
   than trying to make every gesture symmetric.
 
@@ -154,5 +163,5 @@ part needs a real device, as the Risks section below already says.
 - **Clipboard and File API gaps across mobile browsers** (iOS Safari's async
   Clipboard permissions in particular) can't be fully checked outside a real
   device. Once Stage C is tested on-device, write what actually happened into
-  [FINDINGS.md](FINDINGS.md) — same treatment as Q1's TURN question, not an
+  [FINDINGS.md](../FINDINGS.md) — same treatment as Q1's TURN question, not an
   assumption baked into the plan.

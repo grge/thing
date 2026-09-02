@@ -1,8 +1,17 @@
 # Build plan — v0 POC
 
+> **Archived — the v0 record.** Every stage below is finished; this is history,
+> not a work list. The sequence for the next round is in
+> [../V1.md](../V1.md).
+>
+> One status note that outlived the plan: the real-network measurements stages 4
+> and 5 ask for were never taken, and are now **not going to be** —
+> [../NEXT.md](../NEXT.md) settled that TURN is in rather than measuring how
+> often peers fail without it. See [../DESIGN.md](../DESIGN.md) §7.
+
 Companion to [SPEC.md](SPEC.md). The spec says *what* v0 is; this says what gets
 built in what order, what proves each stage done, and where the work stops for a
-decision. Evidence gathered along the way goes in [FINDINGS.md](FINDINGS.md) —
+decision. Evidence gathered along the way goes in [FINDINGS.md](../FINDINGS.md) —
 the POC's actual output.
 
 Section references (§) point into SPEC.md throughout.
@@ -227,7 +236,7 @@ marked stale and unfetched blobs marked unavailable.
 - whole-blob retry frequency
 - whether the URL-share flow feels good (**Q3**, paste-and-share half)
 
-Write these into [FINDINGS.md](FINDINGS.md). A number in a console log is not a
+Write these into [FINDINGS.md](../FINDINGS.md). A number in a console log is not a
 finding.
 
 **The UI built for this stage is desktop-only.** The README's own two-device

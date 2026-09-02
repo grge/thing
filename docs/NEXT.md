@@ -70,7 +70,7 @@ property, not a defect. It is already true in v0 — a reader can copy the
 contents into a new writer space and share that.
 
 > This consciously overrides [F14](FINDINGS.md#f14-peer-meshing-in-mode-2--three-separable-things-not-one),
-> which treated durable peer lists as making [I7](ISSUES.md#i7-share-codes-cannot-be-revoked-or-rotated)
+> which treated durable peer lists as making [I7](ISSUES.md#i7-share-codes-cannot-be-revoked-or-rotated--rewrite)
 > worse — "a roster nobody can leave is a worse version of a share code nobody
 > can revoke" — and concluded they belonged with signing rather than ahead of
 > it. The stance here is that uncontrollability is the intended character, so
@@ -188,7 +188,7 @@ belongs, and where a fork could record `:link` back to what it forked from.
 
 Two sub-decisions remain: whether links target a space or an object within one
 (deep links are natural given stable UUIDs, but break across cross-space moves,
-which mint fresh UUIDs — [I12](ISSUES.md#i12-cross-space-move-is-a-copy-and-delete-not-a-move)),
+which mint fresh UUIDs — [I12](ISSUES.md#i12-cross-space-move-is-a-copy-and-delete-not-a-move--limit)),
 and the fact that **backlinks are impossible** — nobody can know who links to
 them without being told, exactly as on the pre-webmention web. That constrains
 how networked the thing can feel.
@@ -227,7 +227,7 @@ and it is the honest face of a properly distributed system.
 
 ## Why signing came back
 
-v0 deferred signing (§9) and [I5](ISSUES.md#i5-lamport-clocks-are-unenforceable-so-a-malicious-peer-wins-every-conflict)/[I6](ISSUES.md#i6-hello-is-unauthenticated-any-peer-can-claim-any-writer-id)
+v0 deferred signing (§9) and [I5](ISSUES.md#i5-lamport-clocks-are-unenforceable-so-a-malicious-peer-wins-every-conflict--fixed-in-v1)/[I6](ISSUES.md#i6-hello-is-unauthenticated-any-peer-can-claim-any-writer-id--fixed-in-v1)
 recorded the consequences. The uncontrollability stance appears to remove
 signing's motivation — if revocation is not a goal, authorisation does not need
 enforcing. The opposite is true:
@@ -327,7 +327,7 @@ themselves, so a fold that accumulates them stays order-independent, and
 
 2. **Volume, which breaks first and least elegantly.** §4.5 requires the deleted
    predicate be computed over the whole set, never incrementally, and the fold
-   honours that by recomputing everything. [I2](ISSUES.md#i2-every-write-re-serialises-and-re-folds-the-entire-log)
+   honours that by recomputing everything. [I2](ISSUES.md#i2-every-write-re-serialises-and-re-folds-the-entire-log--limit)
    already records `JSON.stringify(all events)` *and* `fold(all events)` per
    write, with the localStorage quota around 28k events. Keystroke-granularity
    updates hit that in one editing session. The practical wall arrives long
@@ -335,7 +335,7 @@ themselves, so a fold that accumulates them stays order-independent, and
 
 3. **Network and trust, which §7.3 does not mention.** Many writers means the
    star topology (§3.4) has no centre, the reader/writer tab split (§8.6) stops
-   being binary, and [I5](ISSUES.md#i5-lamport-clocks-are-unenforceable-so-a-malicious-peer-wins-every-conflict)/[I6](ISSUES.md#i6-hello-is-unauthenticated-any-peer-can-claim-any-writer-id)
+   being binary, and [I5](ISSUES.md#i5-lamport-clocks-are-unenforceable-so-a-malicious-peer-wins-every-conflict--fixed-in-v1)/[I6](ISSUES.md#i6-hello-is-unauthenticated-any-peer-can-claim-any-writer-id--fixed-in-v1)
    go from bounded to unbounded — I5 says so itself. **Signing becomes
    mandatory**, which the direction above already assumes.
 
@@ -349,7 +349,7 @@ it is seeded with a state rather than an empty one.
 
 1. **The hash chain and gap-fill — the sharpest break.** §3.2 chains by `prev`;
    §3.3 holds unmatched events aside and re-issues `GAP` forever with no timeout,
-   deliberately ([I10](ISSUES.md#i10-a-permanently-missing-event-stalls-a-writers-chain-forever)).
+   deliberately ([I10](ISSUES.md#i10-a-permanently-missing-event-stalls-a-writers-chain-forever--rewrite)).
    Compaction deliberately deletes events. The protocol **cannot distinguish
    "missing, in flight" from "gone, compacted"**, so a peer asking for a
    truncated range stalls permanently, loudly. Needs a new wire concept —
@@ -359,7 +359,7 @@ it is seeded with a state rather than an empty one.
 2. **The VV stops answering one question.** §3.1 is "highest contiguous seq
    held". After truncation a peer *knows* the effect of A@0–20 but cannot *serve*
    them. That needs two quantities: a **knowledge frontier** and a **retention
-   floor**. This is [I11](ISSUES.md#i11-version-vectors-cannot-express-i-hold-this-event-but-not-its-predecessor)'s
+   floor**. This is [I11](ISSUES.md#i11-version-vectors-cannot-express-i-hold-this-event-but-not-its-predecessor--rewrite)'s
    expressiveness gap from the other side.
 
 3. **§5's safety rule becomes unimplementable under the stance above.** §5 says
@@ -517,7 +517,7 @@ Git separates these for exactly the reasons that would bite here.
 **Folder as repository** — a `.thing/` directory holding the log and
 content-addressed blobs, opaque to the user. Lossless, no mapping problems, and
 it is all a pinning peer actually needs. It also dissolves
-[I2](ISSUES.md#i2-every-write-re-serialises-and-re-folds-the-entire-log): the
+[I2](ISSUES.md#i2-every-write-re-serialises-and-re-folds-the-entire-log--limit): the
 quota was never a design property.
 
 **Folder as working tree** — materialised files edited with ordinary tools. Much

@@ -1,10 +1,16 @@
 # Addressing and identity — a proposal
 
-**Status: proposal, for decision.** This is stage 0 of the next iteration
-([NEXT.md](NEXT.md)): the thing to settle on paper before any code, because
-addressing is a *decision* rather than a discovery — building a spike will not
-resolve it, and it is cheap to change here and expensive to change once every
-space, link and stored log encodes the answer.
+**Status: accepted.** The proposal in §5 is the design; it is summarised in
+[DESIGN.md](DESIGN.md) §4 and built as step 2 of [V1.md](V1.md). This document is
+kept as the full argument — the options weighed and why this one won — which
+DESIGN.md deliberately does not restate. The sub-decisions in §6 marked open
+there are still open.
+
+It was written as stage 0 of the next iteration ([NEXT.md](NEXT.md)): the thing
+to settle on paper before any code, because addressing is a *decision* rather
+than a discovery — building a spike will not resolve it, and it is cheap to
+change here and expensive to change once every space, link and stored log
+encodes the answer.
 
 It assumes the stances already settled in NEXT.md: mode 3 out, spaces
 uncontrollable once shared, forks legitimate, read-only enforced
@@ -68,7 +74,7 @@ address. Changing the storage layout changes the identity. They are welded
 together by being the same eight characters.
 
 **2.3 Identity is not verifiable, which is now a product problem.** Anyone can
-claim any `WriterId` ([I6](ISSUES.md#i6-hello-is-unauthenticated-any-peer-can-claim-any-writer-id)),
+claim any `WriterId` ([I6](ISSUES.md#i6-hello-is-unauthenticated-any-peer-can-claim-any-writer-id--fixed-in-v1)),
 and anyone who copies a space's contents can re-share them under a new code.
 Nothing lets a reader distinguish the real space from a copy claiming to be it.
 That was tolerable when peers were invited by URL and trusted each other. It is
@@ -277,7 +283,7 @@ the origin, not the ones that hide the key: CSP, subresource integrity,
 dependency discipline, and — highest value for this architecture — **rendering
 peer-supplied content inside a sandboxed iframe with no access to the parent
 origin.** That should be treated as a real constraint on the renderer registry
-(§4.7, [I17](ISSUES.md#i17-renderer-selection-has-no-story-for-active-objects)),
+(§4.7, [I17](ISSUES.md#i17-renderer-selection-has-no-story-for-active-objects--rewrite)),
 not an optimisation. Encrypting the key at rest under a passphrase defends a
 stolen laptop or a storage dump, not live script, which can simply wait for the
 user to unlock it.
