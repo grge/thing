@@ -25,7 +25,8 @@ import {
   blobCount,
   getBlob,
   loadEvents,
-  loadOrMintWriter,
+  loadOrMintLocalKey,
+  loadSpaceKey,
   putBlob,
   saveEvents,
   type SpaceMode,
@@ -61,11 +62,28 @@ export class Space {
       console.error(`space ${record.id}: ${(err as Error).message}`);
     }
 
-    // Readers never mint a WriterId (§8.6).
-    const writer =
-      record.mode === 'reader'
-        ? null
-        : await Writer.resume(loadOrMintWriter(record.id), events);
+    // How the writer key is found differs by mode, and the difference matters:
+    //
+    // - `reader`: no private key at all. That is what makes it a reader
+    //   (DESIGN.md §4.1), not a convention about which gestures the UI enables.
+    // - `writer`: the key *is* the space id, minted at creation. If it is
+    //   missing the identity is gone — mint nothing, because a fresh key would
+    //   be a different space wearing this one's name. Degrade to read-only and
+    //   say so; this is the key-loss case (DESIGN.md §5.4) showing up in the
+    //   one place it can be detected.
+    // - `local`: the id is a UUID and the key is incidental, so minting on
+    //   demand is harmless.
+    let writer: Writer | null = null;
+    if (record.mode === 'writer') {
+      const key = loadSpaceKey(record.id);
+      if (key === null) {
+        console.error(`space ${record.id}: writer key missing; opening read-only`);
+      } else {
+        writer = await Writer.resume(key, events);
+      }
+    } else if (record.mode === 'local') {
+      writer = await Writer.resume(await loadOrMintLocalKey(record.id), events);
+    }
 
     return new Space(record, events, writer);
   }

@@ -8,8 +8,8 @@
  * keep the fold trivially re-runnable. Blobs go in IndexedDB, which is the only
  * browser store that takes megabytes without base64 inflation.
  */
-import type { Event, Hash, Value } from '../fold/index.js';
-import { fromHex, hex } from '../fold/index.js';
+import type { Event, Hash, KeyPair, Value } from '../fold/index.js';
+import { fromHex, generateKeyPair, hex } from '../fold/index.js';
 
 const EVENTS_PREFIX = 'thing:events:';
 const WRITER_PREFIX = 'thing:writer:';
@@ -19,91 +19,44 @@ const SPACES_KEY = 'thing:spaces';
 export type SpaceMode = 'local' | 'writer' | 'reader';
 
 export interface SpaceRecord {
+  /**
+   * The space's identity.
+   *
+   * For a `writer` or `reader` space this is an Ed25519 public key as hex — the
+   * same 32 bytes that appear in every event's `writer` field (DESIGN.md §4.1).
+   * A `local` space never leaves the device and never needs a verifiable
+   * identity, so it keeps a UUID and does not burn a keypair.
+   *
+   * Storage keyspaces are derived from this, so reopening a link finds the
+   * existing log rather than starting from zero.
+   */
   readonly id: string;
+  /**
+   * The **petname**: what this user calls this space locally. Wins over the
+   * name the space suggests, and is never an address (ADDRESSING.md §5.6).
+   */
   readonly name: string;
   readonly mode: SpaceMode;
   /**
-   * For a joined space, the peer id of the writer to dial (§7.2, §8.6).
-   * Absent for local spaces and for the writer's own copy.
+   * For a joined space, where to look right now — a locator, not an identity
+   * (DESIGN.md §4.2). Derived from the id by default and re-derivable, so it is
+   * cached rather than authoritative. Absent for local spaces.
    */
   readonly host?: string;
+  /**
+   * The handle the user actually typed, when they joined by code rather than by
+   * link. Kept so the trust-on-first-use pin can be checked against the same
+   * handle later (`pins.ts`). Absent when joined by link, where the key was
+   * known up front and there is nothing to pin against.
+   */
+  readonly handle?: string;
 }
 
-/**
- * A share code: the writer's peer id, short enough to read off one screen and
- * type into another.
- *
- * Unambiguous alphabet — no 0/O, 1/I/l — because these get transcribed by hand
- * between devices, which is the whole point of them being short.
+/* ── Addressing ───────────────────────────────────────────────────────────
+ * Space identity, the short code, locators and the share link all live in
+ * address.ts now. v0 kept them here because they were the same string; they are
+ * three separate layers under DESIGN.md §4 and no longer belong beside storage.
  */
-const CODE_ALPHABET = '23456789abcdefghjkmnpqrstuvwxyz';
-const CODE_LENGTH = 8;
-
-export function newShareCode(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(CODE_LENGTH));
-  let out = '';
-  for (const b of bytes) out += CODE_ALPHABET[b % CODE_ALPHABET.length];
-  return out;
-}
-
-/** A peer id derived from a code. Namespaced so it cannot collide with a UUID. */
-export function peerIdForCode(code: string): string {
-  return `thing-${code}`;
-}
-
-/**
- * The share URL for a mode 2 space (§7.2).
- *
- * Everything a reader needs is derived from the code: the peer to dial is
- * `thing-<code>`, and the space id is the code itself. Carrying a separate
- * 36-char `space` UUID would make the link untypeable for no benefit — the
- * writer owns the space, so its identity can be the writer's own.
- *
- * A joined space derives its storage keyspace from that id (§8.6), so reopening
- * the same link finds the existing log and blob cache rather than re-fetching
- * from zero.
- */
-export function shareUrl(code: string, name: string): string {
-  const u = new URL(window.location.href);
-  u.hash = name === '' ? code : `${code}&${encodeURIComponent(name)}`;
-  return u.toString();
-}
-
-/**
- * Accept either a full URL or a bare code — someone reading a link off another
- * screen will often type just the short part, and rejecting that would be
- * needlessly strict.
- */
-export function parseShareUrl(input: string): SpaceRecord | null {
-  const raw = input.trim();
-  if (raw === '') return null;
-
-  let hash = raw;
-  if (raw.includes('#')) hash = raw.slice(raw.indexOf('#') + 1);
-  else if (/^https?:/i.test(raw)) return null; // a URL with no fragment carries nothing
-
-  // Legacy long form, still parsed so older links keep working.
-  if (hash.includes('space=')) {
-    const p = new URLSearchParams(hash);
-    const id = p.get('space');
-    const host = p.get('host');
-    if (id === null || host === null) return null;
-    return { id, name: p.get('name') ?? 'shared', mode: 'reader', host };
-  }
-
-  const [code = '', name = ''] = hash.split('&');
-  if (!isShareCode(code)) return null;
-  return {
-    id: code,
-    name: name === '' ? 'shared' : decodeURIComponent(name),
-    mode: 'reader',
-    host: peerIdForCode(code),
-  };
-}
-
-export function isShareCode(s: string): boolean {
-  return s.length === CODE_LENGTH && [...s].every((c) => CODE_ALPHABET.includes(c));
-}
 
 /* ── Event serialisation ──────────────────────────────────────────────────
  * JSON, with byte arrays as hex. Not the canonical encoding (§2.1) — that is
@@ -119,6 +72,8 @@ export interface StoredEvent {
   a: string;
   v: unknown;
   wall: number;
+  /** Ed25519 signature, hex (DESIGN.md §5). */
+  sig: string;
 }
 
 function encodeValue(v: Value): unknown {
@@ -167,6 +122,7 @@ export function toStored(e: Event): StoredEvent {
     a: e.attr,
     v: encodeValue(e.value),
     wall: e.wall,
+    sig: hex(e.sig),
   };
 }
 
@@ -180,6 +136,7 @@ export function fromStored(s: StoredEvent): Event {
     attr: s.a as Event['attr'],
     value: decodeValue(s.v),
     wall: s.wall,
+    sig: fromHex(s.sig),
   };
 }
 
@@ -189,7 +146,16 @@ export function loadEvents(spaceId: string): Event[] {
   const raw = localStorage.getItem(EVENTS_PREFIX + spaceId);
   if (raw === null) return [];
   try {
-    return (JSON.parse(raw) as StoredEvent[]).map(fromStored);
+    const stored = JSON.parse(raw) as StoredEvent[];
+    // A v0 log has no `sig` on its events. Nothing migrates (V1.md) — the log
+    // is simply not readable here — but say so precisely, because "unreadable"
+    // would otherwise point at corruption rather than at a format that was
+    // deliberately left behind.
+    if (stored.length > 0 && stored[0]!.sig === undefined) {
+      console.warn(`space ${spaceId}: pre-signing (v0) log ignored; it does not migrate`);
+      return [];
+    }
+    return stored.map(fromStored);
   } catch {
     // A corrupt log is a bug worth seeing, not one to silently swallow.
     console.error(`space ${spaceId}: event log is unreadable`);
@@ -201,18 +167,67 @@ export function saveEvents(spaceId: string, events: readonly Event[]): void {
   localStorage.setItem(EVENTS_PREFIX + spaceId, JSON.stringify(events.map(toStored)));
 }
 
-/* ── Writer identity ───────────────────────────────────────────────────────
- * One WriterId per browser profile per space (§2). A reader never mints one
- * (§8.6), so this is only called for local and writer spaces.
+/* ── Space keys ───────────────────────────────────────────────────────────
+ * A space is a keypair, and the public key is both the space id and the
+ * WriterId (DESIGN.md §4.1). A reader holds no private key at all — that is
+ * what makes it a reader, rather than a convention about which gestures the UI
+ * enables.
+ *
+ * Stored as a raw seed: keys are extractable on purpose (ADDRESSING.md §6),
+ * because the user must be able to move an identity between devices. Key loss
+ * is the largest risk in this design (DESIGN.md §5.4), and a key that cannot
+ * leave the browser cannot be backed up.
  */
 
-export function loadOrMintWriter(spaceId: string): Uint8Array {
-  const key = WRITER_PREFIX + spaceId;
-  const existing = localStorage.getItem(key);
-  if (existing !== null) return fromHex(existing);
-  const id = crypto.getRandomValues(new Uint8Array(16));
-  localStorage.setItem(key, hex(id));
-  return id;
+interface StoredKey {
+  readonly pk: string;
+  readonly sk: string;
+}
+
+function keyRecord(kp: KeyPair): string {
+  return JSON.stringify({ pk: hex(kp.publicKey), sk: hex(kp.privateKey) } satisfies StoredKey);
+}
+
+/**
+ * Mint a new space identity and store it under its own public key.
+ *
+ * Keyed by the key rather than by a separate space id, because for a writer
+ * space they are the same string — the caller uses the returned public key *as*
+ * the space id.
+ */
+export async function mintSpaceKey(): Promise<KeyPair> {
+  const kp = await generateKeyPair();
+  localStorage.setItem(WRITER_PREFIX + hex(kp.publicKey), keyRecord(kp));
+  return kp;
+}
+
+/** The keypair for a space, or null if this device does not hold one. */
+export function loadSpaceKey(spaceId: string): KeyPair | null {
+  const raw = localStorage.getItem(WRITER_PREFIX + spaceId);
+  if (raw === null) return null;
+  try {
+    const stored = JSON.parse(raw) as StoredKey;
+    return { publicKey: fromHex(stored.pk), privateKey: fromHex(stored.sk) };
+  } catch {
+    console.error(`space ${spaceId}: key is unreadable`);
+    return null;
+  }
+}
+
+/**
+ * The keypair for a space, minting one if absent.
+ *
+ * Only meaningful for a `local` space, whose id is a UUID and whose key is
+ * therefore incidental — it signs, but nothing verifies against the id. A
+ * writer space's key must already exist, because its id *is* that key; a reader
+ * space must never have one.
+ */
+export async function loadOrMintLocalKey(spaceId: string): Promise<KeyPair> {
+  const existing = loadSpaceKey(spaceId);
+  if (existing !== null) return existing;
+  const kp = await generateKeyPair();
+  localStorage.setItem(WRITER_PREFIX + spaceId, keyRecord(kp));
+  return kp;
 }
 
 /* ── Space registry ────────────────────────────────────────────────────── */

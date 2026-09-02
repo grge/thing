@@ -8,7 +8,13 @@
  * peer, blobs are fetched on demand (§6.1).
  */
 
-export const PROTOCOL_VERSION = 1;
+/**
+ * Bumped to 2 for signed events (DESIGN.md §5): `WriterId` widened to a 32-byte
+ * public key and every event carries a `sig`. A v1 peer and a v0 peer share no
+ * readable envelope, and nothing is owed to v0 — the handshake rejects the
+ * mismatch, which is all this field was ever for (V1.md, "Zero migration").
+ */
+export const PROTOCOL_VERSION = 2;
 
 /**
  * Chunk size for blob transfer (§6).
@@ -34,6 +40,8 @@ export interface WireEvent {
   readonly a: string;
   readonly v: unknown;
   readonly wall: number;
+  /** Ed25519 signature over the canonical encoding, hex (DESIGN.md §5). */
+  readonly sig: string;
 }
 
 export interface Hello {

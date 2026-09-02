@@ -1,17 +1,22 @@
 /**
- * Event creation (§2, §2.2). The only thing in the app that appends to a log.
+ * Event creation (DESIGN.md §3, §5). The only thing in the app that appends to
+ * a log.
  *
- * Readers do not construct one of these at all (§8.6): a reader has no
- * WriterId, and the only use an unused one could ever have is forging events
- * under a chain it does not own.
+ * Readers do not construct one of these at all: a reader holds no private key,
+ * and that — rather than convention — is what makes a reader read-only
+ * (DESIGN.md §4.1). The writer's identity *is* its public key, so `id` and the
+ * space id are the same 32 bytes.
  */
 import {
   type AttrName,
   type Event,
   eventId,
   type Hash,
+  type KeyPair,
   type Kind,
   type Pos,
+  signEvent,
+  SIG_LEN,
   type Uuid,
   type Value,
   validateEvent,
@@ -24,7 +29,7 @@ export class Writer {
   private lamport: number;
 
   private constructor(
-    readonly id: WriterId,
+    private readonly key: KeyPair,
     seq: number,
     prev: Hash | null,
     lamport: number,
@@ -34,19 +39,24 @@ export class Writer {
     this.lamport = lamport;
   }
 
+  /** The public key: this writer's id, and the space's id (DESIGN.md §4.1). */
+  get id(): WriterId {
+    return this.key.publicKey;
+  }
+
   /**
    * Resume from an existing log. Scans for this writer's highest seq and the
    * whole log's highest lamport — the latter across *all* writers, since §2.2's
    * receive rule is `counter = max(counter, event.lamport)` and a loaded log is
    * indistinguishable from a received one.
    */
-  static async resume(id: WriterId, events: readonly Event[]): Promise<Writer> {
+  static async resume(key: KeyPair, events: readonly Event[]): Promise<Writer> {
     let seq = 0;
     let prev: Hash | null = null;
     let lamport = 0;
     let last: Event | null = null;
 
-    const idHex = hexOf(id);
+    const idHex = hexOf(key.publicKey);
     for (const e of events) {
       if (e.lamport > lamport) lamport = e.lamport;
       if (hexOf(e.writer) === idHex && (last === null || e.seq > last.seq)) last = e;
@@ -55,7 +65,7 @@ export class Writer {
       seq = last.seq + 1;
       prev = await eventId(last);
     }
-    return new Writer(id, seq, prev, lamport);
+    return new Writer(key, seq, prev, lamport);
   }
 
   /** §2.2 receive rule. Called when events arrive from a peer (stage 5). */
@@ -74,8 +84,10 @@ export class Writer {
    */
   private async emit(target: Uuid, attr: AttrName, value: Value): Promise<Event> {
     this.lamport += 1;
-    const e: Event = {
-      writer: this.id,
+    // Signed over the canonical encoding, which does not include `sig` itself
+    // (see fold/sign.ts). The placeholder is never encoded and never escapes.
+    const unsigned: Event = {
+      writer: this.key.publicKey,
       seq: this.seq,
       prev: this.prev,
       lamport: this.lamport,
@@ -83,7 +95,9 @@ export class Writer {
       attr,
       value,
       wall: Date.now(),
+      sig: EMPTY_SIG,
     };
+    const e: Event = { ...unsigned, sig: await signEvent(unsigned, this.key) };
     validateEvent(e);
     this.seq += 1;
     this.prev = await eventId(e);
@@ -112,6 +126,9 @@ export class Writer {
     return this.emit(target, ':type', { t: 'string', v: mime });
   }
 }
+
+/** Stand-in for the signature while the event is being signed. Never emitted. */
+const EMPTY_SIG = new Uint8Array(SIG_LEN);
 
 function hexOf(b: Uint8Array): string {
   let s = '';

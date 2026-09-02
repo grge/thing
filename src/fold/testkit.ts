@@ -3,7 +3,7 @@
  * Not part of the shipped fold.
  */
 import type { AttrName, Event, Hash, Kind, Pos, Uuid, Value, WriterId } from './types.js';
-import { CONTENT_HASH_LEN, UUID_LEN, WRITER_LEN } from './types.js';
+import { CONTENT_HASH_LEN, SIG_LEN, UUID_LEN, WRITER_LEN } from './types.js';
 
 /** Deterministic 16-byte id from a short label, so tests read legibly. */
 function idFrom(label: string, len: number): Uint8Array {
@@ -13,8 +13,20 @@ function idFrom(label: string, len: number): Uint8Array {
 }
 
 export const uuid = (label: string): Uuid => idFrom(label, UUID_LEN);
-export const writer = (label: string): WriterId => idFrom(label, WRITER_LEN);
 export const contentHash = (label: string): Hash => idFrom(label, CONTENT_HASH_LEN);
+
+/**
+ * A stand-in WriterId.
+ *
+ * **Not a real public key**, and deliberately so: the fold does not verify
+ * signatures — it must stay total (§3.5) and pure — so it only ever compares
+ * these bytes. Tests that care about verification build real keys with
+ * `generateKeyPair` instead; see sign.test.ts.
+ */
+export const writer = (label: string): WriterId => idFrom(label, WRITER_LEN);
+
+/** Matching stand-in signature. Structurally valid width, cryptographically meaningless. */
+const UNSIGNED = new Uint8Array(SIG_LEN);
 
 /**
  * A writer that stamps its own seq/prev/lamport. `prev` is a stand-in here —
@@ -44,6 +56,7 @@ export class TestWriter {
       attr,
       value,
       wall: 0,
+      sig: UNSIGNED,
     };
     this.seq += 1;
     return e;

@@ -11,6 +11,7 @@ import {
   CONTENT_HASH_LEN,
   type Event,
   SHORT_HASH_LEN,
+  SIG_LEN,
   UUID_LEN,
   WRITER_LEN,
 } from './types.js';
@@ -20,6 +21,7 @@ export class InvalidEvent extends Error {}
 /** Field-shape checks: sizes, and the value variant matching the attr (§4). */
 export function validateEvent(e: Event): void {
   if (e.writer.length !== WRITER_LEN) throw new InvalidEvent(`writer must be ${WRITER_LEN} bytes`);
+  if (e.sig.length !== SIG_LEN) throw new InvalidEvent(`sig must be ${SIG_LEN} bytes`);
   if (e.target.length !== UUID_LEN) throw new InvalidEvent(`target must be ${UUID_LEN} bytes`);
   if (!Number.isInteger(e.seq) || e.seq < 0) throw new InvalidEvent(`seq must be a u32`);
   if (!Number.isInteger(e.lamport) || e.lamport < 0) throw new InvalidEvent(`lamport must be a u64`);

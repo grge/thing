@@ -3,7 +3,7 @@ import { encodeEvent } from './encode.js';
 import { bytesEqual, eventId, hex } from './hash.js';
 import { contentHash, TestWriter, uuid, writer } from './testkit.js';
 import type { Event } from './types.js';
-import { ROOT } from './types.js';
+import { ROOT, WRITER_LEN } from './types.js';
 
 /** A structurally identical copy, to prove encoding depends on values not identity. */
 function clone(e: Event): Event {
@@ -64,7 +64,7 @@ describe('canonical encoding (§2.1)', () => {
   it('rejects a mis-sized writer id rather than encoding it', () => {
     const a = new TestWriter(writer('alice'));
     const bad: Event = { ...a.name(uuid('f'), 'x'), writer: new Uint8Array(8) };
-    expect(() => encodeEvent(bad)).toThrow(/writer must be 16 bytes/);
+    expect(() => encodeEvent(bad)).toThrow(new RegExp(`writer must be ${WRITER_LEN} bytes`));
   });
 
   it('rejects a truncated content hash (:content is full SHA-256)', () => {

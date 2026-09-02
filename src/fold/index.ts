@@ -6,6 +6,17 @@ export { encodeEvent } from './encode.js';
 export { fold, pathOf } from './fold.js';
 export { bytesEqual, compareBytes, eventId, fromHex, hex, sha256 } from './hash.js';
 export { compareKeys, greater, type Key, keyOf, type MaybeKey, maxKey } from './key.js';
+export {
+  generateKeyPair,
+  hasWebCryptoEd25519,
+  type KeyPair,
+  keyPairFromSeed,
+  SEED_LEN,
+  type Signature,
+  signEvent,
+  verifyEvent,
+  _setWebCryptoEd25519,
+} from './sign.js';
 export type { ObjectState, State } from './state.js';
 export {
   type AttrName,
@@ -16,6 +27,7 @@ export {
   type Pos,
   ROOT,
   SHORT_HASH_LEN,
+  SIG_LEN,
   type Uuid,
   UUID_LEN,
   type Value,

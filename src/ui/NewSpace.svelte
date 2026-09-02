@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { SpaceMode } from '../app/storage.js';
-  import { parseShareUrl } from '../app/storage.js';
+  import { parseShareInput } from '../app/address.js';
 
   interface Props {
     open: boolean;
@@ -46,10 +46,16 @@
   /** Parsed only to validate and to preview what will be joined. */
   let parsed = $derived(url.trim() === '' ? null : safeParse(url.trim()));
 
-  function safeParse(u: string): { name: string; id: string } | null {
+  function safeParse(u: string): { name: string; id: string; kind: 'key' | 'code' } | null {
     try {
-      const rec = parseShareUrl(u);
-      return rec === null ? null : { name: rec.name, id: rec.id };
+      const p = parseShareInput(u);
+      if (p === null) return null;
+      // A link previews the name it suggests and the key it names; a typed code
+      // can only preview itself, since the identity is not known until a peer
+      // answers (DESIGN.md §4.4).
+      return p.kind === 'key'
+        ? { name: p.name === '' ? 'shared' : p.name, id: p.id.slice(0, 12), kind: 'key' }
+        : { name: 'shared', id: p.code, kind: 'code' };
     } catch {
       return null;
     }
@@ -110,7 +116,21 @@
       {#if url.trim() !== '' && parsed === null}
         <p class="field-error">Not a link or code.</p>
       {:else if parsed !== null}
-        <p class="field-hint">Joins <strong>{parsed.name}</strong>, read-only.</p>
+        <!--
+          A link and a typed code carry different guarantees, so they preview
+          differently rather than both claiming to know what will be joined
+          (DESIGN.md §4.4). A link names a key and can be verified on contact; a
+          code names a rendezvous slot and cannot be checked until a peer
+          answers.
+        -->
+        <p class="field-hint">
+          Joins <strong>{parsed.name}</strong>, read-only.
+          {#if parsed.kind === 'key'}
+            <br />Verified by key <code>{parsed.id}…</code>
+          {:else}
+            <br />Code <code>{parsed.id}</code> — identity confirmed on first contact.
+          {/if}
+        </p>
       {/if}
     {:else}
       <label class="field">

@@ -1,8 +1,18 @@
 /**
- * Core types for the event log. See docs/SPEC.md §2 (envelope) and §4 (attributes).
+ * Core types for the event log. See docs/DESIGN.md §3 (envelope) and §2 (attributes).
  */
 
-/** 16 random bytes, one per browser profile per space (§2). */
+/**
+ * An Ed25519 public key, 32 bytes (DESIGN.md §4.1, §5).
+ *
+ * A space is a keypair and, with one writer per space, the space key and the
+ * writer key are the same key — so this value is both the space's identity and
+ * the writer's. "Mode 2 is read-only" is therefore arithmetic (you do not hold
+ * the private half) rather than convention.
+ *
+ * v0 used 16 random bytes per browser profile per space. Nothing migrates:
+ * v0 events are not readable here and are not meant to be (V1.md).
+ */
 export type WriterId = Uint8Array;
 
 /** 16 bytes. The only identity an object has; paths are derived (§1.1, §4.1). */
@@ -15,7 +25,10 @@ export type Hash = Uint8Array;
 export const ROOT: Uuid = new Uint8Array(16);
 
 export const UUID_LEN = 16;
-export const WRITER_LEN = 16;
+/** An Ed25519 public key. Full width: this is a verification key, not a digest. */
+export const WRITER_LEN = 32;
+/** An Ed25519 signature (DESIGN.md §5). */
+export const SIG_LEN = 64;
 /** `prev` and EventId are SHA-256 truncated to 16 bytes (§2.1). */
 export const SHORT_HASH_LEN = 16;
 /** `:content` holds a full SHA-256 of the plaintext blob (§4.3, §6). */
@@ -71,4 +84,11 @@ export interface Event {
   readonly value: Value;
   /** ms since epoch. DISPLAY ONLY — never used to resolve (§2). */
   readonly wall: number;
+  /**
+   * Ed25519 over the canonical encoding of every field above, by `writer`.
+   *
+   * Not itself part of that encoding — see sign.ts. `EventId` hashes the
+   * preimage, so identity is independent of the signature bytes.
+   */
+  readonly sig: Uint8Array;
 }

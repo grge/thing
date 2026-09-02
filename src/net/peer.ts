@@ -6,7 +6,7 @@
  * talks to `PeerLink`s, so a self-hosted signal server would drop in with no
  * change here.
  */
-import { hex, sha256 } from '../fold/index.js';
+import { hex, sha256, verifyEvent } from '../fold/index.js';
 import { BlobReceiver, type Channel, sendBlob, sendControl } from './blobtransfer.js';
 import { metrics, type TransferRecord } from './metrics.js';
 import { decodeFrame, type Message, PROTOCOL_VERSION, type WireEvent } from './protocol.js';
@@ -106,6 +106,14 @@ export class Transport {
   /**
    * Attach a log to replicate. Without one the transport carries blobs only,
    * which is what the stage 4 harness does.
+   *
+   * `space` is the space's **identity** — a public key (DESIGN.md §4.1) — and
+   * is compared against what a peer announces. Pass `''` when the identity is
+   * not yet known, which is the case for a space joined by typed code: a code
+   * names a rendezvous slot, not a space, so there is nothing to compare until
+   * a peer answers and its signed events say who it is. Announcing the code
+   * here instead would guarantee a mismatch against the writer's key, which is
+   * exactly the bug this parameter exists to avoid.
    */
   attach(space: string, log: EventLog): void {
     this.space = space;
@@ -307,8 +315,16 @@ export class Transport {
           return;
         }
         // A peer in a different space is not a peer for our purposes.
+        //
+        // Both ids are identities — public keys (DESIGN.md §4.1) — never
+        // locators. A peer that has not established its identity yet announces
+        // `''` and is not rejected here; see `attach`. Reporting both sides is
+        // deliberate: when this fires wrongly, the two values are the evidence,
+        // and a bare "different space" hid a real bug once already.
         if (this.space !== '' && msg.space !== '' && msg.space !== this.space) {
-          this.events.onError?.(`peer ${link.peerId} is in a different space`);
+          this.events.onError?.(
+            `peer ${link.peerId} serves ${msg.space.slice(0, 8)}…, not ${this.space.slice(0, 8)}…`,
+          );
           link.close();
           return;
         }
@@ -333,7 +349,18 @@ export class Transport {
         const applicable: Event[] = [];
         for (const w of msg.events) {
           try {
-            applicable.push(...this.pending.offer(this.log.fromWire(w)));
+            const e = this.log.fromWire(w);
+            // Verified at the boundary, before the event exists anywhere else
+            // (DESIGN.md §5). An unverified event is treated as one we do not
+            // have: dropped, never buffered, never folded. This is what closes
+            // I5 and I6 on the wire — a peer cannot win by inflating a clock
+            // or claiming another writer's id, because neither survives the
+            // signature check.
+            if (!(await verifyEvent(e))) {
+              this.events.onError?.(`unverified event from ${link.peerId}, dropped`);
+              continue;
+            }
+            applicable.push(...this.pending.offer(e));
           } catch (err) {
             this.events.onError?.(`undecodable event from ${link.peerId}: ${String(err)}`);
           }

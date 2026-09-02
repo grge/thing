@@ -3,7 +3,7 @@
   import type { Space } from '../app/space.js';
   import { Spaces } from '../app/spaces.js';
   import type { SpaceMode, SpaceRecord } from '../app/storage.js';
-  import { parseShareUrl, peerIdForCode, shareUrl } from '../app/storage.js';
+  import { codeForSpace, defaultLocator, parseShareInput, shareUrl } from '../app/address.js';
   import { Replication } from '../app/replication.js';
   import { loadSettings, saveSettings, type Settings as AppSettings } from '../app/settings.js';
   import { hex, ROOT, type ObjectState } from '../fold/index.js';
@@ -75,11 +75,14 @@
 
       // A share URL joins the space it names (§7.2). Idempotent, so reopening
       // the link reuses the local log rather than re-fetching from zero.
-      const shared = parseShareUrl(window.location.href);
+      const shared = parseShareInput(window.location.href);
       let focus = m.list[0]?.id ?? null;
       if (shared !== null) {
-        const rec = await m.join(shared);
-        focus = rec.id;
+        const resolved = await m.resolve(shared);
+        if (resolved !== null) {
+          const rec = await m.join(resolved);
+          focus = rec.id;
+        }
       }
 
       spaces = m.list;
@@ -110,6 +113,14 @@
       },
       onPeerClose: () => {
         peerCounts = { ...peerCounts, [rec.id]: rep.peers.length };
+        // A peer that connected and then left without the space gaining any
+        // events is the shape of a rejected handshake, which is otherwise
+        // invisible: the reassuring "peer connected" has already been shown and
+        // the count quietly returns to zero. Say so, rather than let a failed
+        // join look like an idle one.
+        if (rep.peers.length === 0 && (manager?.get(rec.id)?.log.length ?? 0) === 0) {
+          notify(`${rec.name}: peer disconnected before sending anything.`);
+        }
       },
       onError: (e) => notify(e),
       onStall: (w, from, to) => {
@@ -131,13 +142,22 @@
         fetching = rest;
         unavailable = { ...unavailable, [h]: true };
       },
+      onIdentityMismatch: (expected, got) => {
+        // Loud and blocking, per ADDRESSING.md §5.5 — a substitution is the one
+        // thing a typed code cannot rule out in advance, so it must never pass
+        // silently. The events have already been refused; this says why.
+        notify(
+          `${rec.name}: this code now answers to a different space ` +
+            `(${got.slice(0, 8)}…, expected ${expected.slice(0, 8)}…). Nothing was accepted.`,
+        );
+      },
     });
 
     replication.set(rec.id, rep);
     try {
-      // A writer claims the peer id its share code names, so the code alone is
-      // enough for a reader to dial it.
-      const wanted = rec.mode === 'writer' ? peerIdForCode(rec.id) : undefined;
+      // A writer claims the locator its own key derives to, so anyone holding
+      // the key can work out where to look (DESIGN.md §4.2, §4.3).
+      const wanted = rec.mode === 'writer' ? (await defaultLocator(rec.id)).address : undefined;
       const id = await rep.start(wanted);
       peerIds = { ...peerIds, [rec.id]: id };
       if (rec.host != null) await rep.connect(rec.host);
@@ -161,6 +181,39 @@
       selected = null;
       void refreshBlobCount();
     }
+  });
+
+  /**
+   * The rendezvous code for the visible writer space.
+   *
+   * Derived from the key rather than stored, so it cannot drift from the
+   * identity it points at (DESIGN.md §4.3). Async because the derivation
+   * hashes, hence an effect rather than `$derived`.
+   */
+  let shareCode = $state<string | null>(null);
+  $effect(() => {
+    const rec = space?.record ?? null;
+    if (rec === null || rec.mode !== 'writer') {
+      shareCode = null;
+      return;
+    }
+    let stale = false;
+    void codeForSpace(rec.id).then((c) => {
+      if (!stale) shareCode = c;
+    });
+    return () => {
+      stale = true;
+    };
+  });
+
+  /**
+   * Objects, excluding ROOT — which the fold materialises only once some event
+   * names it, so an untouched space has none rather than one.
+   */
+  let objectCount = $derived.by(() => {
+    version;
+    if (space === null) return 0;
+    return Math.max(0, space.state.objects.size - 1);
   });
 
   let tree = $derived.by(() => {
@@ -467,13 +520,18 @@
   /** Adopt a space from a share link (§7.2), the same path an opened URL takes. */
   async function joinSpace(url: string): Promise<void> {
     if (manager === null) return;
-    const parsed = parseShareUrl(url);
+    const parsed = parseShareInput(url);
     if (parsed === null) {
-      notify('That is not a share link.');
+      notify('That is not a share link or code.');
+      return;
+    }
+    const resolved = await manager.resolve(parsed);
+    if (resolved === null) {
+      notify('That code now points somewhere else. Not joining.');
       return;
     }
     showNewSpace = false;
-    const rec = await manager.join(parsed);
+    const rec = await manager.join(resolved);
     spaces = manager.list;
     activeId = rec.id;
     version += 1;
@@ -521,7 +579,7 @@
       return;
     }
     await navigator.clipboard.writeText(shareUrl(rec.id, rec.name));
-    notify(`Share link copied — code ${rec.id}`);
+    notify(`Share link copied — code ${await codeForSpace(rec.id)}`);
   }
 
   /**
@@ -802,7 +860,13 @@
         -->
         <div class="share-bar">
           <Icon name="link" size={12} />
-          <code class="share-code" title="Type this on another device">{space.record.id}</code>
+          <!--
+            The *code*, not the key. The key is this space's identity and is 64
+            hex characters — unreadable and untypeable. The code is derived from
+            it (DESIGN.md §4.3) and is the only part meant for human transcription;
+            it carries no authority, so showing it grants nothing.
+          -->
+          <code class="share-code" title="Type this on another device">{shareCode ?? '········'}</code>
           <button type="button" onclick={() => void share()}>
             <Icon name="copy" size={12} /> Copy link
           </button>
@@ -853,7 +917,7 @@
     </span>
 
     <span class="status-group">
-      <span>{space === null ? 0 : space.state.objects.size - 1} objects</span>
+      <span>{objectCount} objects</span>
       <span>{space?.eventCount ?? 0} events</span>
       <span>{blobsHeld} blobs</span>
     </span>
