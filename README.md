@@ -16,6 +16,7 @@ Throwaway proof of concept. v0 is built and working; v1 is in progress.
 | [NEXT.md](docs/NEXT.md) | Product reasoning behind the design. Pre-spec |
 | [ADDRESSING.md](docs/ADDRESSING.md) | The addressing argument in full |
 | [RESOLUTION.md](docs/RESOLUTION.md) | Hubs, locators and gossip — proposal, for decision |
+| [SPACES.md](docs/SPACES.md) | Space types, CRDT attributes, applications-as-spaces — direction |
 | [docs/v0/](docs/v0/) | Archived — what the proof of concept was |
 
 ## Running
