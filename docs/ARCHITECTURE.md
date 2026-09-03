@@ -54,6 +54,11 @@ authorises writes, and an optional symmetric key that decrypts content. The
 first makes a space verifiable, the second makes it private, and because they
 are separate, **a peer can hold and serve a space it cannot read** (Section 6).
 
+Both keys are **per space and cover all of it**. There is no permission finer
+than a whole space, which is why spaces are small and numerous: anything shared
+on different terms is a different space, referenced from wherever it belongs
+(Section 7.1).
+
 ### 1.1 Properties this produces
 
 | | |
@@ -63,6 +68,7 @@ are separate, **a peer can hold and serve a space it cannot read** (Section 6).
 | **Offline-capable** | A disconnected peer keeps writing. Reconnection is set reconciliation, not replay. |
 | **Verifiable** | Every event is signed. A space's identity is a public key, so provenance is arithmetic rather than convention. |
 | **Application-agnostic** | A peer can store, verify, replicate, fold and compact a space whose application it does not have. |
+| **One boundary per space** | Reading and writing are governed per space and never per object, so who can see and change a thing is answered in one place. |
 | **Readable only by intent** | Content may be encrypted under a separate key, so a peer can be a complete replica of a space it cannot read. |
 
 ---
@@ -259,6 +265,19 @@ The filesystem is the built-in type, shipped with the client so that the system
 can bootstrap. It is not otherwise privileged: anything the filesystem view does,
 another view can do.
 
+**Why these are types rather than objects.** A conversation could be modelled as
+an object inside a filesystem space — a document that happens to hold messages.
+It is not, and the reason is permission. Both keys are per space and cover all of
+it (Section 7.1), so anything needing its own audience or its own set of writers
+must be its own space. A conversation almost always does: the people in it are
+rarely exactly the people who can see the folder it would otherwise sit in.
+
+Once a conversation is a space, the log for that space is not filesystem-shaped,
+and the question of what a log means stops having a single answer. **That is
+where the type declaration comes from** — not from wanting applications, but from
+permission granularity forcing spaces to be small and numerous, and small
+numerous spaces turning out to hold very different kinds of thing.
+
 ---
 
 ## 5. Identity, addressing and connection
@@ -450,6 +469,12 @@ space private: anything a peer can replicate, a peer could read.
 Privacy is therefore a separate key. A space may have a **symmetric reading
 key**, and where it does, event values and blob contents are encrypted under it.
 
+**One key per space, covering all of it.** There is no per-object or per-subtree
+encryption: holding the reading key means reading everything in the space, and
+not holding it means reading none of it. Sharing part of a space with a
+different audience is expressed by that part being a separate space
+(Section 7.1).
+
 ```
 Space key      Ed25519 keypair       identity   · public key names the space
                                                 · private key authorises writes
@@ -505,6 +530,9 @@ concerns, and only the second requires trust.
 
 ### 6.3 What it does not do
 
+- **It is not partial.** There is no way to share half a space. A reader sees
+  everything or nothing, and the only way to divide readership is to divide the
+  space.
 - **It is not access control.** A reading key cannot be revoked. Anyone who has
   ever held it holds it permanently, and can decrypt anything they have or later
   obtain that was encrypted under it. Restricting access after the fact requires
@@ -527,6 +555,12 @@ concerns, and only the second requires trust.
 A space may have many writers. The root declares the **writer set**: the public
 keys admitted to the space.
 
+**The writer set is per space and applies to the whole of it.** There is no
+per-object or per-attribute permission: a writer admitted to a space may write
+anything in it. Sharing write access to part of a space is not expressed by
+narrowing a permission — it is expressed by that part being a separate space
+(Section 7.1).
+
 Events signed by a key outside the set are still *replicated* — a peer cannot be
 trusted to filter honestly, and refusing to carry them would let any relay
 censor silently — but they are **not folded** into state. Validity is therefore a
@@ -536,6 +570,35 @@ answer is in the events.
 
 The space's own key is the root of that authority: the first writer grants are
 signed by it, and delegation flows from there.
+
+### 7.1 The space is the unit of permission
+
+Both keys are per space, and both apply to all of it:
+
+| | Granularity | Governs |
+|---|---|---|
+| **Reading key** (Section 6) | whole space | who can read anything in it |
+| **Writer set** | whole space | who can write anything in it |
+
+Neither has a finer grain, and this is a deliberate limit rather than a stage on
+the way to one. It means the two questions a person actually asks — *who can see
+this?* and *who can change this?* — have exactly one answer per space, visible in
+one place, with no possibility of a document whose permissions differ from the
+folder it sits in.
+
+The cost is that **wanting different sharing means wanting a different space.**
+That sounds like a restriction and is closer to a design generator: it is what
+makes spaces numerous and small rather than few and large, and it is why a
+conversation, a document and a shared canvas are each a space in their own right
+instead of objects inside one. A space is not a container that things live in.
+It is the boundary around a set of things shared on the same terms.
+
+Links are what make that liveable (Section 5.7). A space that must be split for
+permission reasons is not severed from what it was split from — it is referenced
+from it, and following the reference is ordinary navigation. Fine-grained
+permission and coarse permission plus links reach similar places; the second is
+far easier to reason about, because the boundary is something you can see and
+name rather than a rule attached to an object somewhere inside.
 
 ---
 
@@ -654,5 +717,8 @@ The design holds together only if these hold:
 6. **Storing is not reading.** Verification uses the public key; reading uses a
    separate symmetric key. A peer can be a complete replica of a space it cannot
    read, which is what allows infrastructure to exist without custody.
-7. **Events are the truth; everything else is cache.** Snapshots, indexes and
+7. **The space is the unit of permission.** Both keys cover a whole space and
+   nothing finer. Different terms mean a different space, which is what keeps
+   spaces small, numerous and varied enough to need types at all.
+8. **Events are the truth; everything else is cache.** Snapshots, indexes and
    rendered state are all discardable and recomputable.
