@@ -46,7 +46,13 @@ it, and the two lower layers are identical for every application:
   consequence for anyone else.
 
 **Applications ship views, never folds.** This is the central constraint and
-Section 7 explains what it buys.
+Section 8 explains what it buys.
+
+Cutting across all three layers, a space has **two keys with separate jobs**: a
+keypair whose public half *is* the space's identity and whose private half
+authorises writes, and an optional symmetric key that decrypts content. The
+first makes a space verifiable, the second makes it private, and because they
+are separate, **a peer can hold and serve a space it cannot read** (Section 6).
 
 ### 1.1 Properties this produces
 
@@ -57,6 +63,7 @@ Section 7 explains what it buys.
 | **Offline-capable** | A disconnected peer keeps writing. Reconnection is set reconciliation, not replay. |
 | **Verifiable** | Every event is signed. A space's identity is a public key, so provenance is arithmetic rather than convention. |
 | **Application-agnostic** | A peer can store, verify, replicate, fold and compact a space whose application it does not have. |
+| **Readable only by intent** | Content may be encrypted under a separate key, so a peer can be a complete replica of a space it cannot read. |
 
 ---
 
@@ -129,7 +136,7 @@ The substrate verifies three things and no others:
 It does not check whether an attribute exists, whether a value is sensible, or
 whether the writer is permitted to say it. Those are decisions for higher
 layers, and keeping them out is what allows a peer to replicate an application
-it does not have.
+it does not have — or a space it cannot read (Section 6).
 
 ### 2.4 Blobs
 
@@ -201,7 +208,7 @@ specially. Attributes on the root are therefore **space-level attributes**, and
 no separate concept of space metadata is required.
 
 The root carries the space's type declaration (Section 4), its writer set
-(Section 6), a suggested name, and any resolution hints (Section 5.4).
+(Section 7), a suggested name, and any resolution hints (Section 5.3).
 
 ### 3.4 Determinism
 
@@ -210,7 +217,7 @@ randomness, no I/O and no dependence on arrival order. Two clients holding the
 same events produce not merely equivalent state but **byte-identical serialised
 state**.
 
-That is a strong requirement and it is deliberate: Section 8 depends on being
+That is a strong requirement and it is deliberate: Section 9 depends on being
 able to hash the fold output and have two peers agree on the hash.
 
 ---
@@ -222,7 +229,7 @@ A space's root declares its **type**. A type is two things:
 1. **A schema** — for each attribute the type uses, which merge rule it has.
    This is data. The universal fold reads it.
 2. **A view** — how to draw the folded state. This is code, and it is the only
-   code that ships (Section 7).
+   code that ships (Section 8).
 
 **A type never supplies a fold.** If an application appears to need its own fold
 algorithm, the correct response is to add a merge rule to the shared vocabulary,
@@ -237,7 +244,7 @@ not to let that application interpret the log privately.
 - **A peer that lacks the view can only refuse to draw.** It refuses explicitly
   rather than rendering a half-understood approximation.
 - **The type is not a permission.** It says what the bytes mean, not who may
-  write them; that is Section 6.
+  write them; that is Section 7.
 
 ### 4.2 Example types
 
@@ -287,25 +294,96 @@ it says it is" — not "may this person read it".
 
 ### 5.2 Locators are separate, plural and disposable
 
+Identity says *what* a space is. A **locator** says where it can be reached right
+now. They are different kinds of thing with different lifetimes:
+
 ```
-Locator = { transport: "websocket" | "webrtc" | …, address: string }
+Identity     an Ed25519 public key                      never changes
+   ↓ resolve
+Locator      { ws } | { via, peer }                     many, changing, expiring
+   ↓ dial
+Transport    WebSocket direct | WebRTC via signalling
 ```
 
-A locator is where a space can be reached *right now*. A space has zero or many,
-they expire, and none of them is part of its identity. Resolution is therefore a
-lookup: **given a public key, produce candidate locators**, try them, verify what
-answers against the key.
+There are two locator shapes, and both are flat — a locator is never expressed
+in terms of another locator, so one learned third-hand is exactly as usable as
+one learned directly:
 
-Because verification is against the key, a resolver cannot lie in any way that
-matters. A malicious or mistaken resolver wastes a connection attempt; it cannot
-substitute content. **Resolvers are hints, never authorities.**
+| Shape | Means | Lifetime |
+|---|---|---|
+| `{ ws: <url> }` | Open a socket here. The endpoint *is* the peer. | long — a stable address |
+| `{ via: <url>, peer: <session> }` | Signal through this server, ask for this session. | short — dies with the session |
 
-### 5.3 Sharing
+Every locator carries a TTL set by whoever announced it, because only the
+announcer knows its own volatility. Without expiry, a resolution table fills with
+corpses and "resolve" degrades into "try forty dead addresses".
+
+A space has zero or many locators at any moment and none of them is part of its
+identity. Changing transport, or replacing the signalling infrastructure
+entirely, invalidates no address anyone has ever shared.
+
+### 5.3 Resolution
+
+Resolution answers one question: **given a public key, produce candidate
+locators.** It is a lookup, not an authority.
+
+**Because verification is against the key, a resolver cannot lie in any way that
+matters.** A wrong or hostile answer makes you *dial* something; it cannot make
+you *believe* something, because what answers either produces validly signed
+events for that key or does not. The cost of a bad answer is a wasted connection
+attempt, bounded by a dial timeout and a cap on how many entries any one peer may
+contribute.
+
+That single property is what allows resolution to be casual. It works by two
+halves of one mechanism:
+
+- **Announce (push).** A peer that starts serving a space tells the peers it is
+  already connected to, and re-announces on reconnect. Availability is maintained
+  by the same traffic that does the work — no crawl, no polling. A peer that
+  stops announcing is gone within one TTL, which makes serving a genuine opt-in
+  rather than a commitment that cannot be withdrawn.
+- **Query (pull).** A peer that arrived after an announcement, or is following a
+  link to a space nobody has mentioned, asks connected peers directly. Several
+  are asked in parallel and the answers are merged rather than taken from the
+  first responder.
+
+A peer answers for what it serves and for what it has learned from peers it is
+**currently connected to** — one hop, no transit. At one hop, every entry is
+about a live connection, so the answering peer has recent evidence. Relayed-of-
+relayed entries are ones nobody in the chain can vouch for.
+
+An empty answer distinguishes three cases, because they call for different
+behaviour: *I do not track this space* (stop asking this peer), *I track it and
+nobody is serving, last seen at T* (ask elsewhere, and tell the user something
+true), and *here are locators* (dial them).
+
+**Where locators come from.** A client collates a list in preference order:
+
+1. **The space's own declaration** — a signed list on the root of where the
+   writers say it is served. Durable, replicated with the log, and still valid
+   months later when every announcement has expired. Unavailable at first
+   contact, because it lives in a log you do not have yet.
+2. **The share link's hint** — the bootstrap case, and the only source that works
+   before you know anybody.
+3. **Cache** — locators for spaces opened before. First tried, first discarded:
+   a cached locator is stale by default and must never be the reason a space is
+   reported gone.
+4. **Learned** — whatever peers announced or answered.
+5. **A configured fallback resolver.**
+
+**Resolution knowledge travels along the link graph.** A link names a space and
+carries no locator, deliberately — a link outlives any hosting arrangement, and
+an embedded address that has rotted is worse than none. It does not need one:
+reaching a space that contains a link generally means reaching what it points at,
+because the peers you are already talking to are the ones who can say where the
+target is.
+
+### 5.4 Sharing
 
 A share link carries the key in the URL fragment, so it never reaches a server:
 
 ```
-https://<app>/#k=<base32 public key>&n=<suggested name>
+https://<app>/#k=<base32 public key>&n=<suggested name>&l=<locator hint>
 ```
 
 There is also a short typeable code, derived as a prefix of the hash of the
@@ -317,26 +395,39 @@ serve will not verify against the key you actually want.
 The two routes therefore have honestly different guarantees. **A link gives full
 verification**; **a code gives a hint**. On first successful connection by either
 route, the key is pinned against the handle used, and a later mismatch is a
-blocking warning rather than a silent substitution.
+blocking warning rather than a silent substitution — so a typed code is
+spoofable at most once, and never for a space already known.
 
-### 5.4 Names are private
+### 5.5 Names are private
 
 There is no global namespace and no registry. Every peer names spaces for
 itself; a share link may carry a *suggested* name, which the receiver is free to
 accept or replace. Two people can call the same space different things, and two
 different spaces can share a name without conflict.
 
-### 5.5 Transport
+### 5.6 Transport
 
 Peers connect over WebRTC data channels, with a signalling server used only to
 introduce them and a relay available when direct connection fails. Both are
 infrastructure for *connection*, never for custody: they see encrypted transport
 and hold nothing.
 
-A peer may also serve over WebSockets at a stable address, which is how an
-always-on peer participates without needing to be introduced.
+A peer may also serve over WebSockets at a stable address. Such a peer is not a
+new kind of participant — it speaks the same protocol, holds the same logs and
+serves the same blobs as a browser tab. It differs only in **reachability**: it
+has a stable address, so it can be dialled directly and can introduce peers to
+each other. There is no privileged server role to discipline, because there is no
+privileged server role.
 
-### 5.6 The network of spaces
+That also gives two peers who cannot reach each other directly an option beyond a
+blind relay: if both can reach the same always-on peer, they can sync through it
+using the ordinary protocol, and it keeps a replica afterwards. A blind relay
+carries ciphertext and retains nothing; syncing through a peer means that peer
+holds the space. Where the space is encrypted (Section 6), it holds ciphertext
+and the distinction largely disappears — which is the case that makes always-on
+peers safe to use by default.
+
+### 5.7 The network of spaces
 
 A link is an ordinary attribute value naming a space, optionally an object
 within it. Any type may declare a link-valued attribute, so the graph of spaces
@@ -351,7 +442,87 @@ without being told, exactly as on the early web.
 
 ---
 
-## 6. Writers and permission
+## 6. Privacy and the reading key
+
+Identity is a public key, and it makes a space verifiable. It does not make a
+space private: anything a peer can replicate, a peer could read.
+
+Privacy is therefore a separate key. A space may have a **symmetric reading
+key**, and where it does, event values and blob contents are encrypted under it.
+
+```
+Space key      Ed25519 keypair       identity   · public key names the space
+                                                · private key authorises writes
+Reading key    symmetric key         privacy    · decrypts values and blobs
+                                                · optional; shared out of band
+```
+
+The reading key is distributed the same way the space is: **in the fragment of a
+share link**, alongside the public key, where it never reaches a server.
+Omitting it from a link produces a reference to a space the recipient can
+replicate and verify but not read.
+
+### 6.1 What a peer without the reading key can do
+
+Almost everything except read. The substrate never interprets a value
+(Section 2), so encryption costs it nothing:
+
+| | Without the reading key |
+|---|---|
+| Store the log | **yes** |
+| Verify signatures and chains | **yes** — signatures are over ciphertext |
+| Replicate events to other peers | **yes** |
+| Store and serve blobs | **yes** — content-addressed by ciphertext hash |
+| Answer resolution queries | **yes** |
+| Read any value | **no** |
+| Fold into meaningful state | **no** in practice — see below |
+| Write | **no** — that needs the private space key, separately |
+
+Folding is the interesting case. The fold is structurally able to run over
+ciphertext — it merges opaque values by rules the schema declares, and never
+inspects them — so a peer without the reading key can compute *the shape* of the
+state: which objects exist, which attributes they carry, which writes won. What
+it cannot do is know what any of it means, which makes the exercise pointless in
+practice. Such a peer stores and serves; it does not fold.
+
+The consequence is the useful one: **a peer can be a complete, verifying,
+useful replica of a space it cannot read.** Storage and readership are separate
+concerns, and only the second requires trust.
+
+### 6.2 What this makes possible
+
+- **Always-on peers without custody.** A peer with a stable address can hold and
+  serve a space, keeping it alive when everyone else is offline, while holding
+  only ciphertext. It is infrastructure without being an audience.
+- **Relaying without reading.** Two peers who cannot reach each other directly
+  can sync through a third that holds the space. Where that third has no reading
+  key, this is a relay that keeps a replica — better than a blind relay, which
+  keeps nothing, and no worse in what it learns.
+- **Sharing that separates hosting from readership.** Handing someone the space
+  key asks them to help keep a space alive. Handing them the reading key too
+  invites them in. These are genuinely different acts and the link format makes
+  them different.
+
+### 6.3 What it does not do
+
+- **It is not access control.** A reading key cannot be revoked. Anyone who has
+  ever held it holds it permanently, and can decrypt anything they have or later
+  obtain that was encrypted under it. Restricting access after the fact requires
+  a new key and re-encryption, which is a new space in all but name.
+- **It does not hide structure.** A peer without the key still sees how many
+  events exist, who wrote them, when, how large the blobs are, and how the space
+  changes over time. Encrypted values conceal content, not activity.
+- **It does not hide identity.** The space's public key is what peers ask for by
+  name. Holding an encrypted space is not private in the sense of being secret;
+  it is private in the sense of being unreadable.
+- **It does not protect against a reader.** Anyone with the reading key can copy
+  the plaintext and re-share it. This is true of every system where reading is
+  possible, and worth stating because the rest of the design is careful about
+  who can do what.
+
+---
+
+## 7. Writers and permission
 
 A space may have many writers. The root declares the **writer set**: the public
 keys admitted to the space.
@@ -368,7 +539,7 @@ signed by it, and delegation flows from there.
 
 ---
 
-## 7. Applications are spaces
+## 8. Applications are spaces
 
 An application is a space of type **code**: a log that folds into a bundle of
 executable modules. It is signed, content-addressed, versioned and replicated by
@@ -390,7 +561,7 @@ Applications therefore distribute over the same network as data — no store, no
 CDN, no central registry — and are versioned and signed by construction, because
 that is what a space already is.
 
-### 7.1 Why foreign code is tolerable here
+### 8.1 Why foreign code is tolerable here
 
 A view is code from a stranger, which is normally a serious problem. The layering
 makes it a much smaller one.
@@ -417,7 +588,7 @@ the host.
 
 ---
 
-## 8. Snapshots and compaction
+## 9. Snapshots and compaction
 
 A log grows without bound. Compaction reduces it, and content addressing is what
 makes that safe to share.
@@ -443,9 +614,19 @@ a peer can compact a space whose view it does not have.
 A snapshot is a **cache, never authority**. Events remain the truth; a snapshot
 can always be discarded and recomputed from them.
 
+Encryption cuts across this cleanly. Merge rules operate on opaque values, so a
+peer holding only ciphertext can still compact — it discards superseded events
+without knowing what they said — and the snapshot it produces is ciphertext too,
+verifiable by recomputation by anyone holding the same events, readable only by
+whoever holds the reading key. What such a peer cannot do is verify a snapshot
+someone else made *in plaintext*, which is why snapshots of an encrypted space
+are themselves encrypted: the property that makes a snapshot trustworthy is that
+peers can agree on its hash, and that requires them to be comparing the same
+representation.
+
 ---
 
-## 9. Ephemeral state
+## 10. Ephemeral state
 
 Presence, cursors, typing indicators and connection gossip are exchanged between
 peers on a separate channel and never enter the log. They are not signed history
@@ -457,7 +638,7 @@ writing it to an append-only log would make every cursor movement permanent.
 
 ---
 
-## 10. Summary of constraints
+## 11. Summary of constraints
 
 The design holds together only if these hold:
 
@@ -470,5 +651,8 @@ The design holds together only if these hold:
    that cannot cause disagreement.
 5. **Identity is a key; location is a hint.** Anything that resolves a name is
    advisory, because what it returns is verified against the key.
-6. **Events are the truth; everything else is cache.** Snapshots, indexes and
+6. **Storing is not reading.** Verification uses the public key; reading uses a
+   separate symmetric key. A peer can be a complete replica of a space it cannot
+   read, which is what allows infrastructure to exist without custody.
+7. **Events are the truth; everything else is cache.** Snapshots, indexes and
    rendered state are all discardable and recomputable.
