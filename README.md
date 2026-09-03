@@ -5,11 +5,13 @@ WebRTC, folded into a filesystem.
 
 Throwaway proof of concept. v0 is built and working; v1 is in progress.
 
-**Start with [DESIGN.md](docs/DESIGN.md).**
+**Start with [ARCHITECTURE.md](docs/ARCHITECTURE.md)** for the design as a
+whole, or [DESIGN.md](docs/DESIGN.md) for what is built today.
 
 | Doc | What it is |
 |---|---|
-| [DESIGN.md](docs/DESIGN.md) | **The design** — model, addressing, transport, crypto |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | **The intended architecture**, described whole. Self-contained — assumes no prior context |
+| [DESIGN.md](docs/DESIGN.md) | **What is actually built** — model, addressing, transport, crypto |
 | [V1.md](docs/V1.md) | Why v1 is not a rewrite, and the sequence it goes in |
 | [ISSUES.md](docs/ISSUES.md) | State — what is currently wrong. Mutable |
 | [FINDINGS.md](docs/FINDINGS.md) | Evidence — what was learned. Append-only |
