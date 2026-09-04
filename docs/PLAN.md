@@ -112,14 +112,39 @@ Two consequences for this stage:
   substrate, and it is what lets a rule's encoding change later without a flag
   day. Cheap now, impossible to retrofit into logs that already exist.
 
-**Decide here:** the exact preimage byte layout, and whether hashing is
-synchronous. The second has the wider blast radius — WebCrypto's digest is
-async, and an async hash makes the fold async, which is a tax at every call site
-above it.
+**Hashing is split by use.** Event ids hash synchronously with a JS SHA-256;
+blobs hash asynchronously with WebCrypto where available. The two cases genuinely
+differ — an event preimage is a few hundred bytes on a hot path inside a pure
+function, while a blob is megabytes at a point that is already asynchronous — and
+using one primitive for both would mean either an async fold or slow blob
+hashing. An async fold is the worse outcome: §3.6 describes the fold as a pure
+function with no I/O, and making it return promises taxes every call site above
+it for a computation that never waits on anything.
+
+The cost is two SHA-256 implementations that must agree, which is a test rather
+than a risk, and the same shape as the dual-backend signing check.
+
+**Decide here:** the exact preimage byte layout.
 
 **Done when:** two independent encodings of the same event agree byte for byte in
 a test, signatures verify across both crypto backends, and a chain with a
 fabricated `prev` is rejected.
+
+**Done.** `core` has bytes, hash, domain, sign, event, chain and writer. Three
+things worth recording, because each was decided by writing it:
+
+- **A minimal `platform.d.ts`.** `TextEncoder` and WebCrypto are neither DOM nor
+  Node — they exist in both runtimes, but ES2022's `lib` declares neither. So
+  `core` declares exactly what it needs and nothing more; widening `types` or
+  `lib` instead would have brought `localStorage` and `process` with it, and the
+  boundary would have been gone.
+- **The comparison key is `(lamport, writer, eventId)`.** The third component is
+  what makes it a total order: one key on two devices produces two events at the
+  same seq and lamport, and without a tiebreak the winner falls back to arrival
+  order (§7.3).
+- **The dual backends produce byte-identical signatures**, asserted rather than
+  assumed, and both paths are genuinely exercised — the test runtime has
+  WebCrypto Ed25519.
 
 ---
 

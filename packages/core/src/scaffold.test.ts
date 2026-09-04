@@ -8,14 +8,9 @@
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { PACKAGE } from './index.js';
 import { hex, labelled, permutation, reorder } from './testkit.js';
 
 describe('scaffold', () => {
-  it('the package is wired up', () => {
-    expect(PACKAGE).toBe('@thing/core');
-  });
-
   it('core has no platform globals', () => {
     // `lib` is ES2022 only, so referencing these would not compile. This checks
     // the runtime too, because the headless peer must not depend on a bundler
