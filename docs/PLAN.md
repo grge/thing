@@ -245,6 +245,22 @@ The seam where a peer becomes a thing rather than a library.
 reopens it and gets identical state; and the incremental fold agrees with a full
 refold on every generated history.
 
+**Done.** `Folder` in `core` does the incremental fold; `Space` in `peer` holds
+a store and a folder together. Three notes:
+
+- **Two cases make the incremental fold non-trivial**, and both are tested
+  directly. A `:body` written before any `:kind` must be *reinterpreted* when
+  the kind arrives, so bodies are refolded from retained entries rather than
+  merged in place. And an event from a writer admitted *later* must be
+  reconsidered, so events from unadmitted writers are held rather than dropped —
+  otherwise state would depend on arrival order.
+- **A local write takes the same path as a remote one**, verification included.
+  A writer that mints an invalid event finds out immediately rather than when a
+  peer rejects it.
+- **The fold is still not persisted.** Reopening replays the log, which is what
+  makes the end-to-end test meaningful: it compares a full replay against the
+  incremental fold that built the original.
+
 ---
 
 ## Stage 5 — `net`: protocol and sync

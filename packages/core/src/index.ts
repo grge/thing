@@ -53,9 +53,14 @@ export {
   type ObjectState,
   PARENT_ATTR,
   pathOf,
+  type Resolved,
+  resolveParents,
   type SliceState,
   type State,
+  writerSetFrom,
 } from './fold.js';
+
+export { Folder } from './incremental.js';
 
 export { hash, type Hash, HASH_LEN, hashLarge } from './hash.js';
 
