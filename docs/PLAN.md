@@ -170,6 +170,20 @@ keys, and the rendered state drops them.
 order, the homomorphism holds, and a space with an unknown body rule folds its
 structure correctly.
 
+**Done.** `core` has rule, rules and fold. Three notes:
+
+- **The accumulator keeps comparison keys and the rendering drops them**, per
+  §3.7. `SliceState` carries both, so a snapshot or an incremental fold has what
+  a late arrival needs to be resolved against.
+- **The vacuity guard earned its place.** A test asserting the generated
+  histories actually contain cycles and tombstones caught two generator bugs —
+  correlated index periods meant only one object ever received a `:parent`, and
+  `i % 2` was always zero where `i % 4 === 2`. Both would have left the
+  homomorphism properties passing over histories that exercised nothing.
+- **Cycle-breaking is the one whole-graph pass**, and it is tested for stability
+  across arrival order separately from everything else, because a different
+  order picking a different victim would mean two peers showing different trees.
+
 ---
 
 ## Stage 3 — `store`: persistence

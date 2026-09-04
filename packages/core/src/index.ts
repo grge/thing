@@ -43,7 +43,43 @@ export {
   verifyEvent,
 } from './event.js';
 
+export {
+  attr,
+  BODY_ATTR,
+  childrenOf,
+  fold,
+  type FoldOptions,
+  KIND_ATTR,
+  type ObjectState,
+  PARENT_ATTR,
+  pathOf,
+  type SliceState,
+  type State,
+} from './fold.js';
+
 export { hash, type Hash, HASH_LEN, hashLarge } from './hash.js';
+
+export {
+  type Acc,
+  type Codec,
+  type Entry,
+  foldSlice,
+  type Merge,
+  type Rule,
+} from './rule.js';
+
+export {
+  ATTRIBUTE_RULES,
+  attributeRule,
+  blob,
+  BODY_RULES,
+  bodyRule,
+  bytesRegister,
+  flag,
+  type FlagAcc,
+  type RegisterAcc,
+  stringRegister,
+} from './rules.js';
 
 export {
   _setWebCryptoEd25519,

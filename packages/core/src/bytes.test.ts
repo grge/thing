@@ -38,7 +38,9 @@ describe('compareBytes', () => {
         (a, b) => {
           const ab = compareBytes(a, b);
           const ba = compareBytes(b, a);
-          expect(Math.sign(ab)).toBe(-Math.sign(ba));
+          // `+ 0` normalises -0, which Object.is (and so `toBe`) distinguishes
+          // from 0 — an artifact of the assertion, not of the comparison.
+          expect(Math.sign(ab) + 0).toBe(-Math.sign(ba) + 0);
           expect(ab === 0).toBe(bytesEqual(a, b));
         },
       ),

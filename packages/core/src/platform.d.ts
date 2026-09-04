@@ -25,6 +25,14 @@ declare const TextEncoder: {
   new (): TextEncoder;
 };
 
+interface TextDecoder {
+  decode(input?: ArrayBufferView | ArrayBuffer): string;
+}
+
+declare const TextDecoder: {
+  new (label?: string, options?: { fatal?: boolean }): TextDecoder;
+};
+
 interface SubtleCrypto {
   digest(algorithm: string, data: ArrayBufferView | ArrayBuffer): Promise<ArrayBuffer>;
   generateKey(
