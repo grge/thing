@@ -22,7 +22,7 @@ Roughly in order of how much would change if the answer went the other way.
 | 3 | What cipher, nonce derivation and key derivation does encryption use? | §6 |
 | 4 | What exactly does the write-proposal channel between a view and its host look like? | §8.2 |
 | 5 | What happens when a private key is lost, which decides whether this is usable by non-technical people? | §5.1.1 |
-| 6 | Are ephemeral messages authenticated, and at what granularity? | §10 |
+| 6 | Are ephemeral messages signed per message, or is the session authenticated once? | §10.2 |
 | 7 | How does the connection lifecycle behave — concurrent syncs, mid-transfer drops, duplicate connections? | §5.6 |
 | 8 | Is membership a whole-list register or a set of add/remove operations? | §7.4 |
 | 9 | Does a peer keep replicating the losing branch of a resolved chain fork? | §7.3 |

@@ -133,7 +133,7 @@ Event {
   attr:    AttrName       // which attribute
   value:   Value          // the asserted value
   wall:    u64            // wall-clock ms — display only, never resolves anything
-  sig:     Signature      // 64 bytes, over the space key and the fields above
+  sig:     Signature      // 64 bytes, over a domain tag, the space key, and the above
 }
 ```
 
@@ -169,8 +169,15 @@ order, length-prefixed values, no maps, no floating-point in hashed positions.
 Attribute names and value variants encode as fixed numeric tags, which are never
 renumbered because they are hashed.
 
+**Every signature is domain-separated.** A preimage begins with a tag naming what
+kind of thing is being signed, and an event's tag is one of several — the
+ephemeral channel signs things too (§10.2), and a key that signs two kinds of
+message without distinguishing them is one cross-protocol replay away from
+signing the wrong one. So an event's preimage is *tag, then space key, then the
+envelope*, and nothing else a peer signs can ever produce the same bytes.
+
 **The signature is not part of its own preimage.** The canonical encoding covers
-the space key followed by the envelope from `writer` through `wall`; `sig`
+the tag, the space key, and the envelope from `writer` through `wall`; `sig`
 travels beside it. An event's
 identity is the hash of that preimage, so it does not depend on the signature
 bytes — which keeps an event's id stable under any future change to the
@@ -271,7 +278,9 @@ it.
 - **Chunked** for transfer, with backpressure and resume from a chunk index.
 - **Availability is advertised.** Version vectors describe events, never blobs.
   Peers exchange blob-availability sets so "who holds this content" is
-  answerable when the original writer is long gone.
+  answerable when the original writer is long gone. That exchange is about the
+  present moment rather than the space's history, so it travels on the ephemeral
+  channel (§10) rather than in the log.
 
 **Addressing is by ciphertext where a space is encrypted, and this is forced.**
 The alternative — addressing by the plaintext hash — buys dedup across spaces
@@ -918,6 +927,10 @@ halves of one mechanism:
   link to a space nobody has mentioned, asks connected peers directly. Several
   are asked in parallel and the answers are merged rather than taken from the
   first responder.
+
+Both halves travel on the ephemeral channel (§10), for the same reason a locator
+carries an expiry: they state where something is *now*, and nothing about them
+should outlive the moment.
 
 A peer answers for what it serves and for what it has learned from peers it is
 **currently connected to** — one hop, no transit. At one hop, every entry is
@@ -1799,36 +1812,92 @@ representation.
 
 ---
 
-## 10. Ephemeral state — **Decided in shape, Open in detail**
+## 10. The ephemeral channel — **Decided in shape, Open in detail**
 
-Presence, cursors, typing indicators and connection gossip are exchanged between
-peers on a separate channel and never enter the log. They are not signed history
-and not replicated to peers who were not present; they simply expire.
+A peer connection carries **three channels**, and they are distinguished by what
+happens to a message after it is delivered.
 
-The distinction is durability. If a fact should survive everyone disconnecting,
-it is an event. If it describes only who is here right now, it is ephemeral, and
-writing it to an append-only log would make every cursor movement permanent.
+| | Carries | Durability | Replicated to |
+|---|---|---|---|
+| **Log** | signed events | permanent | every peer, eventually |
+| **Blobs** | content-addressed bytes | permanent, fetched on demand | whoever asks (§2.4) |
+| **Ephemeral** | everything else | expires | only peers present at the time |
 
-**This is the one place the "everything is signed" property does not hold, and
-that needs deciding rather than inheriting.** Ephemeral messages bypass the log,
-so they bypass signing, which means anyone who can reach a peer can claim to be
-someone else's cursor, assert a false presence, or announce availability for a
-space they do not hold. The last one matters most: a resolution announcement is
-ephemeral, and an unauthenticated one lets any connected peer pollute a
-resolution table. The bounds in §5.3 keep the damage finite, but "finite" is
-weaker than the rest of the design.
+The first two are the system's memory. The third is its nervous system, and it
+is one channel rather than several — which is worth stating plainly, because the
+things it carries look unrelated until you notice they share every property that
+matters:
 
-The likely answer is that ephemeral messages are signed by the sending peer's key
-but not chained, sequenced, or retained — authentication without durability. That
-costs a signature per message on a channel carrying cursor movements, which is
-the reason it is not simply asserted here: whether that cost is acceptable at
-cursor frequency is a measurement, and the alternative (authenticate the session
-once at connection setup, trust the channel thereafter) is cheaper and weaker.
-Either is defensible; leaving it unstated is not.
+- **Signalling** — introducing two peers so they can connect.
+- **Resolution** — announcing what a peer serves, and asking where a space is
+  (§5.3).
+- **Availability** — which blobs a peer holds (§2.4).
+- **Presence** — who is here, where their cursor is, what they are typing.
 
-**A second channel is a real cost, honestly.** It is a second protocol, a second
-security story, and a second place for state to live. It earns that only because
-the alternative — cursors as permanent signed history — is clearly worse.
+All four are *about the present moment*. None should survive everyone
+disconnecting. None is replicated to a peer who was not there. And all four
+would be actively wrong in the log: writing them there would make every cursor
+movement and every stale address permanent, and would replicate a peer's
+transient state to everyone who ever syncs the space.
+
+**The distinction is durability, not importance.** A resolution announcement
+matters a great deal; it is ephemeral because it describes where something is
+*right now*, and an address that has rotted is worse than no address at all
+(§5.3).
+
+### 10.1 What it must provide
+
+The channel is one protocol with one security story, and the primitives it needs
+follow from the four uses above:
+
+- **Send to one connected peer**, which signalling and blob availability need.
+- **Send to all connected peers**, which announcement needs — bounded to peers
+  already connected, never relayed further than one hop (§5.3).
+- **Expiry**, since every message it carries is a claim about now. A message
+  without a lifetime becomes a lie rather than merely stale.
+- **Attribution**, where a message makes a claim another peer will act on.
+
+### 10.2 Authentication — **Open**
+
+**This is the one place the "everything is signed" property does not hold by
+default, and it needs deciding rather than inheriting.** Ephemeral messages
+bypass the log, so they bypass the log's signing, which means anyone who can
+reach a peer can claim to be someone else's cursor, assert a false presence, or
+announce availability for a space they do not hold.
+
+The four uses do not want the same answer, which is the substance of the
+question rather than a complication:
+
+- **Presence and cursors** are high-frequency and low-stakes. A forged cursor is
+  a nuisance; signing every movement may cost more than it protects.
+- **Resolution announcements** are the opposite. They are infrequent, and an
+  unauthenticated one lets any connected peer pollute a resolution table. §5.3's
+  caps bound the damage but do not prevent it.
+
+So the answer is plausibly **both**: authenticate the session once at connection
+setup, and additionally sign the few message kinds that make claims others act
+on. That is cheaper than signing everything and stronger than signing nothing,
+and it is the shape to test rather than a conclusion.
+
+**Whatever is chosen must use domain-separated signatures.** Anything signed by a
+peer's key carries a tag saying what kind of thing it is, so an ephemeral message
+can never be replayed as a log event and a log event can never be presented as an
+announcement. The log's events are one such tag; each ephemeral message kind that
+gets signed is another. Without separation, two protocols sharing one key are one
+protocol with a hole in it.
+
+**Left open deliberately**: whether per-message signing is affordable at cursor
+frequency is a measurement, not a judgement, and the transport supplies part of
+the answer — a data channel is already encrypted end to end, so what is missing
+is a binding between that channel and a peer's identity key rather than
+confidentiality.
+
+### 10.3 The cost, stated honestly
+
+A second channel is a second protocol, a second security story, and a second
+place for state to live. It earns that only because the alternative — presence,
+gossip and addresses as permanent signed history — is clearly worse. Keeping it
+to *one* channel rather than four is what stops that cost being paid repeatedly.
 
 ---
 

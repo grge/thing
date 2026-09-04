@@ -85,6 +85,12 @@ The envelope (§2.1) and the two things that must be right before any log exists
 
 - Event type; canonical encoding with fixed tags, length prefixes, no floats.
 - **The space key in the signed preimage** (§2.1). Not optional and not later.
+- **Signing is domain-separated and generic** (§2.1). The primitive is
+  `sign(tag, preimage, key)`, with the event's preimage construction as *one
+  caller*, not the only shape the module knows. The ephemeral channel signs
+  things too (§10.2), and a narrow `signEvent` would have to be refactored at
+  stage 5 with tests already built around it. Establishing the tag registry now
+  costs a line and prevents a cross-protocol replay later.
 - Ed25519 with the dual backend, seeds stored as raw bytes.
 - Event id and `prev` at full SHA-256 width (§2.1).
 - Per-writer chain validation; `(lamport, writer)` comparison with a **third
@@ -174,15 +180,28 @@ Everything below the transport, and none of it platform-specific.
 - `HAVE` exchange for blob availability (§2.4).
 - Verification at the wire boundary — signature, chain, `seq` — before anything
   is stored.
+- **The ephemeral channel** (§10): one protocol carrying signalling, resolution,
+  blob availability and presence, with expiry on everything and the send-to-one
+  and send-to-connected primitives §10.1 names.
 
-**Decide here:** how far §2.3's extension goes. The tip hash is settled. Whether
-this stage also carries the branch-request vocabulary, or leaves forks detected
-and unrepaired, is a scope call — detection alone is a defensible first cut, and
-it is the half that must be in the wire format early.
+**Two things to decide here.**
+
+*Ephemeral authentication* (§10.2): per-message signatures, or authenticate the
+session once at connection setup. Plausibly both — session auth for the
+high-frequency kinds, signatures on the few that make claims others act on, since
+an unauthenticated resolution announcement lets any connected peer pollute a
+table. Whether per-message signing is affordable at cursor frequency is a
+measurement, and this is the stage that can take it.
+
+*How far §2.3's extension goes.* The tip hash is settled. Whether this stage also
+carries the branch-request vocabulary, or leaves forks detected and unrepaired,
+is a scope call — detection alone is a defensible first cut, and it is the half
+that must be in the wire format early.
 
 **Done when:** two in-process peers over a mock channel converge from arbitrary
-starting states, a fork is detected and reported, and a 4 MB blob transfers
-byte-exact with resume.
+starting states, a fork is detected and reported, a 4 MB blob transfers
+byte-exact with resume, and an ephemeral message expires without ever reaching
+storage.
 
 ---
 
