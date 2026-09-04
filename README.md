@@ -1,74 +1,68 @@
 # thing
 
-A namespaced, append-only event log replicated between browser peers over
-WebRTC, folded into a filesystem.
+A peer-to-peer substrate for collaborative applications, running in the browser.
+Append-only logs of signed events, replicated between browser peers over WebRTC,
+with no server holding the data.
 
-Throwaway proof of concept. v0 is built and working; v1 is in progress.
-
-**Start with [ARCHITECTURE.md](docs/ARCHITECTURE.md)** for the design as a
-whole, or [DESIGN.md](docs/DESIGN.md) for what is built today.
+**The design is being rewritten.** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+describes the intended system whole, from no prior context. It is not what the
+code in `src/` currently does — see *Status* below.
 
 | Doc | What it is |
 |---|---|
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | **The intended architecture**, described whole. Self-contained — assumes no prior context |
-| [DESIGN.md](docs/DESIGN.md) | **What is actually built** — model, addressing, transport, crypto |
-| [V1.md](docs/V1.md) | Why v1 is not a rewrite, and the sequence it goes in |
-| [ISSUES.md](docs/ISSUES.md) | State — what is currently wrong. Mutable |
-| [FINDINGS.md](docs/FINDINGS.md) | Evidence — what was learned. Append-only |
-| [NEXT.md](docs/NEXT.md) | Product reasoning behind the design. Pre-spec |
-| [ADDRESSING.md](docs/ADDRESSING.md) | The addressing argument in full |
-| [RESOLUTION.md](docs/RESOLUTION.md) | Hubs, locators and gossip — proposal, for decision |
-| [SPACES.md](docs/SPACES.md) | Space types, CRDT attributes, applications-as-spaces — direction |
-| [docs/v0/](docs/v0/) | Archived — what the proof of concept was |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | **The design.** Self-contained, assumes no prior context. Every section marked Proven / Decided / Open |
+| [docs/PLAN.md](docs/PLAN.md) | **The implementation plan** — stages, what each answers, what moves to archive |
+| [docs/OPEN.md](docs/OPEN.md) | Open questions. Mutable — changes as questions close |
+| [archive/](archive/) | The previous implementation, and the fold prototype. Not built |
+| [docs/v1/](docs/v1/) | Archived — the design that came before, and the reasoning behind it |
+| [docs/v0/](docs/v0/) | Archived — the original proof of concept |
 
-## Running
+## The shape of it
+
+Three layers, strictly separated, and the separation is the design:
+
+```
+VIEW        draws the state          type-specific · ships over the network
+FOLD        events → state           universal · one algorithm · declaration-driven
+SUBSTRATE   stores and replicates    payload-blind · never interprets a value
+```
+
+A **space** is the unit of everything — identity, sharing, storage, replication.
+A space is a log; a log folds into a tree of objects. Every space has the same
+structure — objects with attributes, in a `:parent` tree — and what varies is
+what an individual object's **body** means: a file, a message, a co-edited
+document. A space is an Ed25519 keypair, and an optional second symmetric key
+decides who can read it, so **a peer can hold and serve a space it cannot
+read.**
+
+## Status
+
+**Stage 0 of [docs/PLAN.md](docs/PLAN.md) is done**: the workspace is scaffolded
+and the previous implementation has moved to [archive/](archive/), which is kept
+readable but is not built, tested, or imported.
+
+```
+packages/core/    events, canonical encoding, signing, the fold   no I/O
+packages/net/     protocol, sync, blob transfer, resolution       no platform
+packages/store/   storage interface + browser and Node backends
+packages/peer/    a peer: core + net + store, wired together
+packages/web/     the browser client — WebRTC, UI
+packages/node/    the headless peer — WebSockets, CLI
+```
+
+The split is enforced rather than intended: `core`, `net`, `store` and `peer`
+compile with no DOM and no Node types, so a stray `localStorage` is a compile
+error rather than something the headless peer discovers at run time.
+
+**Nothing is owed to what exists.** No data migration, no wire compatibility, no
+stored-state compatibility. Old spaces are not readable and are not meant to be.
+
+## Working on it
 
 ```
 npm install
-npm run dev      # the app          → /
-                 # transport harness → /transport.html
-npm test         # 297 tests
-npm run check    # tsc --noEmit
+npm test          # every package
+npm run check     # tsc --build: typechecks and enforces the boundary
 ```
 
-## Live
-
-**<https://grge.github.io/thing/>** — deployed from `master` on every push.
-The stage 4 transport harness is at
-[`/thing/transport.html`](https://grge.github.io/thing/transport.html).
-
-## Testing sync across two devices
-
-No clone needed — open the deployed app on both.
-
-1. Device A: **+** → *Shared — you write*, add a file. The tree header shows an
-   8-character **share code**.
-2. Device B: open the app, **+** → *Join someone's space*, and type that code —
-   no need to transcribe a URL. **Copy link** on device A gives a full URL if
-   pasting is easier.
-
-Delete a space with the **×** on its tab. That clears its log and writer identity
-and frees any blobs no other space still references.
-
-Both devices need to reach the PeerJS broker. They do **not** need to reach each
-other directly — a TURN relay (`turn/`) carries the traffic when they cannot, which
-is the usual case for a phone on cellular. Worth trying across different networks
-(one on wifi, one on a phone hotspot) rather than only on the same LAN.
-
-The app is served over HTTPS, which WebRTC requires; `localhost` is exempt but a
-LAN IP is not, so the deployed URL is the easier path for a real test.
-
-**Use the deployed HTTPS build for any peer testing.** Firefox will not gather
-usable ICE candidates over plain `http://`, including a LAN IP — so
-`npm run dev -- --host` cannot be used for a two-device test (FINDINGS F1).
-`http://localhost` is fine for single-machine work in Chromium.
-
-## Layout
-
-| Path | What |
-|---|---|
-| `src/fold/` | The fold: event set → state. Pure, no I/O (DESIGN §1–§3) |
-| `src/app/` | Storage, spaces, tree derivation, replication wiring |
-| `src/net/` | Protocol, framing, blob transfer, sync, signalling |
-| `src/ui/` | Svelte two-pane browser, debug log view, transport harness |
-| `turn/` | coturn TURN relay — HMAC ephemeral credentials, deploy config |
+There is no app to run yet — the browser client is stage 7.

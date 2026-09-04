@@ -1,5 +1,9 @@
 # Spaces, types, and applications — a direction
 
+> **Archived.** Superseded by [../ARCHITECTURE.md](../ARCHITECTURE.md), which
+> describes a different system. Kept for the reasoning — see
+> [README.md](README.md) for what carried forward and what did not.
+
 **Status: direction, not decision. Nothing here is built and nothing is
 settled.** Captured from a design conversation on 2026-09-03, after v1 steps 1–3
 and the I23 fix landed. It is deliberately more speculative than

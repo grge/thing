@@ -1,5 +1,9 @@
 # Resolution, hubs, and gossip — a proposal
 
+> **Archived.** Superseded by [../ARCHITECTURE.md](../ARCHITECTURE.md), which
+> describes a different system. Kept for the reasoning — see
+> [README.md](README.md) for what carried forward and what did not.
+
 **Status: proposal. Nothing here is settled** — including the parts written in
 the declarative. Captured from a scoping conversation, 2026-09-02, after v1
 steps 1–3 landed, and none of it is built. It exists because the *destination*

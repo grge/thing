@@ -1,0 +1,17 @@
+{
+  "name": "@thing/web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "The browser client.",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@thing/core": "*",
+    "@thing/net": "*",
+    "@thing/store": "*",
+    "@thing/peer": "*"
+  }
+}

@@ -1,10 +1,15 @@
 # Design
 
-**Status: current. The standing description of what this system is.**
+> **Archived.** Superseded by [../ARCHITECTURE.md](../ARCHITECTURE.md), which
+> describes a different system. Kept for the reasoning — see
+> [README.md](README.md) for what carried forward and what did not.
+
+**Status: archived.** This was the standing description of v0/v1 — the system
+that existed before the rewrite.
 
 This is the design document — the place where the load-bearing decisions live:
 the data model and the fold, addressing and identity, transport, and crypto. It
-supersedes [v0/SPEC.md](v0/SPEC.md), which is archived as the record of what the
+supersedes [v0/SPEC.md](../v0/SPEC.md), which is archived as the record of what the
 proof of concept was.
 
 **What it is not.** Not a build plan — that is [V1.md](V1.md). Not a work list —
@@ -94,7 +99,7 @@ lives, and where a fork records what it forked from.
 
 ## 2. Attributes — **Built**, extended in v1
 
-Full v0 semantics are in [v0/SPEC.md](v0/SPEC.md) §4 and remain accurate for
+Full v0 semantics are in [v0/SPEC.md](../v0/SPEC.md) §4 and remain accurate for
 everything below except `:link`.
 
 | Attribute | Type | Notes |

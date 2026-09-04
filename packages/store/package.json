@@ -1,0 +1,14 @@
+{
+  "name": "@thing/store",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Storage interface, with browser and Node backends.",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@thing/core": "*"
+  }
+}

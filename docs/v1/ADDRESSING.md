@@ -1,5 +1,9 @@
 # Addressing and identity — a proposal
 
+> **Archived.** Superseded by [../ARCHITECTURE.md](../ARCHITECTURE.md), which
+> describes a different system. Kept for the reasoning — see
+> [README.md](README.md) for what carried forward and what did not.
+
 **Status: accepted.** The proposal in §5 is the design; it is summarised in
 [DESIGN.md](DESIGN.md) §4 and built as step 2 of [V1.md](V1.md). This document is
 kept as the full argument — the options weighed and why this one won — which

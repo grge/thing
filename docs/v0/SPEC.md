@@ -5,9 +5,11 @@
 > on) and because the reasoning is worth preserving. It is **not** the current
 > design and is not being updated.
 >
-> The current design is [../DESIGN.md](../DESIGN.md), which states which parts
-> of this carry forward unchanged, which are superseded, and which were POC
-> scaffolding that simply ends here.
+> The system was later redesigned: the current description is
+> [../ARCHITECTURE.md](../ARCHITECTURE.md). The intermediate design that came
+> between this and the rewrite is [../v1/DESIGN.md](../v1/DESIGN.md), which
+> states which parts of this carried forward unchanged, which were superseded,
+> and which were POC scaffolding that simply ends here.
 
 Status: draft. Scoped to a throwaway proof of concept. The POC exists to answer
 three questions; everything else is deliberately deferred.

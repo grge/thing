@@ -5,6 +5,41 @@ A peer-to-peer substrate for collaborative applications, running in the browser.
 This document describes the design in full and assumes no prior context. It is
 written to be read start to finish by someone who has never seen the system.
 
+## How settled this is
+
+**Most of this is not built.** The document describes a design, and it is written
+in the present tense throughout because a design reads badly in the conditional —
+but the present tense is a convention here, not a claim about what exists. Each
+section carries a mark:
+
+| | Meaning |
+|---|---|
+| **Proven** | Implemented and working. The reasoning has survived contact with running code. |
+| **Decided** | Settled on paper. The argument is closed; no code exists. |
+| **Open** | Genuinely unresolved. Named so it is not mistaken for settled. |
+
+Three things are **Open** and load-bearing enough to name here, because a reader
+who takes them for solved will plan badly:
+
+- **The universal fold** (§3) is the central bet. Its structural half is safe:
+  every attribute merges by a fixed, universally known rule, so any client can
+  compute any space's tree and names. What is open is whether the vocabulary of *body* rules
+  stays small enough to be a vocabulary (§3.8).
+- **The version vector cannot express a fork** (§2.3), which §7.3's resolution
+  needs it to. This is the one substrate change still outstanding.
+- **Compaction is understood but unbuilt** (§9). Discarding events safely needs
+  wire concepts that do not exist yet, so snapshots are for now a cache that
+  never discards anything (§9.1).
+
+There is also one **constraint on operating the system** that it cannot enforce
+itself: **a private key is held by one device at a time.** Two devices sharing a
+key fork that writer's chain, and while §7.3 resolves the fork deterministically
+so the network converges, the losing branch's writes are dropped. Worth reading
+before any decision about sharing administration.
+
+A reader who wants only the parts that are safe to build on should read §2, §5,
+§6, §7 and §10, which are Proven or Decided throughout.
+
 ---
 
 ## 1. Overview
@@ -13,16 +48,18 @@ The system replicates **append-only logs of signed events** between browser
 peers over WebRTC, with no server holding the data.
 
 A **space** is the unit of everything: identity, sharing, storage and
-replication. A space is a log, and a log folds into state. What that state
-*means* — a folder of files, a chat, a shared canvas — depends on the space's
-declared type. The mechanism that folds the log is the same for all of them.
+replication. A space is a log, and a log folds into state. That state is a tree
+of **objects**, each with attributes and a body — and what a body *means* — a
+file, a message, a co-edited document — depends on a rule that object declares.
+The mechanism that folds the log is the same for all of them, and objects of
+different kinds sit side by side in one space.
 
 Three layers, strictly separated:
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │ VIEW        draws the state                                      │
-│             type-specific · shipped as data over the network     │
+│             application-specific · ships as data over the network│
 ├──────────────────────────────────────────────────────────────────┤
 │ FOLD        computes state from events                           │
 │             universal · one algorithm · driven by declarations   │
@@ -37,10 +74,10 @@ it, and the two lower layers are identical for every application:
 
 - The **substrate** moves bytes it never interprets. It can replicate a space
   for an application that does not exist yet.
-- The **fold** computes state by applying, to each attribute, the merge rule
-  that attribute declares. It is deterministic and identical in every client, so
-  two peers holding the same events compute the same state — including peers
-  that have never seen the application the space belongs to.
+- The **fold** computes state by applying, to each slice of the log, the merge
+  rule that slice uses. It is deterministic and identical in every client, so two
+  peers holding the same events compute the same state — including peers that
+  have never seen the application the space belongs to.
 - The **view** is the only layer that is application-specific, the only layer
   that ships over the network, and the only layer that can be wrong without
   consequence for anyone else.
@@ -73,9 +110,13 @@ on different terms is a different space, referenced from wherever it belongs
 
 ---
 
-## 2. The substrate
+## 2. The substrate — **Proven**
 
 The substrate stores and replicates events. It never reads a value.
+
+Signed events, per-writer chains, version-vector reconciliation and chunked blob
+transfer with resume and backpressure are all implemented and working. This is
+the part of the design with the least risk attached.
 
 ### 2.1 Events
 
@@ -92,20 +133,56 @@ Event {
   attr:    AttrName       // which attribute
   value:   Value          // the asserted value
   wall:    u64            // wall-clock ms — display only, never resolves anything
-  sig:     Signature      // 64 bytes, over the canonical encoding of the above
+  sig:     Signature      // 64 bytes, over the space key and the fields above
 }
 ```
 
-There is no space field: a space is established once per connection rather than
-repeated on every event.
+There is no space field on the wire: a space is established once per connection
+rather than repeated on every event. **The space's public key is nonetheless part
+of the signed preimage**, prepended as a domain separator before `writer`. It
+costs nothing to transmit, because the receiver already knows which space a
+connection carries, and it is what makes a signature mean *this writer said this,
+in this space* rather than merely *this writer said this*.
+
+Without it a signed event is portable between any two spaces the writer belongs
+to, and both outcomes are bad. If chains are per space, an adversary replays a
+writer's chain from one space into another: it verifies, presents as a fork from
+seq 0, and §7.3's longest-branch rule then lets a long chain lifted from
+elsewhere displace that writer's real history. If chains are global per writer,
+the second space stalls forever (§2.5) on sequence numbers consumed in the first.
+The separator closes both, and it must be decided before any log exists because
+it changes what is signed.
 
 **Objects** are identified by UUID, assigned at creation and never reused. An
 object's state is a set of independently-resolved attributes, so two writers
 touching different attributes of the same object never conflict.
 
+**`target` and `attr` together name a slice** — the bag of events an event
+belongs to, and the unit the fold resolves independently (§3.1). The substrate
+does not read them for any purpose of its own: chains, version vectors and
+signatures work on `(writer, seq)` alone. They are carried, verified and
+replicated as opaque bytes, and only the fold gives them meaning.
+
 **Canonical encoding.** Two implementations must produce byte-identical
 encodings, since hashing, signing and deduplication all depend on it: fixed field
 order, length-prefixed values, no maps, no floating-point in hashed positions.
+Attribute names and value variants encode as fixed numeric tags, which are never
+renumbered because they are hashed.
+
+**The signature is not part of its own preimage.** The canonical encoding covers
+the space key followed by the envelope from `writer` through `wall`; `sig`
+travels beside it. An event's
+identity is the hash of that preimage, so it does not depend on the signature
+bytes — which keeps an event's id stable under any future change to the
+signature scheme.
+
+**Hash widths are a security parameter, not a size decision.** `prev` and event
+ids are SHA-256. They must not be truncated: a `prev` link is a second-preimage
+target for an adversary who wants to graft a fabricated history onto a specific
+writer's chain, and event ids drive deduplication, where a collision silently
+drops a real event. A ~2^64 birthday bound is ample against accident and
+irrelevant against intent, so the saving is not worth having. Content hashes
+(§2.4) are full SHA-256 for the same reason.
 
 ### 2.2 Chains, clocks and the shape of ordering
 
@@ -129,69 +206,296 @@ misbehaviour is attributable rather than anonymous.
 ### 2.3 Replication
 
 Peers exchange **version vectors**: for each writer, the highest sequence number
-held contiguously. Reconciliation is the difference between two vectors, and
-events arriving out of order within a writer are held aside until their
-predecessor arrives.
+held contiguously, **and the hash of the event at that position**. Reconciliation
+is the difference between two vectors, and events arriving out of order within a
+writer are held aside until their predecessor arrives.
+
+The frontier alone answers *how far have you got*. The tip hash answers *along
+which history*, and without it two peers can agree on a number while holding
+different chains. Consider peers holding branches of one writer that diverged at
+seq 30: one at 47, one at 40. Comparing frontiers, the first simply sends 41–47,
+which the second rejects as a mismatched `prev` and cannot repair — its own
+vector already claims 40, so it cannot ask for the other branch's 30–40, and the
+first never learns a second branch exists at all. Both behave correctly and
+diverge permanently. Comparing `(frontier, tip)` makes that case *detectable* in
+the ordinary handshake, at the cost of one hash per writer.
+
+Detecting it is not resolving it. §7.3 decides which branch wins, but only for a
+peer that holds both in full, and asking for a branch you have already accounted
+for needs a request the frontier cannot phrase. So reconciliation also needs a
+way to say **"send me your chain for this writer from seq N, along your tip"**,
+which is an ordinary range request with the tip named.
+
+**Three separate needs point at the same extension**, which is the argument for
+designing it once rather than three times:
+
+| Need | What the vector cannot say |
+|---|---|
+| Fork detection and repair (§7.3) | which history a frontier is on |
+| Held-but-not-applicable events | "I have 49, stop sending it" — see below |
+| Compacted ranges (§9.2) | "gone, not missing" |
+
+"Contiguous" is what forces the second. A peer holding writer A's 0–47 and also
+49 reports 47, because reporting 49 would suppress the send of 48 — the one event
+needed to unstall the chain. The cost is that it can then never say it already
+holds 49, so 49 is re-sent every round. The wasted bandwidth is the small half;
+the real cost is that under repeated gaps there is no way for a receiver to say
+*stop sending that one*. Two extensions are plausible — an explicit held-set
+alongside the frontier, or a bounded list of exceptions — and neither is designed.
+
+**Open**, and it is the one substrate change still outstanding. The tip hash is
+cheap and settled enough to build; what a full request-and-repair vocabulary
+looks like is not, and the three needs above should be satisfied together.
 
 The substrate verifies three things and no others:
 
-1. The signature is valid for the claimed writer key.
+1. The signature is valid for the claimed writer key, over this space's key.
 2. `prev` matches the hash of that writer's previous event.
 3. `seq` follows contiguously.
 
 It does not check whether an attribute exists, whether a value is sensible, or
-whether the writer is permitted to say it. Those are decisions for higher
-layers, and keeping them out is what allows a peer to replicate an application
-it does not have — or a space it cannot read (Section 6).
+whether the writer is permitted to say it. Those are decisions for higher layers,
+and keeping them out is what allows a peer to replicate an application it does
+not have — or a space it cannot read (Section 6).
 
 ### 2.4 Blobs
 
-Large content does not travel in the log. A `:content` attribute holds the
+Large content does not travel in the log. A blob-kinded object's body holds the
 SHA-256 hash of a blob, and the blob is fetched on demand from any peer that has
 it.
 
-- **Content-addressed** by full SHA-256 of the plaintext, so identical content
-  deduplicates and integrity is verified by rehashing the reassembly.
+- **Content-addressed** by full SHA-256 of the bytes **as stored and
+  transferred**, so integrity is verified by rehashing the reassembly. Identical
+  content deduplicates only where the encryption is deterministic, which is a
+  choice §6 makes rather than a property that comes free.
 - **Chunked** for transfer, with backpressure and resume from a chunk index.
 - **Availability is advertised.** Version vectors describe events, never blobs.
   Peers exchange blob-availability sets so "who holds this content" is
   answerable when the original writer is long gone.
 
+**Addressing is by ciphertext where a space is encrypted, and this is forced.**
+The alternative — addressing by the plaintext hash — buys dedup across spaces
+that share content, and costs the property §6 exists to provide: a peer without
+the reading key could not verify a blob it stores and serves, because it cannot
+rehash what it cannot decrypt. A store it cannot check is a store it can be fed
+garbage into. So the hash is over what the peer actually holds, and the
+consequence is accepted: **dedup happens within a reading key, not across
+them.** Two spaces holding the same photo under different keys store it twice.
+
+A per-space store follows from the same reasoning. A single store shared across
+spaces, keyed by content, answers a request for bytes regardless of which space
+the requester belongs to — so a peer learns whether this device holds given
+content without being able to see the space that references it. That is a leak
+of existence across a boundary the rest of the design takes seriously, and it is
+easy to introduce by accident, because a single store is the obvious way to get
+deduplication.
+
+**Integrity is whole-blob only.** The reassembly is hashed before it is accepted;
+there are no per-chunk hashes. A large transfer failing near its end is refetched
+entirely. Per-chunk hashing is the obvious fix and is deliberately not specified
+here, because the retry frequency that would justify its cost is unmeasured.
+
 The asymmetry is deliberate: **events replicate to everyone, blobs are pulled by
 whoever wants them.** Metadata is small and determines what you might want next,
 so it is always complete; content is large and often unwanted.
 
+The defensible form of that argument is about *nature*, not size. Blobs are
+immutable and content-addressed, so they have no history — the hash is the whole
+of their identity and there is nothing to order or merge. Putting them in an
+append-only log would store them in a structure whose purpose is sequencing
+things that have none. Events are the opposite. The size difference is real but
+incidental, and it expires the moment any body rule produces high-frequency
+events.
+
+### 2.5 A permanently missing event
+
+Events after a gap are held aside and never applied, and the request for the
+missing range retries indefinitely. There is no timeout and no resolution: if an
+event is genuinely gone — its only holder left forever — that writer's chain
+stalls at the gap permanently, and every event after it is held but unusable.
+
+**Stalling loudly is the deliberate choice.** The alternative is applying a chain
+with a hole in it, which forfeits the guarantee the chain exists to provide: that
+a writer's history is exactly what that writer wrote. A peer cannot tell a
+fabricated gap from an honest one, so treating gaps as skippable would let any
+peer suppress history by withholding one event.
+
+But it means **the protocol cannot distinguish "missing, in flight" from "gone
+forever"**, and those want different behaviour: the first is waited on, the
+second is reported to a user. Making that distinction expressible needs a way for
+a peer to say a range is unavailable rather than merely absent — which is the
+same wire concept compaction would need (§9), and a reason to design the two
+together if either is built.
+
+**Open**, and the mesh reduces its urgency without removing it: any peer holding
+the missing event can fill the gap, so it takes the permanent loss of every
+holder rather than one departure.
+
+**A forked chain is a different problem with a different answer.** Both show up
+as a `prev` that does not match, so they are easy to conflate. A gap is an event
+nobody can supply — there is nothing to choose between, only something absent, so
+waiting is the only correct behaviour. A fork is two events competing for one
+position, where the material for a decision is entirely present, so a rule
+decides and the fold proceeds (§7.3). Absence waits; contradiction resolves.
+
 ---
 
-## 3. The fold
+## 3. The fold — **Decided. The central bet.**
 
 The fold turns a set of events into state. There is exactly one fold algorithm,
 it is identical in every client, and no application supplies its own.
 
-### 3.1 Attributes declare how they merge
+**Every layer above this one depends on it.** A filesystem, a chat and a
+co-edited document all fold in one space, with one kernel containing no
+per-application code, and any set of events converges to the same state under
+every arrival order. What is not settled is whether the vocabulary of rules stays
+small under pressure, which §3.8 explains is the way this fails.
 
-Every attribute is declared with a **merge rule** — a small, fixed vocabulary of
-conflict-resolution strategies:
+**The shape in one paragraph.** State is a tree of objects. Each object has
+attributes, which always merge the same way, and a **body**, which merges by a
+rule the object names. A file's body is a blob hash; a document's body is a
+sequence of characters two people can edit at once; a folder has no body at all,
+and a chat is a folder whose children are messages. Objects of every kind sit
+side by side in one space.
 
-| Merge rule | Resolves concurrent writes by | Example attribute |
+### 3.1 The log is a set of slices
+
+Every event names a **slice**: the bag of events it belongs to. The fold
+partitions the log by slice key, applies each slice's **merge rule** to its bag,
+and collects the results. That is the whole algorithm. It never inspects a
+payload; only a rule does that.
+
+Slices are keyed in three tiers, and the tiering is what makes the fold
+well-defined:
+
+```
+root                    fixed rule · space key only     writer set, view hint
+(object, :attribute)    fixed rule · LWW register       structure, names, :kind
+(object, :body)         rule named by that object's :kind
+```
+
+Each tier is foldable knowing only the tiers above it, so the fold runs in
+phases with no fixed point to find:
+
+1. **The root.** Admitted on a signature from the space key alone (§7.2.1), so
+   this consults no prior state. Yields the writer set and the space's own
+   attributes.
+2. **Attribute slices.** Each attribute name has one fixed, universally known
+   rule — `:name` and `:parent` are registers, `:deleted` is a flag — so no
+   declaration is consulted to fold them. That is what makes this the layer that
+   bootstraps the next. Yields the object tree, names, and each object's `:kind`.
+3. **Body slices.** Each folded by the rule its object's `:kind` names.
+
+Phase 2 is the load-bearing one. Because the attribute vocabulary is fixed and
+declares nothing, **a client can always fold the structure of a space** — what
+objects exist, what they are called, where they sit, what kind of thing each one
+is — regardless of what the bodies turn out to be or whether it can read them.
+
+### 3.2 Two kinds of rule, and only one of them varies
+
+| | Attribute slices | Body slices |
 |---|---|---|
-| **LWW-register** | highest `(lamport, writer)` wins | `:name`, `:parent` |
-| **Counter** | sum of per-writer counts | `:votes` |
-| **OR-set** | add/remove with causal tags; concurrent add wins | `:tags` |
-| **Sequence** | positional identifiers, order-preserving | `:text` |
-| **Flag** | monotone; set-wins or clear-wins as declared | `:deleted` |
+| Rule | fixed per attribute name | named by `:kind` |
+| Declared? | no — known to every client | yes |
+| Holds | structure: `:parent`, `:name`, `:kind`, `:deleted` | the thing itself |
+| A client that cannot fold it | cannot happen | shows the object, cannot read it |
 
-The fold is then, for a space of any type:
+The merge-rule vocabulary is therefore a vocabulary of **body** rules:
 
-> for each `(object, attribute)`, gather every event asserting it and apply the
-> merge rule that attribute declares.
+| Merge rule | A body of this kind is |
+|---|---|
+| **Blob** | a hash; the bytes are fetched separately (§2.4) |
+| **Register** | one value, highest `(lamport, writer)` wins |
+| **Counter** | a sum of per-writer counts |
+| **OR-set** | a set, add/remove tagged causally; concurrent add wins |
+| **Sequence** | an ordered list of positional identifiers |
 
-Each merge rule is a **join-semilattice**: merging is commutative, associative
-and idempotent. Because the fold is nothing but the application of those rules,
-the whole fold inherits those properties. Order-independence is therefore
-*structural* — a consequence of the algebra, not a property maintained by care.
+All five are published CRDTs with proofs behind them. The sequence strains this
+contract hardest, and §3.8 says why it fits and what would not.
 
-### 3.2 Totality
+**Where a rule needs causality, it carries its own.** §7.2.3 declines to put a
+causal dependency in the envelope, and that stands — but an OR-set needs to know
+which adds a remove observed, and a sequence needs to know what an insert was
+anchored to. Both put that information *in the value*, where it is the rule's
+business and no one else's. The cost is that such values grow with the history a
+writer had seen, and that their canonical form (§3.6) has to pin how those tags
+serialise. The benefit is that the substrate stays free of ordering it would
+otherwise have to carry for every event, including the vast majority that need
+none.
+
+**Blob is the degenerate member, not a special case.** An object whose `:kind` is
+`image/png` has a body slice folding to a hash, and the bytes travel by §2.4's
+separate path. Large content therefore needs no mechanism of its own — it is
+the simplest rule in the vocabulary.
+
+**A merge rule needs identity as well as an operator.** Each must specify a
+stable identifier — two clients disagreeing about what `sequence` means is
+unrecoverable — and a canonical serialisation, because §9 hashes fold output.
+
+**`:deleted` is a flag, not a register, and the difference is instructive.** It
+resolves as: deleted iff the greatest `true` in its bag beats the greatest
+`false`. That is still a pure function of one bag — undeletion is an explicit
+`false`, not an inference from activity elsewhere — and it is deliberately *not*
+"a delete loses to any later write anywhere on the object". Such a rule would
+have to read the object's other slices, breaking §3.3's one-bag contract, and it
+would make an unrelated body write silently revive a deleted object.
+
+The tempting shortcut is worse still: clearing the tombstone incrementally when a
+later write arrives is order-dependent, and it passes casual testing. A rule that
+looks like a register and is not is exactly the kind of error a fixed vocabulary
+exists to prevent.
+
+**The property every rule must have** is not merely that it is a pure function of
+a set — that is true by construction, since a rule takes a bag, and it buys
+order-independence for free. What §9.1 and any incremental fold need is stronger:
+
+> `fold(fold(S₁), S₂)` = `fold(S₁ ∪ S₂)`
+
+That is, folding a partial bag and then folding the rest onto that result must
+give the same answer as folding everything at once. It is what lets a peer keep a
+running result and add events as they arrive rather than replaying from empty,
+and it is what makes a snapshot a legitimate starting point rather than a lossy
+summary. §3.7 is this requirement seen from one side: it holds only if the fold's
+output keeps the comparison keys, so a late arrival can still be resolved against
+it.
+
+This is a real obligation and a rule can fail it, which is why it is stated
+rather than assumed. Each of the rules in the vocabulary satisfies it by being a
+join-semilattice — merging is commutative, associative and idempotent — so
+order-independence is *structural*, a consequence of the algebra rather than a
+property maintained by care.
+
+### 3.3 One body slice per object; collections are objects
+
+An object has many attribute slices and **exactly one** body slice. Structure
+that would want several comes from objects, not from slots:
+
+- **A collection of independent things** — a folder of files, a chat of
+  messages, a canvas of shapes — is a parent object with children, each child
+  carrying its own body. Two people posting to a chat, or dragging different
+  shapes, never share a bag, so they never contend.
+- **Structure within one thing** — the blocks of a document that can merge and
+  split, text with comments anchored into it — belongs in a *single* body
+  slice, folded by a single rule that understands the whole of it.
+
+The line between them is whether operations cross. Merging two paragraphs is an
+operation spanning both, so paragraphs that can merge are one slice; messages in
+a chat never combine, so they are separate objects. **Where operations do not
+cross, slice; where they do, do not.**
+
+That rule falls out of the contract rather than being imposed on it. A rule sees
+one bag, so a resolution needing two bags cannot be expressed — there is nowhere
+to put it. Splitting genuinely coupled state across slices would not merely be
+inelegant; it would silently produce wrong results, because each rule would fold
+correctly in ignorance of the other.
+
+The consequence for structured documents is that their rule is **large** — one
+rule handling nesting, ordering and its own internal schema. That is the cost,
+and §3.8 treats it as the main risk to the vocabulary staying small. What
+contains it is the tiering: large rules live at the leaves, where failing to
+fold one means failing to read one object.
+
+### 3.4 Totality, and why damage stays in one slice
 
 Every event set folds to *something*. There is no such thing as a log that
 cannot be folded:
@@ -200,23 +504,42 @@ cannot be folded:
   attribute set.
 - A `:parent` cycle is broken at fold time by a deterministic rule (the smallest
   UUID in the cycle is re-parented to the root), and the resolution is
-  fold-local — never written back as an event.
-- An attribute whose merge rule a client does not recognise is folded as
-  unresolved, leaving the rest of the state correct.
+  fold-local — never written back as an event. This is the one part of the fold
+  that is *not* per-slice: it reads every resolved `:parent` at once, because a
+  cycle is a property of the graph rather than of any one bag. It runs after
+  phase 2 and before anything uses the tree, and it means a single `:parent`
+  write can change which object gets re-parented — so an incremental fold must
+  treat the parent graph as one unit even though everything else is bag-local.
+- A body slice whose rule a client does not recognise is left unresolved,
+  and every other slice folds normally.
+- An event a rule cannot yet apply — a sequence insert whose anchor has not
+  arrived — is **pending**: held, not discarded, folded when the anchor does.
+  The rest of that slice still resolves.
 
-Totality is what allows a peer to hold a partial log and still have coherent
-state, which is the normal condition in a network where peers come and go.
+**Slicing is what makes totality real rather than nominal.** A single
+undifferentiated fold would have to answer "what does this log mean" as one
+question, so one unrecognised rule or one missing anchor would take the space
+down. Because damage is confined to a bag, the worst case is one object that
+cannot be read inside a space that is otherwise entirely correct — which is the
+normal condition in a network where peers come and go, and the same outcome §4
+already describes for a space whose view is missing.
 
-### 3.3 The root
+This is the argument for slicing. Independent resolution of concurrent writes is
+a property of the merge rules, not of the partitioning, and incremental folding
+is an efficiency. Containment is the structural benefit.
+
+### 3.5 The root
 
 Every space has a root object, materialised by the fold rather than stored
 specially. Attributes on the root are therefore **space-level attributes**, and
 no separate concept of space metadata is required.
 
-The root carries the space's type declaration (Section 4), its writer set
-(Section 7), a suggested name, and any resolution hints (Section 5.3).
+The root carries the space's writer set
+(Section 7), a suggested name, and any resolution hints (Section 5.3). It is the
+one slice whose events are admitted on a signature alone (§7.2.1), which is what
+lets phase 1 of the fold consult nothing.
 
-### 3.4 Determinism
+### 3.6 Determinism
 
 The fold is a pure function from an event set to state, with no clock, no
 randomness, no I/O and no dependence on arrival order. Two clients holding the
@@ -226,61 +549,244 @@ state**.
 That is a strong requirement and it is deliberate: Section 9 depends on being
 able to hash the fold output and have two peers agree on the hash.
 
+**It is also stronger than it looks, and it is a specification of its own.**
+Order-independence gives agreement about *state*; it does not give agreement
+about *bytes*. Every merge rule carries internal metadata — an OR-set's causal
+tags, a sequence's position identifiers, a counter's per-writer map — and that
+metadata has representation freedom. Two correct implementations can agree
+exactly on an OR-set's live members and disagree on which tombstoned tags they
+still carry, or on the order those tags serialise in. They then hash differently
+while being in every observable sense identical.
+
+Two rules follow, and they should be written before any merge rule is coded:
+
+1. **Canonical form is specified per merge rule**, not once globally. A rule is
+   not finished until its serialisation is pinned, including the metadata a
+   reader never sees.
+2. **Hash the observable state, not the representation** — wherever the two can
+   be separated. What must agree is what the state *is*; internal bookkeeping
+   that no reader can distinguish should not be able to fork a hash.
+3. **No floating point anywhere in a hashed position.** §2.1 already bans it from
+   the event encoding, and hashing fold output extends the ban to every value a
+   rule can produce. Canvas coordinates are how this arrives in practice; they
+   are fixed-point integers for exactly this reason.
+
+### 3.7 Snapshot the accumulator, not the rendered state
+
+The fold's internal accumulator carries, per attribute, both the resolved value
+and the key that won it. The state handed to a view drops the keys — a view has
+no use for them.
+
+**Anything that persists or transmits fold output must keep the keys.** A
+snapshot of the rendered state is lossy: an event arriving later with an earlier
+comparison key cannot be resolved against it, because the winning key it would
+have to beat is gone. A snapshot of the accumulator merges late arrivals by the
+same maxima the fold already uses, with no special case at the boundary.
+
+This is cheap to preserve and expensive to retrofit, and it is easy to get wrong
+because the rendered state is the obvious thing to serialise. The accumulator
+must stay reachable from outside the fold.
+
 ---
 
-## 4. Space types
+### 3.8 Where the universal fold could fail — **Open**
 
-A space's root declares its **type**. A type is two things:
+The claim is that one algorithm plus a small vocabulary of body rules covers the
+interesting applications. It is falsified not by an application being awkward but
+by the vocabulary having to grow without bound, or by a rule having to see more
+than its own slice. Three pressures, in decreasing order of how well understood
+they are.
 
-1. **A schema** — for each attribute the type uses, which merge rule it has.
-   This is data. The universal fold reads it.
-2. **A view** — how to draw the folded state. This is code, and it is the only
-   code that ships (Section 8).
+**The vocabulary may not stay small — the live risk.** §3.3 concedes that a
+document whose blocks merge and split needs one large rule, because the
+operations cross what would otherwise be slice boundaries. One such rule is a
+cost. A vocabulary of them is the failure: at that point "merge rule" means
+"arbitrary code with private state", and the distinction between shipping a view
+and shipping a fold — which §8.1's entire security argument rests on — has
+quietly gone.
 
-**A type never supplies a fold.** If an application appears to need its own fold
-algorithm, the correct response is to add a merge rule to the shared vocabulary,
-not to let that application interpret the log privately.
+The discipline that keeps this honest is that **a rule must be justified by an
+algebra rather than by an application wanting it.** Register, counter, OR-set,
+sequence: each is one published algorithm with a proof that it is a
+join-semilattice. "Rich text document format" is not.
 
-### 4.1 What follows from that
+**Sequences strain the contract more than any other rule, and fit it.** A
+sequence carries state no other rule needs: position identifiers allocated
+relative to neighbours, and tombstones that must outlive the content they marked,
+because a concurrent insert may still anchor to a deleted element. Three
+properties make it fit — element identifiers derive from `(writer, seq)`, so a
+missing anchor is an ordinary chain gap; tombstones live in the rule's own fold
+output, which §3.7 requires of every rule anyway; and an insert whose anchor has
+not arrived is pending rather than fatal (§3.4). Its signature is the register's:
+one bag in, one value out. This matters because **without a sequence rule there
+is no collaborative text and no spatial canvas.**
 
-- **A peer can replicate a space of an unknown type.** Signatures, chains and
-  version vectors do not read payloads.
-- **A peer can fold a space of an unknown type**, given the schema, and so can
-  verify, snapshot and compact it. It holds correct state it cannot draw.
-- **A peer that lacks the view can only refuse to draw.** It refuses explicitly
-  rather than rendering a half-understood approximation.
-- **The type is not a permission.** It says what the bytes mean, not who may
-  write them; that is Section 7.
+**High-frequency editing may not want a log at all.** Body rules suit state that
+changes at human speed. Keystroke-granularity editing produces events faster than
+any of this is designed for, and the natural remedy — let the editing session run
+its own protocol and write occasional checkpoints into the log — has a cost worth
+naming: **a checkpoint of concurrently edited state blurs authorship.** Whoever
+signs it attests "I observed this state", not "I wrote this", and intermediate
+history is not recoverable. For a design whose signing story is provenance
+(§5.1), that is a real downgrade rather than an implementation detail.
 
-### 4.2 Example types
+**What is not at risk.** The tiering (§3.1) means none of the above can cost a
+client the *structure* of a space. Attribute rules are fixed per attribute name
+and declare nothing, so the tree, the names and each object's `:kind` fold
+identically everywhere regardless of what the bodies turn out to be. The failure mode of a
+missing or unworkable body rule is one object that cannot be read — the same
+outcome §4 describes for a missing view, and a much smaller one than a fold that
+cannot run.
 
-| Type | Schema is mostly | State is |
+**A boring application tests this better than an exciting one.** A chat is nearly
+the degenerate case: a folder whose children are messages, each message's body an
+ordinary register, no interleaving and no new rule. If something that simple
+needs a rule the vocabulary cannot express, the bet is lost at the easy end and
+lost early. A spatial canvas would answer the same question much later and much
+more expensively.
+
+---
+
+
+### 3.9 How blobs are referenced — **Open**
+
+An object whose body is a blob holds a hash, and the bytes travel by §2.4's
+separate path. That much is settled and built. What is not settled is how a blob
+reference is *expressed*, and there are two shapes with different consequences:
+
+- **A body rule.** `:kind` distinguishes blob-backed bodies from log-backed
+  ones, and the blob rule folds to a hash. Simple, and it keeps everything about
+  an object's body in one place. This is what §3.2 assumes and what the
+  This is what §3.2 assumes.
+- **A value encoding.** Any slice's value may be a blob hash rather than an
+  inline value, independently of what kind the object is.
+
+**The case that decides it is snapshots.** A snapshot of a log-backed body
+(§9.1) is itself a content-addressed blob, fetched on demand, belonging to an
+object whose body is emphatically *not* a blob. So "is this body a blob" and "is
+this value stored out of line" are two different questions, and a design that
+answers them with one mechanism will have to separate them again. That argues
+for the second shape without settling it.
+
+**`:kind` is overloaded in the same way** (§4.2): a media type there names the
+blob rule *and* tells a view what the bytes are. Those are also two questions,
+and they want separating at the same time as this one.
+
+Left open deliberately. It is a small decision that wants to be made against a
+real implementation rather than in advance, and nothing above depends on which
+way it goes.
+
+---
+
+## 4. Objects, kinds and views — **Decided in shape, Open in detail**
+
+§3 established that an object's body is a slice folded by a rule the object
+names. This section says what that leaves for a space to declare, and where
+application code fits.
+
+### 4.1 There is one structural model, and it is a filesystem
+
+Every attribute merges by a fixed rule that every client knows (§3.2). Every
+space therefore has the same structure — objects in a `:parent` tree, carrying
+names and kinds — and a client needs no declaration from anyone to compute it.
+
+That structure is a filesystem, and it is the *only* structure. A chat is not a
+different kind of space; it is a folder whose children are messages. A
+collaborative document is not a different kind of space; it is an object whose
+body folds by the sequence rule. Both sit in the same tree as ordinary files,
+and the same client folds all of them.
+
+**So the filesystem is not a built-in application. It is the shape of state, and
+what varies is only what an individual object's body means.** Three things follow
+that are worth having:
+
+- **There is no type negotiation.** A space does not announce what it is, and a
+  client does not have to understand a space before it can fold it.
+- **There is no schema to distribute or version.** The one thing a fold needs to
+  know beyond the events — which rule a body uses — is an ordinary attribute on
+  the object itself.
+- **Mixed spaces are ordinary.** A folder holding a spreadsheet, a conversation
+  and a photograph needs nothing special; those are three objects with three
+  kinds.
+
+### 4.2 What an object declares
+
+Each object carries a `:kind` naming the rule for its body:
+
+| `:kind` | Body is | |
 |---|---|---|
-| **Filesystem** | LWW on `:name`, `:parent`, `:content` | A tree of files and folders |
-| **Chat** | append-only set ordered by clock | A message list |
-| **Board** | sequence and positional rules | A spatial canvas |
-| **Code** | LWW on module contents | A bundle of executable modules |
+| a media type — `image/png`, `text/plain` | a blob hash; bytes travel by §2.4 | proven |
+| `register` | one value, last writer wins | proven |
+| `sequence` | an ordered list, concurrently editable | decided |
+| absent | no body; the object is a folder or a pure node | — |
 
-The filesystem is the built-in type, shipped with the client so that the system
-can bootstrap. It is not otherwise privileged: anything the filesystem view does,
-another view can do.
+Two things follow, and they are what make this cheap:
 
-**Why these are types rather than objects.** A conversation could be modelled as
-an object inside a filesystem space — a document that happens to hold messages.
-It is not, and the reason is permission. Both keys are per space and cover all of
-it (Section 7.1), so anything needing its own audience or its own set of writers
-must be its own space. A conversation almost always does: the people in it are
-rarely exactly the people who can see the folder it would otherwise sit in.
+- **`:kind` is an ordinary attribute**, folded in phase 2 by the same fixed rule
+  as `:name` and `:parent`. It needs no special handling and cannot be
+  circular, because the declaration is in a different slice from the thing it
+  describes (§3.1).
+- **`:kind` is set once and not changed.** Changing what a thing *is* would mean
+  reinterpreting a bag of events under a different rule, which has no sensible
+  answer. Making a different kind of thing means making a new object. This is a
+  one-line rule, and it is what keeps the phase ordering honest.
 
-Once a conversation is a space, the log for that space is not filesystem-shaped,
-and the question of what a log means stops having a single answer. **That is
-where the type declaration comes from** — not from wanting applications, but from
-permission granularity forcing spaces to be small and numerous, and small
-numerous spaces turning out to hold very different kinds of thing.
+**A media type in `:kind` is doing two jobs** — naming the blob rule *and* saying
+what the bytes are, so a view can choose how to draw them. That is the same
+overloading §3.9 flags in the blob reference, and it wants resolving at the
+same time.
+
+### 4.3 Views, and what a space declares
+
+A **view** draws folded state. It is the only application-specific layer and the
+only code that ships (§8).
+
+The root declares the writer set (§7), a suggested name, resolution hints
+(§5.3), and optionally a **view hint**: which view this space would like to be
+opened with. The hint is advisory in the strongest sense — a client that ignores
+it folds the space correctly anyway, because folding consults no declaration
+(§3.1).
+
+What follows:
+
+- **A peer can replicate any space.** Signatures, chains and version vectors do
+  not read payloads.
+- **A peer can fold the structure of any space, unconditionally.** No
+  declaration is consulted to get the tree, the names and each object's `:kind`.
+- **A peer can fold any body whose rule it has**, and so can verify, snapshot
+  and compact it.
+- **A peer lacking a rule loses one object, not the space.** It shows the object,
+  with correct name and place, and reports the body unreadable (§3.4).
+- **A peer lacking a view can only refuse to draw**, explicitly rather than
+  approximately.
+- **None of this is permission.** What the bytes mean is unrelated to who may
+  write them, which is §7.
+
+**A view never supplies a fold.** If an application appears to need one, the
+correct response is to add a rule to the shared vocabulary — and §3.8 is the
+argument for why that vocabulary must stay small, and what it costs if it does
+not.
+
+### 4.4 Why spaces are small and numerous
+
+One space could hold everything, and does not, because **permission is per space
+and covers all of it** (§7.1). Anything wanting its own audience or its own set
+of writers must be its own space.
+
+That is the whole of the argument. A conversation is usually its own space not
+because a chat is a different kind of log — it is not — but because the people in
+it are rarely exactly the people who can see the folder it would otherwise sit
+in. Links (§5.7) are what keep that liveable: a space split for permission
+reasons is referenced from what it was split from, and following the reference is
+ordinary navigation.
 
 ---
 
-## 5. Identity, addressing and connection
+## 5. Identity, addressing and connection — **Proven**
+
+Identity, locators, share links, the derived short code and trust-on-first-use
+are implemented and working. Resolution (§5.3) is the exception and is marked
+where it starts.
 
 Three concerns that are commonly fused, kept separate:
 
@@ -310,6 +816,53 @@ Consequences fall out at once:
 
 Signing's job is **provenance, not permissions**. It answers "is this space who
 it says it is" — not "may this person read it".
+
+**Private keys must be extractable, and this is not the obvious choice.** The
+tempting alternative is a non-extractable key held by the platform, on the
+grounds that injected script could not then steal it. That does not survive
+inspection: a non-extractable key can still be *used* by injected script to sign
+anything it likes. It is not protected, only unstealable — an attacker's forgery
+lasts as long as their code execution rather than forever. Meanwhile the cost is
+total: no backup, and no way to move an identity between devices.
+
+The defences that actually work are the ones that stop script executing at all —
+content security policy, dependency discipline, and rendering peer-supplied
+content in a sandbox with no access to the host. That last one is a real
+constraint on §8, not an optimisation, because rendering data from strangers is
+the whole job.
+
+### 5.1.1 Key loss is the largest practical risk — **Open**
+
+If identity is a keypair in browser storage, then clearing site data destroys
+the ability to write to your own space permanently, with no recovery and no way
+to tell readers what happened. Some browsers evict storage for sites without
+recent interaction on the order of a week, which makes this routine rather than
+an edge case. A fork is honestly a different space (above), so a replacement key
+is a different space wearing the old one's name — the property that makes forks
+clean is the same one that makes key loss unrecoverable.
+
+Detection is possible in one place and should be taken: **a space whose private
+key is missing opens read-only rather than minting a replacement**, because
+silently minting one would present a new space as the old one.
+
+The answer beyond that is not chosen. The candidates are an explicit export the
+user is prompted to keep, escrow with someone or something, multi-device
+enrolment where several keys are writers on one space, or an honest stance that
+identities are cheap and disposable and nothing is expected to outlive its key.
+These have very different products attached, which is why this is Open rather
+than merely unbuilt. **It is the single most likely way an ordinary person loses
+something irreplaceable here**, and comparable systems consistently find it is
+where non-technical users fall off.
+
+**Whatever answer is chosen must not resolve this by putting one key on two
+devices.** That looks like the obvious fix for both backup and multi-device use,
+and it is the one approach the design will not reward: two devices holding one
+key fork that writer's chain, and §7.3's resolution — deterministic, but lossy —
+drops one branch's writes. Multi-device enrolment is therefore *several keys,
+each on one device, all in the writer set*, which the permission model already
+supports. Backup is a different problem and wants a different answer: a key held
+offline and restored only once the original is gone, never used in parallel with
+it.
 
 ### 5.2 Locators are separate, plural and disposable
 
@@ -341,7 +894,7 @@ A space has zero or many locators at any moment and none of them is part of its
 identity. Changing transport, or replacing the signalling infrastructure
 entirely, invalidates no address anyone has ever shared.
 
-### 5.3 Resolution
+### 5.3 Resolution — **Decided, not built**
 
 Resolution answers one question: **given a public key, produce candidate
 locators.** It is a lookup, not an authority.
@@ -390,12 +943,52 @@ true), and *here are locators* (dial them).
 4. **Learned** — whatever peers announced or answered.
 5. **A configured fallback resolver.**
 
+Sources 1 and 2 are in tension in a way worth stating: **the best source is
+unavailable exactly when it is most needed.** The space's own declaration is
+durable and signed and still works months later — and it lives in a log you do
+not have yet, so it can never serve first contact. The link hint is the reverse:
+it is the only thing that works before you know anybody, and it is a guess made
+by whoever wrote the link, at the moment they wrote it.
+
+Hence the asymmetry about where hints belong. **A share link should carry a
+locator hint; a link stored inside a space should not.** A share link is a
+one-shot introduction whose staleness is recoverable by resharing it. A stored
+link is data that outlives its target's hosting arrangements, and a rotted
+address embedded there is worse than no address at all.
+
 **Resolution knowledge travels along the link graph.** A link names a space and
-carries no locator, deliberately — a link outlives any hosting arrangement, and
-an embedded address that has rotted is worse than none. It does not need one:
-reaching a space that contains a link generally means reaching what it points at,
-because the peers you are already talking to are the ones who can say where the
-target is.
+carries no locator, deliberately. It does not need one: reaching a space that
+contains a link generally means reaching what it points at, because the peers you
+are already talking to are the ones who can say where the target is.
+
+**Bootstrap is the one case none of this solves.** Every mechanism above moves
+knowledge between peers who are already in contact. The very first contact with a
+stranger's space needs one locator from outside the system, and that is the share
+link. This is not a gap to be closed by better gossip — it is where the design
+touches the world, and it is why the link hint is a primitive rather than
+decoration.
+
+**What stops resolution being abused.** Since a bad answer costs only a wasted
+dial, the protections are all bounds rather than trust:
+
+- **A dial timeout**, so a dead locator costs a known amount of time.
+- **A cap on entries per space**, so one answer cannot be a flood.
+- **A cap on entries per announcing peer** — the important one, because it is
+  what stops a single peer crowding the real entry out of a list.
+- **Nothing is authoritative.** Several peers are asked in parallel and answers
+  merge; duplicate locators collapse, and the longest surviving expiry wins, so
+  one peer's stale entry cannot shorten another's fresh one.
+
+**The numbers are deliberately absent.** Timeout, both caps, and default expiry
+are empirical, and choosing them from an armchair would give them a false
+authority. They belong in a measurement against a real network.
+
+**Two things remain genuinely open.** Whether answering a resolution query should
+be obligatory — a peer that answers reveals which spaces it knows of, which is a
+weak disclosure of what it holds. And whether the push side needs damping beyond
+expiry: announcing only on connect and on change, and only for spaces actually
+served, is the cheapest policy that works, but whether it is sufficient is a
+question for observation rather than argument.
 
 ### 5.4 Sharing
 
@@ -446,13 +1039,39 @@ holds the space. Where the space is encrypted (Section 6), it holds ciphertext
 and the distinction largely disappears — which is the case that makes always-on
 peers safe to use by default.
 
+**Two practical constraints on the browser, which are not negotiable.** A secure
+context is required: some browsers will not gather usable connection candidates
+over plain HTTP, including a local network address, so testing across two devices
+means serving over HTTPS rather than a development server on a LAN IP. And direct
+connection frequently fails — phones on cellular networks mostly do, which is
+ordinary carrier NAT rather than a fault — so a relay is assumed rather than
+treated as a fallback for unusual cases.
+
+**Signalling and transport must not be one dependency.** A library that offers
+both will silently put its own framing, chunking and size limits underneath the
+protocol, at which point measurements describe the library rather than the
+network. Signalling is one job — introduce two peers, exchange connection details,
+then leave the path — and the interface should be narrow enough that the
+implementation behind it is replaceable without anything above it changing.
+
+**Connection lifecycle is unspecified and is where the bugs will be.** The
+reconciliation algorithm (§2.3) and the introduction mechanism (§5.3) are both
+described; the state machine between them is not. It has to answer at least:
+what happens when a peer connects while a sync is already in progress with it,
+whether the same space may sync over two connections at once and what reconciles
+the results if so, how a half-finished blob transfer resumes against a different
+peer than it started with, and what a peer does with events received from a
+connection that drops before the batch completes. None of this is architecturally
+hard, and all of it is fiddly enough that it deserves its own design rather than
+being discovered.
+
 ### 5.7 The network of spaces
 
 A link is an ordinary attribute value naming a space, optionally an object
-within it. Any type may declare a link-valued attribute, so the graph of spaces
-is readable by any client that can fold — including one that holds no view.
+within it. A link is an ordinary attribute value, so the graph of spaces is
+readable by any client that can fold — including one that holds no view.
 
-An object with a link and no content is a portal. An object with both is a card:
+An object with a link and no body is a portal. An object with both is a card:
 a thumbnail that goes somewhere. Links inherit naming, placement and deletion
 from whatever object carries them.
 
@@ -461,13 +1080,34 @@ without being told, exactly as on the early web.
 
 ---
 
-## 6. Privacy and the reading key
+## 6. Privacy and the reading key — **Decided in shape, Open in construction**
 
 Identity is a public key, and it makes a space verifiable. It does not make a
 space private: anything a peer can replicate, a peer could read.
 
 Privacy is therefore a separate key. A space may have a **symmetric reading
 key**, and where it does, event values and blob contents are encrypted under it.
+
+**The construction is not specified here and must be before this is built.** What
+the rest of this section says about *who can do what* holds under any competent
+authenticated cipher; what follows is what a construction has to get right.
+
+- **Nonces must never repeat under one key**, and a space is exactly the setting
+  where they would: many writers encrypting independently, offline, with no
+  coordination. Random nonces invite a birthday collision; a counter needs
+  agreement nobody can reach. The envelope already carries a unique pair —
+  `(writer, seq)` — which is unique by construction under §7.3's constraint and
+  is the natural nonce input.
+- **Encryption must be deterministic where deduplication is wanted.** §2.4 says
+  identical content deduplicates; under a randomised scheme two writers adding
+  the same file produce different ciphertexts and it does not, even within one
+  space. Deriving a blob's key and nonce from its plaintext hash restores
+  deduplication at a known cost: it reveals to anyone holding the key that two
+  objects have identical content, and it permits a confirm-a-known-file attack
+  by someone who can guess a candidate. That is a real trade and it should be
+  made deliberately.
+- **Keys should be derived, not used raw.** One reading key with separate derived
+  subkeys for event values and blobs keeps the two domains apart.
 
 **One key per space, covering all of it.** There is no per-object or per-subtree
 encryption: holding the reading key means reading everything in the space, and
@@ -500,15 +1140,28 @@ Almost everything except read. The substrate never interprets a value
 | Store and serve blobs | **yes** — content-addressed by ciphertext hash |
 | Answer resolution queries | **yes** |
 | Read any value | **no** |
-| Fold into meaningful state | **no** in practice — see below |
+| Fold structure (the object tree) | **yes** — attribute rules are fixed, not declared |
+| Fold any body | **no** — a body's rule is named by an encrypted `:kind` |
+| Fold into *meaningful* state | **no** — the shape resolves, the values do not |
 | Write | **no** — that needs the private space key, separately |
 
-Folding is the interesting case. The fold is structurally able to run over
-ciphertext — it merges opaque values by rules the schema declares, and never
-inspects them — so a peer without the reading key can compute *the shape* of the
-state: which objects exist, which attributes they carry, which writes won. What
-it cannot do is know what any of it means, which makes the exercise pointless in
-practice. Such a peer stores and serves; it does not fold.
+Folding is the interesting case, and it splits. **Attribute slices fold over
+ciphertext**: their rules are fixed per attribute name (§3.2), so a peer knows
+which rule applies without reading anything, and each rule picks a winner by
+`(lamport, writer)` without inspecting values. Such a peer therefore computes
+*the shape* of the state — which objects exist, which attributes they carry,
+which writes won — while knowing what none of it says.
+
+**Body slices do not fold at all.** A body's rule is named by `:kind`, `:kind` is
+an encrypted value, so a peer without the key cannot even determine which rule to
+apply, let alone run it. This is deliberate: exempting `:kind` from encryption
+would leak which objects are conversations, which are documents and which are
+images, and would buy only the ability to fold bodies whose contents remain
+meaningless.
+
+In practice such a peer stores and serves rather than folding, because shape
+without meaning is of no use to it. The point is that it *can* — nothing in
+replication requires reading.
 
 The consequence is the useful one: **a peer can be a complete, verifying,
 useful replica of a space it cannot read.** Storage and readership are separate
@@ -550,10 +1203,16 @@ concerns, and only the second requires trust.
 
 ---
 
-## 7. Writers and permission
+## 7. Writers and permission — **Decided**
 
 A space may have many writers. The root declares the **writer set**: the public
 keys admitted to the space.
+
+There is a circularity lurking here — the rule that says which events count is
+itself written by events — and §7.2 closes it with a single restriction on who
+may write the root. That restriction is what makes this section Decided rather
+than Open, and it is worth reading before the details, because everything else
+here depends on it.
 
 **The writer set is per space and applies to the whole of it.** There is no
 per-object or per-attribute permission: a writer admitted to a space may write
@@ -568,8 +1227,9 @@ local, deterministic computation over the log rather than a query to an
 authority: two peers holding the same events agree on who may write, because the
 answer is in the events.
 
-The space's own key is the root of that authority: the first writer grants are
-signed by it, and delegation flows from there.
+The space's own key is the root of that authority, and — unusually — it does not
+delegate it. Every statement about who may write is signed by the space key
+itself, which is §7.2's whole mechanism.
 
 ### 7.1 The space is the unit of permission
 
@@ -600,25 +1260,310 @@ permission and coarse permission plus links reach similar places; the second is
 far easier to reason about, because the boundary is something you can see and
 name rather than a rule attached to an object somewhere inside.
 
+### 7.2 The circularity, and how the root closes it — **Decided**
+
+There is a circularity in the paragraphs above, and it has to be closed
+explicitly or the design does not work.
+
+The writer set lives on the root. The root is materialised by the fold. The fold
+excludes events from writers outside the set. So: **to know who may write, fold
+the log; to fold the log, know who may write.**
+
+The general shape is *state the fold needs, held in the log the fold computes*.
+Only the writer set has it. Nothing else the fold consults is declared: attribute
+rules are fixed per attribute name (§3.2), and a body's rule is named by an
+ordinary attribute on the object, which phase 2 has already resolved before any
+body is folded (§3.1).
+
+**The naive fix does not work.** The instinct is to fold twice: once ignoring
+permission to read the writer set off the root, then again properly. But the
+writer set is written by events, and those events are themselves subject to
+permission. A stranger writes "I am a writer"; pass one ignores permission, so it
+believes them; pass two admits everything they wrote. Anyone can join any space
+by asserting that they may.
+
+### 7.2.1 The rule: only the space key writes the root
+
+**Events targeting the root object are admitted if and only if they are signed by
+the space key itself. Events targeting anything else are admitted if and only if
+their writer is in the writer set.**
+
+This does not make the circularity cheaper to compute. It removes it. Root events
+are *self-authorising* — admitting one is a signature check, never a lookup — so
+the fold becomes two phases with no fixed point to find:
+
+1. **Compute the root.** Sweep the log; take every root-targeted event signed by
+   the space key; ignore everything else. Fold those. This consults no prior
+   state, so nothing is self-referential. It yields the writer set and
+   everything else the root carries.
+2. **Fold the rest**, admitting an event iff its writer is in the set phase 1
+   produced.
+
+Phase 1 depends on nothing; phase 2 depends only on phase 1. The loop is gone,
+and it is gone structurally rather than by convention.
+
+Three consequences follow, and the second is the one that saves the most work:
+
+- **No causal dependency is needed in the envelope.** The expensive part of the
+  standard answer — every event carrying evidence of what its writer had already
+  seen, which is a substrate change — is not required to close the loop. §7.2.3
+  says what is given up instead.
+- **The merge rule for the writer set stops being a hard choice.** The difficulty
+  in reconciling concurrent membership edits comes from several people editing
+  membership. Here there is one writer to the root, so a plain last-writer-wins
+  register over the whole membership list is sufficient: the space key holder
+  states who is in, and the most recent statement wins.
+- **The authority story is legible.** "Whoever holds the space key decides who
+  may write" is a sentence a person can be told, and it matches what people
+  already expect of a group they administer.
+
+**What it costs.** Authority over membership cannot be delegated, because
+delegating it would mean folding a grant, which is the circularity again. One
+party administers the space, and if they lose the space key the membership list
+is frozen permanently — the space keeps working for its existing writers and can
+never admit or remove another. That is a sharper consequence of key loss than
+§5.1.1 otherwise describes. It also means the space key is an *operational* key
+rather than one that can be created and locked away, since it is needed every
+time membership changes.
+
+### 7.2.2 Moderators hold their own keys, never the space key
+
+The obvious way to have several administrators is to share the space key between
+them. **It should not be done**, and the reason is more specific than shared
+secrets being poor practice: two holders writing concurrently fork the one chain
+that determines who may write. §7.3 resolves such a fork rather than leaving the
+space stuck, so this is a silent loss of one administrator's changes rather than
+a catastrophe — but it is a loss with no upside, since the shape below gets
+several administrators without it.
+
+The shape that works instead keeps the root single-writer:
+
+- The **space key** has sole authority over the root, and therefore over who is a
+  writer and who is a moderator. One holder, used rarely.
+- **Moderators are ordinary writers**, holding their own keys, distinguished by
+  an attribute in the membership list rather than by holding anything shared.
+- **Moderator actions are ordinary events** — removing a member from a chat,
+  pinning a message — targeting ordinary objects, signed by that moderator's own
+  key, folded like anything else.
+
+This costs one thing: a moderator action is not self-authorising the way a root
+event is, so folding it means checking whether that writer was a moderator. That
+check is against phase 1's output, which is already computed, and it is the same
+shape as an ordinary write-permission check.
+
+It buys two things worth having. No secret is ever shared, so §7.3's hazard never
+arises. And every moderator action is **attributable to a person** rather than
+being an anonymous act by the space — *Alice removed Bob* rather than *Bob was
+removed* — which is better in a log whose whole purpose is provenance.
+
+### 7.2.3 Revocation means "may no longer write", never "was never here"
+
+A revoked writer's old events remain validly signed; signatures do not decay. So
+"valid when written" and "valid now" are different predicates over the same log,
+and the design must pick one.
+
+**It picks *valid when written*, and this should be stated as a property rather
+than apologised for.** Removing a writer stops their future writes. It does not
+remove what they already wrote, and it cannot.
+
+The alternative is unworkable here rather than merely unattractive. Under *valid
+now*, a revocation retroactively unwrites history that peers have already folded
+and shown to people. Worse, *when* a peer learns of the revocation determines
+what it computes, so a peer that has not yet received the revocation disagrees
+with one that has — and both are behaving correctly. With no authority to break
+the tie, that is a permanent fork manufactured by the security mechanism itself.
+
+**What this means concretely, using the case that motivates it.** Removing
+someone from a chat:
+
+| | |
+|---|---|
+| They can no longer post | **yes** — immediately, and every peer agrees, because the membership event is in the log |
+| Their old messages remain | **yes** — and this is wanted; a conversation with one person's messages retroactively deleted is a worse artifact than one where they are visible |
+| They can no longer read | **no** — see below |
+
+The third row is not a permission question at all, and no rule in this section
+touches it. Reading requires the reading key (§6), which a removed member already
+holds and cannot be made to forget. They can go on replicating the space and
+decrypting everything written after their removal.
+
+**So removal is muting, not exclusion, and the interface must not imply
+otherwise.** Genuinely ending someone's access means rotating the reading key and
+re-encrypting, which §6.3 explains is a new space in all but name — and which
+buys less than it appears to, since anyone who could read could also copy.
+
+**One ambiguity remains, and it is accepted.** Because there is no causal
+ordering between writers (§2.2), a write that is concurrent with the removal that
+would have stopped it has no determined answer: peers may fold it either way
+depending on what they hold, converging once they hold both events. In practice
+this is a window of seconds around a removal, affecting whatever the removed
+writer was in the middle of saying. Eliminating it means putting causality in the
+envelope, and that price is not worth paying for this. **It would become worth
+reconsidering if the reading key were ever derived from membership**, since "who
+was a member at time T" would then determine what can be decrypted, and a few
+seconds of ambiguity would stop being cosmetic.
+
+### 7.3 Chain forks: one key, two devices — **Decided**
+
+A private key is meant to be held by **one device at a time**. This section says
+what happens when that is violated, because it will be, and because the answer
+determines whether the violation is survivable.
+
+**Two devices holding one key fork that writer's chain.** The mechanism is
+§2.1's per-writer chain: each event carries `seq` and the hash of that writer's
+previous event, which makes a writer's history a linked list with exactly one
+tail. Two devices both believe they are at the same tail. Both write. The result
+is **two different events at the same sequence number, with the same
+predecessor, both validly signed.**
+
+**Signing cannot catch it.** A forged event fails verification; this one does
+not, because the key genuinely signed both. The two branches have identical
+provenance, so nothing can adjudicate them *on authority* — there is no fact
+about which one the writer "meant".
+
+### 7.3.1 The resolution is deterministic, not fair
+
+Identical provenance means no branch deserves to win. It does not mean no branch
+can be *chosen*. What the network needs is not fairness but **convergence**: every
+peer applying the same rule to the same event set must reach the same answer.
+A rule that picks arbitrarily satisfies that; a rule that refuses to pick does
+not.
+
+**The rule: the longer branch wins. Ties break on the lowest event hash at the
+first divergent sequence number.**
+
+Both halves are total and computable from the event set alone, with no clock, no
+arrival order and no authority — the same standard §3 holds the fold to. The
+losing branch's events are **not folded**. They remain in the log, replicated and
+signed, and a client can show them; they simply do not contribute to state.
+
+Length is the primary rule for one reason worth stating: **it favours the branch
+that kept being used.** The ordinary case of this failure is one device carrying
+on while another sat stale with a few writes on it, and length resolves that the
+way a person would want without anyone deciding. It is not a security property —
+whoever writes more wins, and an adversary can always write more — it is a
+heuristic that makes the common case land well and is harmless in the rest.
+
+**First-seen must not be the rule**, though it is the intuitive one. It depends
+on arrival order, so two peers holding the same events disagree permanently,
+which is precisely the failure being avoided.
+
+**Convergence here is eventual, not immediate, and that is worth being precise
+about.** Length is a property of the events a peer holds, so a peer holding all
+of one branch and half of the other will prefer differently from a peer holding
+both in full. That is not the divergence first-seen produces: it is the ordinary
+condition of a peer that has not finished syncing, it resolves as soon as both
+branches are complete, and the answer it converges on is the same for everyone.
+The requirement the rule must meet is that peers holding *the same events* agree,
+and length meets it. A client should nonetheless treat a fork as unsettled while
+either branch is still arriving, rather than presenting an early preference as
+final.
+
+### 7.3.2 Why a deterministic bad outcome beats a nondeterministic one
+
+The alternative — refusing to resolve, treating a forked chain as an error state
+— is worse in every case, including the adversarial one it appears to protect
+against.
+
+**Refusing does not protect the space.** Someone who holds the private key can
+already write anything, and under §7.2.1 can rewrite the membership list. The
+fork rule does not grant that power; it only decides what happens in the moment
+two holders write at once. Withholding a decision leaves the space stalled
+(§2.5) for everyone, the legitimate holder included, and with no way to say why.
+
+So the trade is: **a thief may win control, or the space breaks for everybody.**
+The first leaves an outcome and someone holding the space — which is something a
+person can respond to, by forking, by telling people, by carrying on elsewhere.
+The second leaves nothing.
+
+This is a general preference and the design applies it elsewhere: §3.4 breaks
+parent cycles by an arbitrary rule and says the rule is arbitrary, rather than
+refusing to fold. **Prefer a deterministic bad outcome to a nondeterministic
+one.** An arbitrary answer everyone shares is a working system; a principled
+refusal is a broken one.
+
+### 7.3.3 What it still costs
+
+Resolution makes a fork survivable. It does not make it free.
+
+- **The losing branch's writes are dropped from state.** Bounded to what one
+  writer produced on one branch, and the events survive in the log — but it is
+  data loss, and a client that hides it is lying to someone about their own work.
+- **Under §7.2.1 a forked space key means a contested membership list.** The
+  rule resolves it, so phase 1 of the fold still has exactly one answer, but the
+  answer may be the branch the space's owner did not intend.
+- **Sequence numbers are no longer a clean per-writer counter across the fork
+  point.** The winning branch continues and the losing one is abandoned mid-run,
+  so a naive reading of "how far is this writer" is misleading. The chain is
+  intact along the surviving branch, which is what replication needs.
+
+**Therefore detection matters more, not less.** A fork that resolves silently is
+a fork nobody investigates, and the symptom — occasional writes that quietly
+never appear — reads as a mysterious bug rather than as a key on two devices. Two
+events at one sequence number with one predecessor is a cheap, checkable
+condition, and a client that sees it should say so plainly.
+
+### 7.3.4 The operational rule stands
+
+Resolution changes the failure from *unrecoverable* to *deterministic and lossy*,
+which is a large improvement and not a licence:
+
+> **Export a key to move an identity, never to share one.**
+
+Within a single device an exclusive lock per space is a complete fix — the first
+context to open a space writes, later ones open read-only and say so. Across
+devices nothing prevents a fork, because no lock spans devices without a
+coordinator and a coordinator is the server this design does not have.
+
+A second person who needs to write gets **their own key** and a place in the
+writer set. A second person who needs to administer gets §7.2.2's moderator role.
+A second *device* of the same person gets its own key too, enrolled alongside the
+first. In none of these cases is sharing a key the right answer, and the reason
+is now ordinary — it silently loses work — rather than catastrophic.
+
+### 7.4 What remains open
+
+The mechanism above is settled. Three smaller questions are not, and all are
+answerable without disturbing it:
+
+- **Membership as a whole-list register, or as add and remove operations.** A
+  register is simplest and is the default assumed above, but it means one
+  administrator editing membership from two contexts loses an edit entirely.
+  Operations preserve both edits at the cost of needing their own merge
+  semantics.
+- **Whether admission can happen while the space key holder is offline.** Under
+  §7.2.1 it cannot: no administrator present, no new writers. For a small group
+  that is unremarkable; for anything invite-driven it is a real constraint, and
+  the workaround — pre-authorising a batch of keys — is clumsy.
+- **Whether moderator actions need their own attribute vocabulary** or are
+  ordinary writes distinguished only by who signed them.
+
 ---
 
-## 8. Applications are spaces
+## 8. Applications are spaces — **Open**
 
-An application is a space of type **code**: a log that folds into a bundle of
-executable modules. It is signed, content-addressed, versioned and replicated by
-exactly the same machinery as any other space.
+The argument in §8.1 is sound and the consequence is real. What is unbuilt is all
+of it, and §8.2 names the one channel that still has to be designed.
+
+An application is an ordinary space whose objects are executable modules — blob
+bodies with a media type, in a `:parent` tree, exactly like any other files. It
+is signed, content-addressed, versioned and replicated by the same machinery as
+everything else, because there is nothing else it could be.
 
 A client is correspondingly thin. To open a space it:
 
 1. Replicates the log and verifies the chains.
-2. Reads the root's type declaration — a schema and a view reference.
-3. Folds the log with the universal fold, using the schema.
-4. Resolves the view reference to a code space and replicates it.
+2. Folds it — structure unconditionally, bodies by the rules each object's
+   `:kind` names (§3.1).
+3. Reads the root's view hint, if it has one.
+4. Resolves that hint to a code space and replicates it.
 5. Runs that view against the folded state.
 
-**Step 3 does not depend on step 4.** A client can hold correct, verified,
+**Step 2 does not depend on steps 3 to 5.** A client can hold correct, verified,
 compacted state for a space whose view it has never fetched, and can serve that
-space to others. An always-on peer needs no application code at all.
+space to others. An always-on peer needs no application code at all — and note
+that the fold needs no declaration to run, so this holds even for a space whose
+root says nothing at all.
 
 Applications therefore distribute over the same network as data — no store, no
 CDN, no central registry — and are versioned and signed by construction, because
@@ -649,47 +1594,212 @@ content addressing means a client can pin exactly the version it ran; and a view
 executes against a constrained drawing interface rather than direct access to
 the host.
 
+### 8.2 The rendering boundary — **Decided in shape, Open in detail**
+
+A view needs to draw a real interface and take real input, and it must do so
+without acquiring the host's origin — because with the origin it has storage, the
+network and the space's private key, which is exactly the ambient authority §8.1
+claims it never needs.
+
+The temptation is to design a description language: the view emits drawing
+commands across a serialisation boundary and never touches a display directly.
+That is a large piece of work — an isolated execution context, a wire format, and
+a vocabulary rich enough to express an application — and it is not necessary,
+because the platform already provides an isolation boundary with a rich interface
+language on the far side of it.
+
+**A view runs in a sandboxed, cross-origin frame under a strict content
+policy.** That yields, without any of it being designed here:
+
+- **Origin isolation.** The view cannot reach the host's storage or keys, because
+  it is not on the host's origin. This is the property the whole section needs.
+- **A complete interface language** — the document model — with no vocabulary to
+  invent and no expressiveness ceiling to discover later.
+- **Input as the platform's problem.** Focus, keyboard, pointer and accessibility
+  are handled by the frame rather than tunnelled through a protocol.
+- **No network of its own**, denied by policy rather than by omission.
+
+What remains to be designed is one channel, and it is small: **the view proposes
+writes and the host decides.** Proposals cross by message-passing; the host
+validates them against the space's rules, signs with the user's key, and appends.
+The view never holds the key and never appends directly. This is a genuine hole
+in "needs no ambient authority" — but a narrow one, mediated, rate-limitable, and
+attributable to the user rather than to the view.
+
+**What this does not solve** is a view exfiltrating what it was shown. A view
+rendering decrypted content can encode it and try to get it out; policy closes
+the obvious routes, and §6.3 already concedes that anyone who can read can copy.
+It is the same exposure a reader always has, not a new one the boundary
+introduces.
+
+**The favourable comparison holds.** Sandboxing a *fold* would have been this
+problem plus a correctness requirement: a fold that escapes makes peers disagree
+permanently, where a view that escapes harms only its own user. Moving the
+boundary here converts an unrecoverable failure class into a recoverable one, and
+the remaining work is one message channel rather than a platform.
+
 ---
 
-## 9. Snapshots and compaction
+## 9. Snapshots and compaction — **Decided in shape, Open in construction**
 
-A log grows without bound. Compaction reduces it, and content addressing is what
-makes that safe to share.
+A log grows without bound. **The safe half of the remedy is easy and the
+valuable half is unsolved**, and the two are separated below because conflating
+them is what makes the problem look tractable when it is not.
 
-A **snapshot** is the hash of the folded state over all events up to a stated
-watermark — a version vector naming, per writer, how far the snapshot covers.
-Because the fold is deterministic and its output canonically encoded
-(Section 3.4), a snapshot needs no signature to be trustworthy: **a peer holding
-the same events verifies it by recomputing it.** Disagreement is detectable
-rather than silent, and two peers who compact the same log produce byte-identical
-snapshots, so snapshots deduplicate like any other content.
+The two halves are:
 
-Snapshots are stored as ordinary blobs and announced as ordinary events carrying
-the watermark and the state hash. They replicate normally, sit in a signed
-chain, and cannot be silently inserted.
+| | Keeps events? | Verifiable by a peer that lacks the events? |
+|---|---|---|
+| **Fast start** — skip the fold, keep the log | yes | does not need to be |
+| **Compaction** — discard superseded events | **no** | **this is the problem** |
 
-Per-attribute merge rules make the reduction mechanical: an LWW-register
-compacts to one value, a counter to one total per writer, an OR-set to its live
-members. Compaction is defined **per merge rule** rather than per application, so
-a rule solved once is solved for every type that uses it — and, as with folding,
-a peer can compact a space whose view it does not have.
+### 9.1 Fast start is safe and should be built first
 
-A snapshot is a **cache, never authority**. Events remain the truth; a snapshot
-can always be discarded and recomputed from them.
+A **snapshot** is the fold of every event up to a stated watermark — a version
+vector naming, per writer, how far it covers. Because the fold is deterministic
+and canonically encoded (§3.6), a peer holding those events verifies a snapshot
+by recomputing it. Two peers who snapshot the same events produce byte-identical
+output, so snapshots deduplicate like any other content and disagreement is
+detectable rather than silent.
 
-Encryption cuts across this cleanly. Merge rules operate on opaque values, so a
-peer holding only ciphertext can still compact — it discards superseded events
-without knowing what they said — and the snapshot it produces is ciphertext too,
-verifiable by recomputation by anyone holding the same events, readable only by
-whoever holds the reading key. What such a peer cannot do is verify a snapshot
-someone else made *in plaintext*, which is why snapshots of an encrypted space
-are themselves encrypted: the property that makes a snapshot trustworthy is that
-peers can agree on its hash, and that requires them to be comparing the same
+Used this way a snapshot is **purely a cache**: the events are all still there,
+and the snapshot only saves the cost of re-folding them at startup. It can be
+discarded at any time with no loss. Nothing in this paragraph needs a signature,
+a trust decision, or a protocol change, and it captures most of the practical
+benefit for a long time — the expensive thing at startup is folding a long log,
+not storing it.
+
+It requires one thing of §3, which is cheap now and awkward later: **the fold
+must be able to start from a supplied state rather than only from empty.** A fold
+of shape `fold(state, events)` costs nothing today over `fold(events)` and is the
+seam everything else here needs. Note §3.7 — what gets snapshotted is the
+accumulator, keys included, not the state a view sees.
+
+### 9.2 Compaction is where the trust problem is
+
+Discarding events is what actually bounds growth, and it breaks the verification
+story completely:
+
+> **Verification requires the events you were trying to discard.** A peer that
+> recomputes a snapshot to check it does not need the snapshot. A peer that needs
+> the snapshot — one that just arrived and holds nothing — cannot check it.
+
+So "a snapshot needs no signature, because peers recompute it" is true only for
+the peers who least need one. For a newcomer it degrades to trusting whoever
+served it, and the lie is undetectable *and stays undetectable*, because the
+events that would have exposed it are exactly what compaction deleted. In a
+system with no central authority, that is the failure class worth being most
+afraid of.
+
+**Compaction also breaks the chain and the version vector**, which is a second
+cost usually noticed later. Events are chained by `prev` and a missing one stalls
+the chain (§2.5), so a peer asking for a compacted range waits forever for
+something nobody will ever send. The protocol cannot distinguish *gone,
+compacted* from *missing, in flight* — the same distinction §2.5 already wants —
+so compaction needs a wire concept for "truncated here, start from this
+snapshot". And a version vector stops answering its own question: after
+truncation a peer knows the effect of events it can no longer serve, so knowledge
+and retention become two different quantities where the vector expresses one.
+
+**The safety rule that would normally save this is unimplementable here.** The
+usual discipline is to never truncate below the frontier of any peer still being
+served. That requires enumerating the peers being served, and a shared space is
+deliberately uncontrollable and its readers unenumerable (§6.3). **You cannot
+hold a floor for peers you cannot see.** Compaction here is therefore
+unsafe-by-default in a way it is not in a system with a membership list.
+
+### 9.3 Who may compact, and who vouches for it — **Decided**
+
+The rule that makes a snapshot trustworthy without recomputation:
+
+> **Only a writer may compact its own chain, and the resulting snapshot is signed
+> by that writer.**
+
+A snapshot then carries the same authority as any other assertion by that writer:
+it is a signed checkpoint referencing the last event's hash, becoming a new
+genesis for that chain. A newcomer who cannot recompute it can still verify *who
+said it*, and that party is the only one who could have lied about their own
+history anyway. Recomputation remains available to anyone holding the events, so
+the checkpoint is verifiable-by-recomputation when possible and
+attributable-by-signature when not.
+
+Two things follow:
+
+- **It is free under one writer per space** (§7.2's fallback) and awkward under
+  many, where a space spans several chains each needing its own author's
+  attestation — so a peer can only ever compact the part of the log it wrote, and
+  a departed writer's chain can never be compacted by anyone.
+- **A departed writer cannot compact their own chain**, which is the case
+  compaction was most wanted for.
+
+**The space key closes that case, and adds no new trust.** §7.2.1 already makes
+the space key the sole authority over who may write, so every peer that accepts a
+space at all has already accepted that key's word on what counts. Letting it
+countersign a checkpoint over a departed writer's chain asks nothing further of
+anyone: a newcomer trusting the membership list is trusting the same signature.
+
+That checkpoint is not verifiable by recomputation for the peer that needs it —
+but neither is a writer-signed one, so nothing is lost. What it costs is honest
+and bounded:
+
+- More work for a key §7.2.1 already describes as operational, and one more thing
+  that stops being possible when it is lost.
+- It attests *"this is the state that chain reached"*, not *"I wrote this"*. The
+  space key is vouching for a fold it did not author, which is a weaker claim
+  than a writer signing their own history — and the right one, since it is the
+  only party with standing to make any claim at all about a writer who is gone.
+
+The remaining alternatives — corroboration by independent peers agreeing on a
+hash, or a structure letting a newcomer spot-check a snapshot against events it
+does fetch — are real designs with their own failure modes, and are not needed if
+the space key will sign.
+
+**Even so, do not build compaction yet.** The trust question is answered; the
+protocol work around it — a wire concept for "truncated here, start from this
+snapshot" (§2.3), and a version vector that distinguishes knowledge from
+retention — is not, and none of it is needed until logs are actually large. Build
+§9.1, keep every event, and let logs grow. Two things make that runway longer than it sounds — blobs are already
+outside the log, so growth tracks *number of edits* rather than content volume;
+and coarse permission (§7.1) keeps spaces small by construction, since anything
+shared on different terms is a different space. Whether that is enough is an
+empirical question, and it should be answered by watching a real log grow rather
+than by building the hard half in advance.
+
+### 9.4 What is mechanical, once it is wanted
+
+Two properties survive all of the above and are worth recording, because they
+make the eventual work smaller than it looks.
+
+**Reduction is per merge rule, not per application.** An LWW-register compacts to
+one value, a counter to one total per writer, an OR-set to its live members. A
+rule solved once is solved for every object that declares it, and a peer can
+compact a space whose view it has never seen. This is the same property that
+makes the fold universal, applied to the inverse operation.
+
+**Encryption cuts across it partly, and the limit is worth being exact about.**
+Attribute slices reduce fine without the reading key: their rules are fixed per
+attribute name (§3.2), so a peer knows which rule applies without reading
+anything, and each rule discards superseded events without knowing what they
+said. **Body slices do not.** Reducing one means knowing its rule, its rule is
+named by `:kind`, and `:kind` is an encrypted attribute value — so a
+ciphertext-only peer cannot pick a rule and cannot reduce any body.
+
+The alternative would be exempting `:kind` from encryption. That is not taken:
+§6.3 already concedes encryption hides content rather than activity, but leaking
+the kind of every object in a space is a real disclosure — it says which objects
+are conversations, which are documents, which are images — and it buys only
+compaction by peers who cannot read what they are compacting.
+
+So: **a ciphertext-only peer stores, serves and verifies; it does not compact
+bodies.** Compaction of a body is done by a peer holding the reading key, and the
+snapshot it produces is ciphertext like everything else. Snapshots of an
+encrypted space are themselves encrypted, because the property that makes one
+trustworthy is that peers agree on its hash, and that requires comparing the same
 representation.
 
 ---
 
-## 10. Ephemeral state
+## 10. Ephemeral state — **Decided in shape, Open in detail**
 
 Presence, cursors, typing indicators and connection gossip are exchanged between
 peers on a separate channel and never enter the log. They are not signed history
@@ -698,6 +1808,27 @@ and not replicated to peers who were not present; they simply expire.
 The distinction is durability. If a fact should survive everyone disconnecting,
 it is an event. If it describes only who is here right now, it is ephemeral, and
 writing it to an append-only log would make every cursor movement permanent.
+
+**This is the one place the "everything is signed" property does not hold, and
+that needs deciding rather than inheriting.** Ephemeral messages bypass the log,
+so they bypass signing, which means anyone who can reach a peer can claim to be
+someone else's cursor, assert a false presence, or announce availability for a
+space they do not hold. The last one matters most: a resolution announcement is
+ephemeral, and an unauthenticated one lets any connected peer pollute a
+resolution table. The bounds in §5.3 keep the damage finite, but "finite" is
+weaker than the rest of the design.
+
+The likely answer is that ephemeral messages are signed by the sending peer's key
+but not chained, sequenced, or retained — authentication without durability. That
+costs a signature per message on a channel carrying cursor movements, which is
+the reason it is not simply asserted here: whether that cost is acceptable at
+cursor frequency is a measurement, and the alternative (authenticate the session
+once at connection setup, trust the channel thereafter) is cheaper and weaker.
+Either is defensible; leaving it unstated is not.
+
+**A second channel is a real cost, honestly.** It is a second protocol, a second
+security story, and a second place for state to live. It earns that only because
+the alternative — cursors as permanent signed history — is clearly worse.
 
 ---
 
@@ -708,17 +1839,46 @@ The design holds together only if these hold:
 1. **The substrate never interprets a payload.** It moves and verifies bytes.
 2. **The fold is universal, pure and deterministic.** One algorithm, driven by
    declarations, byte-identical output across clients.
-3. **Every merge rule is a join-semilattice.** Order-independence comes from the
+3. **Structure is always foldable; only bodies vary.** The attribute vocabulary
+   is fixed and known to every client, so any client can compute any space's
+   tree, names and kinds without a declaration. That is what confines an unknown
+   or unworkable body rule to one object.
+4. **Every merge rule is a join-semilattice.** Order-independence comes from the
    algebra, not from discipline.
-4. **Applications ship views, never folds.** The layer that ships is the layer
+5. **Applications ship views, never folds.** The layer that ships is the layer
    that cannot cause disagreement.
-5. **Identity is a key; location is a hint.** Anything that resolves a name is
+6. **Identity is a key; location is a hint.** Anything that resolves a name is
    advisory, because what it returns is verified against the key.
-6. **Storing is not reading.** Verification uses the public key; reading uses a
+7. **Storing is not reading.** Verification uses the public key; reading uses a
    separate symmetric key. A peer can be a complete replica of a space it cannot
    read, which is what allows infrastructure to exist without custody.
-7. **The space is the unit of permission.** Both keys cover a whole space and
+8. **The space is the unit of permission.** Both keys cover a whole space and
    nothing finer. Different terms mean a different space, which is what keeps
-   spaces small, numerous and varied enough to need types at all.
-8. **Events are the truth; everything else is cache.** Snapshots, indexes and
-   rendered state are all discardable and recomputable.
+   spaces small and numerous.
+9. **Only the space key writes the root.** This is what makes the rule that says
+   which events count computable without already knowing the answer, and it is
+   what keeps a causal dependency out of the envelope.
+10. **A private key is held by one device at a time.** Two devices sharing a key
+    fork that writer's chain. The fork resolves deterministically (§7.3) so peers
+    still converge, but one branch's writes are dropped.
+11. **Events are the truth; everything else is cache.** Snapshots, indexes and
+    rendered state are all discardable and recomputable.
+
+---
+
+## 12. What is unresolved
+
+The open questions and the build order they suggest are tracked in
+**[OPEN.md](OPEN.md)**, which changes as questions close while this document
+changes rarely. Two of them are load-bearing enough to name here:
+
+- **Whether the vocabulary of body rules stays small** (§3.8). If it does not,
+  "merge rule" becomes "arbitrary code with private state", and §8.1's argument
+  for why foreign code is tolerable stops holding.
+- **Reconciling forked chains** (§2.3). §7.3 decides which branch wins but the
+  version vector cannot express that a fork exists, so peers can diverge without
+  either noticing. A tip hash makes it detectable; repair needs a request the
+  vocabulary does not have yet.
+
+Everything else is either implementation-shaped — better answered with code in
+front of you — or deferrable without cost.

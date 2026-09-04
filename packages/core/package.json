@@ -1,0 +1,11 @@
+{
+  "name": "@thing/core",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Events, canonical encoding, signing, and the fold. No I/O.",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

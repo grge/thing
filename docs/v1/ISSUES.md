@@ -1,5 +1,9 @@
 # Known issues — v0 POC
 
+> **Archived.** Superseded by [../ARCHITECTURE.md](../ARCHITECTURE.md), which
+> describes a different system. Kept for the reasoning — see
+> [README.md](README.md) for what carried forward and what did not.
+
 What is currently wrong, how much it matters, and whether v0 should care. The
 design these are measured against is [DESIGN.md](DESIGN.md).
 
@@ -222,7 +226,7 @@ The useful constraint out of F13: **whatever determines scope must itself always
 be replicated in full.**
 
 ### I21. No touch path for re-parent or cross-space move — **Limit**
-*[MOBILE.md](v0/MOBILE.md)*
+*[MOBILE.md](../v0/MOBILE.md)*
 
 Re-parenting a tree entry and moving a file across space tabs (§8.5) are both
 native HTML5 drag-and-drop, which mobile browsers don't make touch-operable.

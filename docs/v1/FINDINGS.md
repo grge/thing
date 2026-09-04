@@ -1,7 +1,11 @@
 # Findings — v0 POC
 
+> **Archived.** Superseded by [../ARCHITECTURE.md](../ARCHITECTURE.md), which
+> describes a different system. Kept for the reasoning — see
+> [README.md](README.md) for what carried forward and what did not.
+
 Evidence gathered while building the POC, against the three questions in
-[SPEC.md](v0/SPEC.md) §0. Companion to [PLAN.md](v0/PLAN.md), which says *what*
+[SPEC.md](../v0/SPEC.md) §0. Companion to [PLAN.md](../v0/PLAN.md), which says *what*
 to build; this records *what was learned*.
 
 **Still current, despite the v0 label.** The evidence here is not archived —

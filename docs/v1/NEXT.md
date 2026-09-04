@@ -1,5 +1,9 @@
 # Notes toward the next experiment
 
+> **Archived.** Superseded by [../ARCHITECTURE.md](../ARCHITECTURE.md), which
+> describes a different system. Kept for the reasoning — see
+> [README.md](README.md) for what carried forward and what did not.
+
 **Status: notes, not a spec.** Captured from a scoping conversation, 2026-08-31,
 after v0 reached the point where mode 2 works between two desktop browsers and
 fails between a desktop and a phone. Nothing here is settled enough to build
