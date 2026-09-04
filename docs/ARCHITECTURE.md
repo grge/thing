@@ -437,9 +437,27 @@ none.
 separate path. Large content therefore needs no mechanism of its own — it is
 the simplest rule in the vocabulary.
 
-**A merge rule needs identity as well as an operator.** Each must specify a
-stable identifier — two clients disagreeing about what `sequence` means is
-unrecoverable — and a canonical serialisation, because §9 hashes fold output.
+**A rule is two things, and they are usable independently.** Each supplies:
+
+1. **A codec** — how to read and write the values in its slice, with a canonical
+   serialisation, because §9 hashes fold output.
+2. **A merge** — how to combine a bag of those values into one result.
+
+Splitting them costs nothing and buys legibility. A tool holding a rule's codec
+can decode every value in that slice without folding anything, so an inspector
+shows what a log actually says rather than a column of opaque bytes — and it does
+so for any rule it has, not just the ones it can merge. The two halves have
+different obligations anyway: the codec is what §3.6 pins, the merge is what must
+be a join-semilattice.
+
+**Values are otherwise opaque to everything above the rule.** The substrate never
+reads one (§2), and the fold kernel routes bags without inspecting their contents.
+Only the rule's own codec gives a value meaning — which is what keeps §2's
+payload-blindness structural rather than a convention that something will
+eventually break.
+
+**A rule also needs a stable identifier**, since two clients disagreeing about
+what `sequence` means is unrecoverable.
 
 **`:deleted` is a flag, not a register, and the difference is instructive.** It
 resolves as: deleted iff the greatest `true` in its bag beats the greatest
@@ -642,8 +660,8 @@ history is not recoverable. For a design whose signing story is provenance
 **What is not at risk.** The tiering (§3.1) means none of the above can cost a
 client the *structure* of a space. Attribute rules are fixed per attribute name
 and declare nothing, so the tree, the names and each object's `:kind` fold
-identically everywhere regardless of what the bodies turn out to be. The failure mode of a
-missing or unworkable body rule is one object that cannot be read — the same
+identically everywhere regardless of what the bodies turn out to be. The failure
+mode of a missing or unworkable body rule is one object that cannot be read — the same
 outcome §4 describes for a missing view, and a much smaller one than a fold that
 cannot run.
 
@@ -656,7 +674,6 @@ more expensively.
 
 ---
 
-
 ### 3.9 How blobs are referenced — **Open**
 
 An object whose body is a blob holds a hash, and the bytes travel by §2.4's
@@ -665,8 +682,7 @@ reference is *expressed*, and there are two shapes with different consequences:
 
 - **A body rule.** `:kind` distinguishes blob-backed bodies from log-backed
   ones, and the blob rule folds to a hash. Simple, and it keeps everything about
-  an object's body in one place. This is what §3.2 assumes and what the
-  This is what §3.2 assumes.
+  an object's body in one place. This is what §3.2 assumes.
 - **A value encoding.** Any slice's value may be a blob hash rather than an
   inline value, independently of what kind the object is.
 

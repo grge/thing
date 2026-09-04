@@ -97,10 +97,25 @@ The envelope (§2.1) and the two things that must be right before any log exists
   component on event hash**, so identical `(lamport, writer)` pairs from a forked
   chain still order deterministically (§7.3).
 
-**Decide here:** the exact preimage byte layout, and the value encoding — which
-is where §3.9's blob-reference question first bites. If it is still open, encode
-values as tagged bytes with the blob case as one tag, which leaves both options
-reachable.
+**Values are opaque bytes, and every rule supplies a codec** (§3.2). The
+substrate never reads a value and the fold kernel routes bags without inspecting
+them; only a rule's codec gives its values meaning. A rule is therefore a codec
+*and* a merge, usable independently — which is what lets a log inspector decode
+values it cannot fold.
+
+Two consequences for this stage:
+
+- `core` defines no value vocabulary beyond bytes. There is no `Value` union, no
+  `Pos`, no `Link` — those were filesystem types, and the rules that want them
+  bring their own encodings at stage 2.
+- **Body values carry a one-byte rule-version prefix.** Meaningless to the
+  substrate, and it is what lets a rule's encoding change later without a flag
+  day. Cheap now, impossible to retrofit into logs that already exist.
+
+**Decide here:** the exact preimage byte layout, and whether hashing is
+synchronous. The second has the wider blast radius — WebCrypto's digest is
+async, and an async hash makes the fold async, which is a tax at every call site
+above it.
 
 **Done when:** two independent encodings of the same event agree byte for byte in
 a test, signatures verify across both crypto backends, and a chain with a
