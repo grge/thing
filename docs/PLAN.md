@@ -210,6 +210,25 @@ this stage defines, and it is recorded in OPEN.md rather than scheduled.
 
 **Done when:** the same conformance suite passes against both backends.
 
+**Done.** Three backends pass one 22-test suite: memory, files (Node) and
+IndexedDB (browser). Three notes:
+
+- **The backends live with their runtimes, not in `store`.** The first attempt
+  put the file backend in `store` and widened that package's `types` to include
+  Node's — which the boundary test immediately caught, because it would also
+  have let `process` compile in the shared code and in the browser backend.
+  `store` holds the interface, the shared chain logic and the memory backend;
+  `node` and `web` each hold theirs.
+- **Admission is shared, persistence is not.** `ChainSet` decides whether an
+  event may be appended — duplicate, gap, fork, unverified — so both backends
+  enforce one set of rules and the conformance suite is checking persistence
+  rather than re-checking logic.
+- **On-disk durability needs its own tests.** The shared suite closes and
+  reopens through the same `Store` instance, which an in-memory backend passes
+  trivially. `filestore.durability.test.ts` opens a *new* `FileStore` over the
+  same directory, and checks that appends really append and that a truncated
+  tail ends the log rather than corrupting it.
+
 ---
 
 ## Stage 4 — `peer`: a space, folded and persisted
