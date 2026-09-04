@@ -140,6 +140,35 @@ device) and stated plainly where it cannot.
 
 ---
 
+## Ideas worth not forgetting
+
+Not open questions — nothing depends on these and none is scheduled. Recorded
+because each is cheap to note and annoying to re-derive.
+
+**A SQLite backend for a space.** A directory of append-only segments is the right first backend — simpler, and
+what the headless peer wants for serving. But *one file per space* has a
+property a directory does not: **a space becomes a thing you can send.** Email
+it, drop it on a USB stick, attach it to a ticket. Given that a space is already
+a self-contained log with its own identity (§5.1), a single-file representation
+makes that portability real rather than theoretical. SQLite also gives range
+queries over events, which an incremental fold would use.
+
+It fits behind the storage interface stage 3 defines, so it is additive whenever
+it is wanted.
+
+**A filesystem-backed space.** A FUSE-style mount where writing a file emits log
+events and the fold materialises a directory tree. The filesystem is already the
+structural model (§4.1), so the mapping is close to the identity function —
+which is what makes this look tractable rather than fanciful. It would make a
+space something ordinary tools can read and write, with no client at all.
+
+Well beyond current scope, and it raises real questions — what a partial fold
+looks like as a directory, how a body rule other than blob is presented, what
+happens to attributes with no filesystem analogue. Noted because the design
+happens to be shaped for it.
+
+---
+
 ## Next
 
 In order, and the first two are the ones that get more expensive with delay:

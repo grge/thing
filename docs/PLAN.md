@@ -199,8 +199,14 @@ The first genuinely new work, and the reason the packages split.
 - Blob addressing shaped for ciphertext from the start (§2.4), even though
   nothing is encrypted yet.
 
-**Decide here:** the Node backend. SQLite gives range queries and one file per
-space; a directory of append-only segments is simpler and probably enough.
+**Decided: a directory of append-only segments** for the Node backend. Simpler
+than SQLite, and it is what the headless peer wants for serving — appending is
+the hot path, and a segment file is trivially appendable.
+
+A single-file SQLite backend is worth having *later*, for a reason unrelated to
+performance: one file per space makes a space something you can send — email it,
+put it on a stick, attach it to a ticket. That is additive behind the interface
+this stage defines, and it is recorded in OPEN.md rather than scheduled.
 
 **Done when:** the same conformance suite passes against both backends.
 
