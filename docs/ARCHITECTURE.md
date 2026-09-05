@@ -25,8 +25,9 @@ who takes them for solved will plan badly:
   every attribute merges by a fixed, universally known rule, so any client can
   compute any space's tree and names. What is open is whether the vocabulary of *body* rules
   stays small enough to be a vocabulary (§3.8).
-- **The version vector cannot express a fork** (§2.3), which §7.3's resolution
-  needs it to. This is the one substrate change still outstanding.
+- **Forks are detected but not repaired** (§2.3). The handshake notices a
+  diverged chain; fetching the competing branch needs a request that is left
+  undesigned, deliberately, until compaction wants the same extension (§9.2).
 - **Compaction is understood but unbuilt** (§9). Discarding events safely needs
   wire concepts that do not exist yet, so snapshots are for now a cache that
   never discards anything (§9.1).
@@ -250,9 +251,23 @@ the real cost is that under repeated gaps there is no way for a receiver to say
 *stop sending that one*. Two extensions are plausible — an explicit held-set
 alongside the frontier, or a bounded list of exceptions — and neither is designed.
 
-**Open**, and it is the one substrate change still outstanding. The tip hash is
-cheap and settled enough to build; what a full request-and-repair vocabulary
-looks like is not, and the three needs above should be satisfied together.
+**Decided: detect now, repair later.** The tip hash goes in the handshake, so a
+fork is noticed in the ordinary exchange and can be reported. The *request* that
+would fetch a competing branch is deliberately not designed yet, for two
+reasons: a fork means the one-key-one-device constraint (§7.3) was already
+violated, so it is not a routine event; and the same extension is wanted by two
+other needs that are not yet understood. Designing it once, when all three are,
+beats designing it three times.
+
+**What detection must do meanwhile.** A peer that sees mismatched tips must say
+so — the writer's chain is forked and will not converge. It must not silently
+fail to sync, and it must not stall the rest of the space: a fork is confined to
+one writer's chain, and every other writer reconciles normally.
+
+**Where the repair belongs.** With compaction (§9.2), because that is the other
+change to this vocabulary and the two share a shape: both need a peer to say
+something about a range it cannot simply serve. Building either alone would mean
+revising the wire format twice.
 
 The substrate verifies three things and no others:
 
@@ -1873,40 +1888,50 @@ follow from the four uses above:
   without a lifetime becomes a lie rather than merely stale.
 - **Attribution**, where a message makes a claim another peer will act on.
 
-### 10.2 Authentication — **Open**
+### 10.2 Authentication — **Decided: the transport is enough**
 
-**This is the one place the "everything is signed" property does not hold by
-default, and it needs deciding rather than inheriting.** Ephemeral messages
-bypass the log, so they bypass the log's signing, which means anyone who can
-reach a peer can claim to be someone else's cursor, assert a false presence, or
-announce availability for a space they do not hold.
+Log events are signed; ephemeral messages are not. That looks like a gap and is
+not, because of what the transport already provides and what these messages
+actually claim.
 
-The four uses do not want the same answer, which is the substance of the
-question rather than a complication:
+**The transport authenticates the sender.** A data channel is encrypted and
+tamper-proof end to end, so every message on an open connection demonstrably
+came from the same party, unmodified. Nobody can inject into a channel they are
+not on.
 
-- **Presence and cursors** are high-frequency and low-stakes. A forged cursor is
-  a nuisance; signing every movement may cost more than it protects.
-- **Resolution announcements** are the opposite. They are infrequent, and an
-  unauthenticated one lets any connected peer pollute a resolution table. §5.3's
-  caps bound the damage but do not prevent it.
+**And no ephemeral message is a claim you have to believe.** Each is either
+about its own sender, or a hint whose truth is established by acting on it:
 
-So the answer is plausibly **both**: authenticate the session once at connection
-setup, and additionally sign the few message kinds that make claims others act
-on. That is cheaper than signing everything and stronger than signing nothing,
-and it is the shape to test rather than a conclusion.
+| | What it claims | How it is checked |
+|---|---|---|
+| **Presence** | where my cursor is | nothing depends on it; it expires |
+| **Availability** | I hold these blobs | ask for one — a lie costs a failed fetch |
+| **Signalling** | connect to this peer | the connection works or it does not, and the space key decides who answered |
+| **Resolution** | space K is served there | dial it — what answers either produces validly signed events for that key or does not (§5.3) |
 
-**Whatever is chosen must use domain-separated signatures.** Anything signed by a
-peer's key carries a tag saying what kind of thing it is, so an ephemeral message
-can never be replayed as a log event and a log event can never be presented as an
-announcement. The log's events are one such tag; each ephemeral message kind that
-gets signed is another. Without separation, two protocols sharing one key are one
-protocol with a hole in it.
+Signing would add attribution, not protection. A signed lie is still a lie; what
+makes these messages safe is that believing one costs nothing but a wasted
+attempt.
 
-**Left open deliberately**: whether per-message signing is affordable at cursor
-frequency is a measurement, not a judgement, and the transport supplies part of
-the answer — a data channel is already encrypted end to end, so what is missing
-is a binding between that channel and a peer's identity key rather than
-confidentiality.
+**The one asymmetry worth naming.** Resolution relays: an answer may carry what
+a peer heard from *another* peer (§5.3, one hop). The channel authenticates that
+the sender said it, and cannot establish that the third party ever did — so a
+relayed announcement is indistinguishable from a fabricated one. That is
+tolerable for the same reason the rest is: a bad answer costs a dial, bounded by
+a timeout and a per-announcer cap, both of which §5.3 already requires. It is
+worth knowing that this is the one message kind where the transport's guarantee
+stops short of the claim being made.
+
+**What is required instead of signing** is that ephemeral messages cannot be
+confused with log events. They are never stored and never folded — a structural
+property rather than a check — and §2.1's domain tag stays reserved for them.
+Not because anything signs them today, but because the separation must already
+exist if anything ever does.
+
+**When to revisit.** If an ephemeral message ever becomes something acted on
+expensively — a resolution answer that causes work rather than a dial, or a
+presence claim that grants something — the calculation changes, because the cost
+of believing a lie would no longer be bounded by a wasted attempt.
 
 ### 10.3 The cost, stated honestly
 

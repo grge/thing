@@ -18,15 +18,14 @@ Roughly in order of how much would change if the answer went the other way.
 | | Question | Where |
 |---|---|---|
 | 1 | Does the vocabulary of body rules stay small, or does "merge rule" become "arbitrary code with private state"? | §3.8 |
-| 2 | What request-and-repair vocabulary extends the version vector — fork repair, held-but-not-applicable, and compacted ranges all need it? | §2.3 |
+| 2 | What request-and-repair vocabulary extends the version vector — fork repair, held-but-not-applicable, and compacted ranges all need it? Deliberately deferred until compaction wants the same extension. | §2.3, §9.2 |
 | 3 | What cipher, nonce derivation and key derivation does encryption use? | §6 |
 | 4 | What exactly does the write-proposal channel between a view and its host look like? | §8.2 |
 | 5 | What happens when a private key is lost, which decides whether this is usable by non-technical people? | §5.1.1 |
-| 6 | Are ephemeral messages signed per message, or is the session authenticated once? | §10.2 |
-| 7 | How does the connection lifecycle behave — concurrent syncs, mid-transfer drops, duplicate connections? | §5.6 |
-| 8 | Is membership a whole-list register or a set of add/remove operations? | §7.4 |
-| 9 | Does a peer keep replicating the losing branch of a resolved chain fork? | §7.3 |
-| 10 | How is a blob reference expressed, and is `:kind` doing two jobs? | §3.9, §4.2 |
+| 6 | How does the connection lifecycle behave — concurrent syncs, mid-transfer drops, duplicate connections? | §5.6 |
+| 7 | Is membership a whole-list register or a set of add/remove operations? | §7.4 |
+| 8 | Does a peer keep replicating the losing branch of a resolved chain fork? | §7.3 |
+| 9 | How is a blob reference expressed, and is `:kind` doing two jobs? | §3.9, §4.2 |
 
 **Question 1 is the bet.** It is the only one whose answer would change what the
 system *is* rather than how it is built. It also fails soft: if the vocabulary
@@ -90,6 +89,13 @@ frame under a strict content policy gives origin isolation, a complete interface
 language and platform-handled input without any of it being designed. What
 remains is one message channel for write proposals, which is question 4 rather
 than a wall.
+
+**Whether ephemeral messages need signing — closed by §10.2: they do not.** The
+transport already authenticates the sender, and no ephemeral message is a claim
+that has to be believed: each is either about its own sender, or a hint whose
+truth is established by acting on it. Signing would add attribution, not
+protection. The domain tag stays reserved so the separation exists if that ever
+changes.
 
 **Chain forks under a shared key — closed by §7.3.** Previously stated as
 unrecoverable, which was wrong. Two branches with identical provenance cannot be

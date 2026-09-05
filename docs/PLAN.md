@@ -279,19 +279,18 @@ Everything below the transport, and none of it platform-specific.
   blob availability and presence, with expiry on everything and the send-to-one
   and send-to-connected primitives §10.1 names.
 
-**Two things to decide here.**
+**Both decisions are settled, in the architecture rather than here.**
 
-*Ephemeral authentication* (§10.2): per-message signatures, or authenticate the
-session once at connection setup. Plausibly both — session auth for the
-high-frequency kinds, signatures on the few that make claims others act on, since
-an unauthenticated resolution announcement lets any connected peer pollute a
-table. Whether per-message signing is affordable at cursor frequency is a
-measurement, and this is the stage that can take it.
+*Ephemeral messages are not signed* (§10.2). The transport already authenticates
+the sender, and no ephemeral message is a claim that must be believed — each is
+either about its own sender or a hint whose truth is established by acting on
+it. Signing would add attribution, not protection. §2.1's domain tag stays
+reserved so the separation exists if that ever changes.
 
-*How far §2.3's extension goes.* The tip hash is settled. Whether this stage also
-carries the branch-request vocabulary, or leaves forks detected and unrepaired,
-is a scope call — detection alone is a defensible first cut, and it is the half
-that must be in the wire format early.
+*Forks are detected, not repaired* (§2.3). The handshake carries the tip hash, so
+a diverged chain is noticed and must be reported loudly. The request that would
+fetch a competing branch waits for compaction (§9.2), which wants the same
+extension — building either alone means revising the wire format twice.
 
 **Done when:** two in-process peers over a mock channel converge from arbitrary
 starting states, a fork is detected and reported, a 4 MB blob transfers
