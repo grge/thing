@@ -314,18 +314,42 @@ that drives one connection. Three notes:
 
 ---
 
-## Stage 6 — `node`: the headless peer
+## Stage 6 — `node`: a peer outside the browser
 
 Now, not later, because it is what proves `core` and `net` are platform-free.
 
-- WebSocket server speaking the stage 5 protocol.
+- WebSocket **server**, so this peer can be dialled, and WebSocket **client**, so
+  it can dial outward from behind NAT. Both wrap a connection in the same
+  `Channel` and hand it to the same `Session`.
 - Serve spaces from disk; join a space by key; stay online.
 - A CLI: create, join, list, serve.
 - No fold required to serve (§8) — but it folds anyway, because it is the same
   code.
 
+**Two peers that cannot reach each other converge through a third, and there is
+no relay code.** A hub is not a TURN-style pipe forwarding bytes between two
+connections; it is an ordinary peer that both sides sync with, so convergence
+falls out of sync already working (§5.6). It also survives disconnection, which
+a pipe cannot: events are *in* the hub, so the other side can collect them next
+week rather than needing both parties online at once.
+
+The cost is stated rather than hidden: syncing through a peer means that peer
+holds the space. §6's encryption is what makes that unremarkable, since the hub
+then holds ciphertext.
+
+**WebRTC is not in scope here** and is not a gap. It solves *neither side can be
+dialled*, which a peer at a stable address does not have; a command-line peer
+behind NAT dials outward instead. A WebRTC transport for Node would let two
+unreachable non-browser peers connect directly, and is a later transport rather
+than a missing piece.
+
+**Decide here:** whether a hub accepts any space offered to it, or only spaces
+it was told to serve. Accepting anything is how a hub becomes free storage for
+strangers; refusing means a space must be introduced before it can be synced.
+
 **Done when:** two `node` peers on one machine sync a space over WebSockets, one
-restarts and resumes from disk, and neither imports anything browser-specific.
+restarts and resumes from disk, two peers that dial only a third converge
+through it, and nothing here imports anything browser-specific.
 
 ---
 

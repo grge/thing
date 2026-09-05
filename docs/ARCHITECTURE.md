@@ -1075,6 +1075,26 @@ has a stable address, so it can be dialled directly and can introduce peers to
 each other. There is no privileged server role to discipline, because there is no
 privileged server role.
 
+**Reachability is not the same question as runtime**, and conflating the two
+leads to a wrong picture of what needs what:
+
+| | Needs introduction? | Because |
+|---|---|---|
+| A peer at a stable address | no | anyone can dial it |
+| A browser tab | yes | it cannot accept connections |
+| A command-line peer behind NAT | yes | same reason as the browser |
+
+WebRTC exists to solve one problem — *neither side can be dialled* — and a peer
+that can be dialled does not have that problem. So a peer at a stable address
+needs no signalling, no relay and no WebRTC, not because it is headless but
+because it is reachable. A command-line peer on a laptop is headless and
+unreachable, and needs exactly what a browser needs.
+
+**What an unreachable peer can always do is dial outward.** That is enough to
+participate fully: it syncs with any peer it can reach, holds the space, and
+serves it to anything that dials *it*. What it cannot do is be found by someone
+who only has its identity — which is what introduction is for.
+
 That also gives two peers who cannot reach each other directly an option beyond a
 blind relay: if both can reach the same always-on peer, they can sync through it
 using the ordinary protocol, and it keeps a replica afterwards. A blind relay
