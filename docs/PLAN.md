@@ -447,35 +447,38 @@ notes on what was written:
 
 ---
 
-## Stage 7.5 — Holders and clients
+## Stage 7.5 — One client, two transports
 
-Designed in `ADMIN.md`; not started. Pulled out of stage 7 because manual
-testing exposed it as a correctness bug rather than a missing convenience:
-`thing put` appends to a served space's log with no lock and no way to tell the
-running server, so a write is invisible until restart and two writers can fork
-a chain on one machine.
+Proposed in `CLIENTS.md`; not started. Two motivations, and the first is a
+correctness bug: `thing put` appends to a served space's log with no lock and
+no way to tell the running holder, so a write is invisible until restart and
+two processes can fork a chain on one machine.
 
-Four pieces: an exclusive lock in `SpaceStore` (covered by the conformance
-suite), a CLI that connects to the holder when there is one, a local control
-socket for the verbs a remote peer must never invoke, and a named view model
-(`SpaceStatus`, `PeerStatus`, `Activity`) that `Peer` exposes — so an interface
-renders a shape rather than reaching into internals.
+The second is duplication that already exists. `web/client.ts` and
+`node/peer.ts` converged independently on the same structure — same `attach`,
+same `pushNew`, same comments — and the hub-convergence fix had to be
+understood twice. Only five of `client.ts`'s 566 lines touch a browser global,
+all of them transport construction.
 
-**Done when:** `thing put` against a running `serve` reaches connected peers
-without a restart, and opening a held space from a second process fails with a
-clear error instead of appending alongside it.
+Steps, each useful alone: the store lock; name `Connection` in web; move
+`Client` to `packages/peer` with store, keystore, lock, dial, listen and
+signalling injected; rebuild `Peer` on it; route the CLI through the holder.
 
-## Stage 7.6 — The TUI
+**Done when:** `thing put` against a running holder reaches connected peers
+without a restart, opening a held space from a second process fails with a
+clear error, and there is one implementation of `attach`.
 
-Not scheduled; depends on the view model from 7.5. `thing` with no arguments
-holds spaces *and* draws itself — one process, no protocol between the
-interface and the peer. `thing serve` is the same holder with the drawing
-omitted; `thing attach` is the drawing over a holder running elsewhere.
+## Stage 7.6 — The control socket and the TUI
 
-The web client is the design reference: space list, tree, preview, peers,
-activity. See `ADMIN.md`, including open question 4 — whether the TUI shares
-the web `Client` or renders `Peer` directly, which is what decides how large
-this stage is.
+Depends on 7.5's view model. `thing` holds spaces *and* draws itself — one
+process, no protocol between interface and peer, because `serve` already turns
+peer callbacks into rendered lines and a TUI draws them instead. `thing serve`
+omits the drawing; `thing attach` is the drawing over a holder elsewhere, and
+is the only mode needing a wire.
+
+The control socket carries the view model (`SpaceStatus`, `PeerStatus`,
+`Activity`) and the admin verbs — not editing, which goes over the sync
+protocol like any client. See `CLIENTS.md`.
 
 ## Stage 8 — Resolution and the mesh
 

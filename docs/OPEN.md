@@ -173,25 +173,21 @@ looks like as a directory, how a body rule other than blob is presented, what
 happens to attributes with no filesystem analogue. Noted because the design
 happens to be shaped for it.
 
-**Holders and clients.** Designed in `ADMIN.md`, not built. The current CLI
-writes to a space's directory behind a running `serve`, which does not reach the
-server's in-memory fold *and* races its appends with no lock — the hazard
-`writelock.ts` already solves for browser tabs, one layer down and unsolved.
+**One client, two transports.** Proposed in `CLIENTS.md`. `web/client.ts` and
+`node/peer.ts` converged independently on the same structure, and only five of
+`client.ts`'s 566 lines touch a browser global — all transport construction. A
+shared client belongs in `packages/peer`, which is already on the platform-free
+side of the boundary `boundary.test.ts` enforces. Reachability becomes a
+capability (`listen` supplied or not) rather than what separates two classes,
+which is what makes a browser and a headless server the same kind of thing.
 
-The fix is a role split the architecture already implies: a **holder** owns a
-space's log and there is exactly one; a **client** asks a holder to do things.
-Editing is what clients do, over the sync protocol, exactly as the browser does
-today — so the CLI needs no new mechanism for `put`, only the discipline of
-asking the holder. A separate local control socket carries the small set a
-remote peer must never invoke (`shutdown`, `hold`, `drop`).
+Blocked on nothing; steps 1-5 close a correctness bug (`thing put` races a
+running holder's appends with no lock) and delete a duplicated implementation.
 
-**Three ways to run a peer.** `thing` holds spaces and draws itself; `thing
-serve` is the same holder headless; `thing attach` is the drawing over a holder
-running elsewhere. The TUI is a *renderer over a holder*, not a client of one —
-in the default mode there is no protocol between them at all, because they are
-one process. Only `attach` needs a wire, which is what lets it be the limited
-mode. `Peer` already holds what an interface would render; what is missing is a
-named shape for it. Not scheduled.
+**Three ways to run a peer.** `thing` holds spaces and draws itself in one
+process; `thing serve` is the same holder headless; `thing attach` draws over a
+holder running elsewhere and is the only mode needing a wire. The TUI is a
+renderer over a holder, not a client of one.
 
 ---
 
