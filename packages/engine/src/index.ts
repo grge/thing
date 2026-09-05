@@ -24,6 +24,7 @@
  * | `net/`   | how two peers reconcile, given something that can `send` |
  * | `fs/`    | the filesystem model over the fold (§4.1) |
  * | `space.ts` | one space: a log, its folded state, and a way to write |
+ * | `client/` | many spaces, and the connections that keep them in step |
  *
  * Each layer depends only on those above it.
  */
@@ -34,3 +35,4 @@ export * from './net/index.js';
 export * from './fs/files.js';
 export { isTextual, kindForName } from './fs/mime.js';
 export { type ChangeListener, Space, type SpaceOptions } from './space.js';
+export * from './client/index.js';

@@ -1,0 +1,125 @@
+/**
+ * What a client is handed, and what it hands back.
+ *
+ * The engine reaches for nothing (see `../index.ts`), so everything platform-
+ * bound arrives through these types. A browser fills them with IndexedDB, Web
+ * Locks and a `WebSocket`; a server with a directory, a lock file and a TCP
+ * socket. Neither is the privileged case.
+ */
+import type { Channel } from '../net/index.js';
+import type { KeyPair, PublicKey } from '../core/index.js';
+import type { Divergence } from '../net/sync.js';
+import type { Event } from '../core/index.js';
+import type { SpaceId } from '../store/index.js';
+
+/**
+ * A live link to one other peer.
+ *
+ * The layer above `Channel`: a `Channel` can only send, and reconciling needs
+ * somewhere for frames to arrive and a way to learn the link is gone. Both
+ * runtimes already built this shape — `node/transport.ts` named it, the web
+ * client built it inline — so naming it once is what lets one client serve
+ * both.
+ */
+export interface Connection {
+  /** Stable identifier, for attributing ephemeral messages to a sender. */
+  readonly peer: string;
+  readonly channel: Channel;
+  onFrame(handler: (data: Uint8Array) => void): void;
+  onClose(handler: () => void): void;
+  close(): void;
+}
+
+/**
+ * The right to write to a space, held against other processes or tabs.
+ *
+ * Two writers resuming from the same `seq` and `prev` produce two different
+ * events at one sequence number, **both validly signed** — signing cannot catch
+ * it (§7.3). Where the writers can agree cheaply they should, so the engine
+ * asks for a lock and opens read-only when it cannot have one.
+ */
+export interface WriteLock {
+  readonly held: boolean;
+  release(): Promise<void>;
+}
+
+/** A lock nobody holds: for a replica, or a runtime without the mechanism. */
+export const NO_LOCK: WriteLock = { held: false, release: async () => {} };
+
+/** How a peer got here, which is the only thing that differs between them. */
+export type PeerKind = 'direct' | 'introduced';
+
+/**
+ * Something worth showing an operator.
+ *
+ * Not protocol: a peer that says nothing is one you cannot tell is working, and
+ * the three channels (§10) are otherwise invisible.
+ */
+export interface Activity {
+  readonly at: number;
+  readonly channel: 'connection' | 'log' | 'blob' | 'ephemeral' | 'signalling';
+  readonly space: SpaceId | null;
+  readonly text: string;
+}
+
+/**
+ * What a client tells whoever embeds it.
+ *
+ * One observer set rather than a callback per event, because the browser's view
+ * model and the CLI's activity log want the same facts in different shapes.
+ * Everything here is advisory — nothing the protocol depends on.
+ */
+export interface ClientObserver {
+  /** Anything worth redrawing for. */
+  readonly onChange?: () => void;
+  readonly onActivity?: (activity: Activity) => void;
+  /** A chain that diverged (§2.3). Reported, never silently ignored. */
+  readonly onFork?: (space: SpaceId, fork: Divergence) => void;
+  readonly onEvents?: (space: SpaceId, events: readonly Event[]) => void;
+  readonly onConnect?: (space: SpaceId | null, peer: string) => void;
+  readonly onDisconnect?: (space: SpaceId | null, peer: string) => void;
+  /** A connection refused because this client will not hold that space. */
+  readonly onRefused?: (space: SpaceId, peer: string) => void;
+  readonly onBlob?: (space: SpaceId, hash: string, bytes: number) => void;
+}
+
+/**
+ * How a client resolves the key it should write a space with.
+ *
+ * Supplied rather than assumed, because a browser reads `localStorage` and a
+ * server reads a key file — and a hub has no writing key at all, which §6.1
+ * says is an ordinary way to participate rather than a degraded one.
+ */
+export interface WriterSource {
+  keyFor(space: SpaceId): Promise<KeyPair | null>;
+}
+
+/** Everything platform-bound that a client needs. */
+export interface ClientCapabilities {
+  /** Where spaces live. */
+  readonly store: import('../store/index.js').Store;
+  /** The writing key for a space, if this peer has one. */
+  readonly keys?: WriterSource;
+  /**
+   * Take the write lock for a space, or report that someone else has it.
+   *
+   * Absent means unlocked — correct only where nothing else can be writing.
+   */
+  readonly lock?: (space: SpaceId) => Promise<WriteLock>;
+  /**
+   * Serve any space a connection asks about, or only spaces already held.
+   *
+   * `false` is the safe default: a peer that accepts anything offered becomes
+   * free storage for strangers. `true` is what a hub run for a known group
+   * wants, so it can hold a space nobody has introduced it to yet.
+   */
+  readonly acceptUnknownSpaces?: boolean;
+}
+
+/** A space id is its public key in hex, so the key is recoverable from it. */
+export function keyFromId(id: SpaceId): PublicKey | null {
+  if (id.length !== 64 || !/^[0-9a-f]+$/.test(id)) return null;
+  const out = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) out[i] = Number.parseInt(id.slice(i * 2, i * 2 + 2), 16);
+  return out;
+}

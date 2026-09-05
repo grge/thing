@@ -449,7 +449,8 @@ notes on what was written:
 
 ## Stage 7.5 — One client, two transports
 
-Proposed in `CLIENTS.md`; not started. Two motivations, and the first is a
+Proposed in `CLIENTS.md`; **partly done** — the shared client exists, the store
+lock and the CLI routing do not. Two motivations, and the first is a
 correctness bug: `thing put` appends to a served space's log with no lock and
 no way to tell the running holder, so a write is invisible until restart and
 two processes can fork a chain on one machine.
@@ -460,9 +461,18 @@ same `pushNew`, same comments — and the hub-convergence fix had to be
 understood twice. Only five of `client.ts`'s 566 lines touch a browser global,
 all of them transport construction.
 
-Steps, each useful alone: the store lock; name `Connection` in web; move
-`Client` into `packages/engine` with store, keystore, lock, dial, listen and
-signalling injected; rebuild `Peer` on it; route the CLI through the holder.
+Steps, each useful alone: the store lock; ~~name `Connection` in web~~; ~~move
+`Client` into `packages/engine`~~; ~~rebuild `Peer` on it~~; route the CLI
+through the holder.
+
+`engine/client/` now holds the one implementation. `Peer` is 151 lines of
+directory, address and callback shapes; the web client is IndexedDB, keys,
+WebRTC and the view model. `listen` stayed out of the engine: a browser cannot
+accept connections, so accepting is not part of being a peer — whoever has an
+address feeds what it accepts to `Client.adopt`.
+
+What remains is the correctness half: the store lock, and routing the CLI
+through the holder.
 
 **Done when:** `thing put` against a running holder reaches connected peers
 without a restart, opening a held space from a second process fails with a

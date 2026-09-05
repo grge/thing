@@ -47,6 +47,7 @@ packages/engine/  the peer, platform-agnostic
   store/            where events live — an interface, and its contract
   net/              protocol, sync, blob transfer, the ephemeral channel
   fs/               the filesystem model over the fold
+  client/           holding many spaces, and the connections between them
 packages/node/    disk, sockets, CLI — supplies what the engine needs
 packages/web/     IndexedDB, WebRTC, Svelte — likewise
 ```

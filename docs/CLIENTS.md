@@ -257,15 +257,17 @@ right.
 
 1. **The store lock.** Independent of everything else. Turns today's silent
    corruption into an error. Conformance-suite covered.
-2. **Name `Connection` in the web client.** Extract the inline shape in
-   `connectTo`/`adopt` to match `node/transport.ts`. Pure refactor, no behaviour
-   change, and it makes step 3 mechanical.
-3. **Move `Client` into the engine,** taking store, keystore, lock, dial,
-   listen and signalling as arguments. `boundary.test.ts` catches any browser
-   assumption that comes along for the ride. Web keeps working throughout.
-4. **Rebuild `Peer` on it.** Delete the duplicate `attach`/`pushNew`. Fix the
-   stale comment at `peer.ts:231`. `peer.test.ts` and `space.e2e.test.ts` are
-   the safety net.
+2. ~~**Name `Connection` in the web client.**~~ **Done.** The shape is now
+   `engine/client/types.ts`'s `Connection`, and the web client builds one in
+   `socketConnection`/`rtcConnection` instead of inline objects.
+3. ~~**Move `Client` into the engine.**~~ **Done.** `engine/client/` holds it,
+   taking store, keystore and lock as capabilities. `listen` stayed out: a
+   browser cannot accept connections, so accepting is not part of *being a
+   peer* — whoever has an address feeds connections to `Client.adopt`.
+4. ~~**Rebuild `Peer` on it.**~~ **Done.** `node/peer.ts` went from 292 lines to
+   151 and now holds only a directory, an address, and the callback shapes the
+   CLI wants. The duplicate `attach`/`pushNew` are gone, and the stale comment
+   at `peer.ts:231` went with them.
 5. **Route the CLI through the holder.** `thing put` against a running peer
    reaches connected clients without a restart. This is the bug that started all
    of it.
@@ -275,6 +277,36 @@ right.
 
 Steps 1–5 close a correctness bug and delete a duplicated implementation. They
 are worth doing whether or not the TUI is ever built.
+
+### What the merge turned up
+
+Three things, none of which the type checker or the existing tests would have
+found:
+
+- **A duplicate frame handler**, introduced and caught in the same sitting. Both
+  ways into a connection wired delivery, so every frame on an adopted connection
+  was processed twice — invisible from outside, because the store deduplicates
+  what it causes. Two real processes syncing showed it as a doubling of the
+  delivery count against the pre-merge baseline. `attach` no longer owns
+  delivery: `adopt` reads frames itself to find the space, so it registers the
+  handler, and `join` registers its own.
+
+- **A race in `adopt`, pre-existing.** `attach` is asynchronous, and the guard
+  was `session === null`, so several frames arriving while it ran could each
+  start another session. The guard is now the *promise*, and frames that arrive
+  while a session is opening await it in order. The same shape was in the
+  original `Peer.adopt`; carrying it into one place is what made it worth
+  fixing once.
+
+- **A missing lock means unlocked, not locked.** The first cut opened a space
+  read-only whenever no lock was supplied, which silently stripped write access
+  from every peer without a lock mechanism. Caught by `peer.test.ts`.
+
+One thing deliberately *not* changed: a peer may send the same range more than
+once (reconciliation on HELLO, then answering a WANT), and `receive` is
+fire-and-forget, so two applications of one range can overlap and report the
+same event twice. That is pre-existing, harmless — the store deduplicates — and
+belongs to the protocol rather than to this class.
 
 ---
 

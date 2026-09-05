@@ -1,21 +1,33 @@
 /**
  * A peer outside the browser.
  *
- * Holds spaces on disk and syncs them with anyone it is connected to, over
- * connections it accepted or opened. It has no authority a browser tab lacks
- * (ARCHITECTURE.md §5.6) — the same protocol, the same fold, the same
- * verification. What it has is an address, or the ability to dial one.
+ * Almost nothing: `Client` is the peer (see `@thing/engine`'s `client/`), and
+ * this supplies what a server has that a browser does not — a directory, key
+ * files, and **an address**. Being reachable is the whole difference, and it is
+ * a capability rather than a rank (ARCHITECTURE.md §5.6): this peer has no
+ * authority a browser tab lacks, runs the same protocol, the same fold, the
+ * same verification.
  *
- * **Two peers that cannot reach each other converge through this one, and there
- * is no relay code.** A peer that syncs with both ends up holding the same log
- * as both, so convergence is what sync already does rather than a feature.
- * Unlike a byte-forwarding relay it also survives disconnection: the events are
- * *here*, so the other side can collect them whenever it next connects.
+ * That asymmetry is why `listen` lives here and not in the engine. A browser
+ * cannot accept connections, so accepting cannot be part of being a peer; it is
+ * something a peer that happens to have an address also does, feeding each
+ * connection to `Client.adopt`.
  */
-import { type Divergence, type Event, hex, type KeyPair, type PublicKey, Session, Space, type SpaceId, type SpaceStore } from '@thing/engine';
+import {
+  Client,
+  type ClientObserver,
+  type Divergence,
+  type Event,
+  hex,
+  type KeyPair,
+  type PublicKey,
+  type Session,
+  type Space,
+  type SpaceId,
+} from '@thing/engine';
 
 import { FileStore } from './filestore.js';
-import { type Connection, dial, PeerServer } from './transport.js';
+import { dial, PeerServer } from './transport.js';
 
 export interface PeerOptions {
   /** Where spaces live on disk. */
@@ -47,29 +59,44 @@ export interface PeerOptions {
   readonly onBlob?: (space: SpaceId, hash: string, bytes: number) => void;
 }
 
-interface OpenSpace {
-  readonly store: SpaceStore;
-  readonly space: Space | null;
-  readonly key: PublicKey;
-  /** Live connections for this space, so a local write can reach them. */
-  readonly sessions: Set<Session>;
-}
-
 export class Peer {
-  private readonly store: FileStore;
-  private readonly spaces = new Map<SpaceId, OpenSpace>();
-  private readonly sessions = new Set<Session>();
+  private readonly client: Client;
   private server: PeerServer | null = null;
 
   constructor(private readonly options: PeerOptions) {
-    this.store = new FileStore(options.dir);
+    // The callbacks are named from the operator's side — peer first, since that
+    // is what a log line leads with — so they are adapted rather than passed.
+    const observer: ClientObserver = {
+      ...(options.onFork === undefined ? {} : { onFork: options.onFork }),
+      ...(options.onEvents === undefined ? {} : { onEvents: options.onEvents }),
+      ...(options.onBlob === undefined ? {} : { onBlob: options.onBlob }),
+      ...(options.onConnect === undefined
+        ? {}
+        : { onConnect: (space, peer) => options.onConnect?.(peer, space) }),
+      ...(options.onDisconnect === undefined
+        ? {}
+        : { onDisconnect: (_space, peer) => options.onDisconnect?.(peer) }),
+      ...(options.onRefused === undefined
+        ? {}
+        : { onRefused: (space, peer) => options.onRefused?.(peer, space) }),
+    };
+
+    this.client = new Client(
+      {
+        store: new FileStore(options.dir),
+        ...(options.acceptUnknownSpaces === undefined
+          ? {}
+          : { acceptUnknownSpaces: options.acceptUnknownSpaces }),
+      },
+      observer,
+    );
   }
 
   /** Start accepting connections, if this peer has an address. */
   async start(): Promise<void> {
     if (this.options.listen === undefined) return;
     this.server = new PeerServer(this.options.listen);
-    this.server.onConnection((conn) => void this.adopt(conn));
+    this.server.onConnection((conn) => this.client.adopt(conn));
     await this.server.ready();
   }
 
@@ -81,38 +108,21 @@ export class Peer {
   /**
    * Hold a space, opening it from disk.
    *
-   * `writer` is absent for a peer that only stores and serves — which is the
-   * ordinary case for a hub, and the one §6.1 says is possible without ever
-   * being able to read.
+   * `writer` is absent for a peer that only stores and serves — the ordinary
+   * case for a hub, and the one §6.1 says is possible without ever being able
+   * to read.
    */
-  async hold(key: PublicKey, writer?: KeyPair): Promise<Space | null> {
-    const id = hex(key);
-    const existing = this.spaces.get(id);
-    if (existing !== undefined) return existing.space;
-
-    const store = await this.store.open(id, key);
-    const space = await Space.open(store, writer === undefined ? { key } : { key, writer });
-    const held: OpenSpace = { store, space, key, sessions: new Set() };
-    this.spaces.set(id, held);
-
-    // A local write has to reach connected peers. Reconciliation only runs when
-    // vectors are exchanged, so without this a live connection goes stale the
-    // moment either side writes something new.
-    // Forwarding what arrives is not an accident: it is how two peers that can
-    // only reach a hub converge (§5.6). A peer that suppressed it would sync
-    // with each of them and let them stay ignorant of each other.
-    space.onChange(() => void this.pushNew(id));
-
-    return space;
+  async hold(key: PublicKey, writer?: KeyPair): Promise<Space> {
+    return this.client.hold(key, writer);
   }
 
-  /** Spaces this peer holds. */
+  /** Spaces this peer has on disk. */
   async list(): Promise<readonly SpaceId[]> {
-    return this.store.list();
+    return this.client.list();
   }
 
   space(id: SpaceId): Space | null {
-    return this.spaces.get(id)?.space ?? null;
+    return this.client.space(id);
   }
 
   /**
@@ -123,170 +133,19 @@ export class Peer {
    * started it.
    */
   async connect(url: string, key: PublicKey): Promise<Session> {
+    const id = hex(key);
     await this.hold(key);
     const conn = await dial(url);
-    const session = await this.attach(conn, hex(key));
-    if (session === null) throw new Error('could not start a session');
-
-    // Frames only reach the session because of this. Attaching builds it; the
-    // connection has to be told where to deliver.
-    this.options.onConnect?.(conn.peer, hex(key));
-    conn.onFrame((data) => void session.receive(data));
-    conn.onClose(() => {
-      this.options.onDisconnect?.(conn.peer);
-      session.close();
-      this.sessions.delete(session);
-      this.spaces.get(hex(key))?.sessions.delete(session);
-    });
-
-    await session.start();
-    return session;
+    this.options.onConnect?.(conn.peer, id);
+    return this.client.join(id, conn);
   }
 
-  /**
-   * Ask every connected peer for a blob.
-   *
-   * §2.4: events replicate to everyone, blobs are pulled by whoever wants them.
-   * Asking all of them costs a message each and means a peer does not have to
-   * know which one holds it — the `HAVE` exchange refines this later.
-   */
   requestBlob(id: SpaceId, hash: Uint8Array): void {
-    const held = this.spaces.get(id);
-    if (held === undefined) return;
-    for (const session of held.sessions) {
-      if (!session.isClosed) session.requestBlob(hash);
-    }
-  }
-
-  /**
-   * Take an incoming connection.
-   *
-   * Which space it is about is not known until the peer says so, so the
-   * connection is held until its HELLO arrives — a peer opening a connection
-   * always greets first.
-   */
-  private async adopt(conn: Connection): Promise<void> {
-    let session: Session | null = null;
-
-    this.options.onConnect?.(conn.peer, null);
-
-    conn.onFrame((data) => {
-      void (async () => {
-        if (session === null) {
-          const space = spaceFromHello(data);
-          if (space === null) return;
-          session = await this.attach(conn, space);
-          if (session === null) {
-            // A space this peer does not hold and will not accept. Closing is
-            // the honest answer: there is nothing to sync.
-            this.options.onRefused?.(conn.peer, space);
-            conn.close();
-            return;
-          }
-          this.options.onConnect?.(conn.peer, space);
-        }
-        await session.receive(data);
-      })();
-    });
-
-    conn.onClose(() => {
-      this.options.onDisconnect?.(conn.peer);
-      if (session !== null) {
-        session.close();
-        this.sessions.delete(session);
-        for (const held of this.spaces.values()) held.sessions.delete(session);
-      }
-    });
-  }
-
-  /** Wire a connection to a space's store, if this peer holds it. */
-  private async attach(conn: Connection, id: SpaceId): Promise<Session | null> {
-    let held = this.spaces.get(id);
-
-    if (held === undefined) {
-      if (this.options.acceptUnknownSpaces !== true) return null;
-      // A space named by its own key, so holding it needs nothing but the key
-      // the connection already named.
-      const key = keyFromId(id);
-      if (key === null) return null;
-      await this.hold(key);
-      held = this.spaces.get(id);
-      if (held === undefined) return null;
-    }
-
-    const session = new Session(held.store, conn.channel, {
-      peer: conn.peer,
-      onFork: (fork) => this.options.onFork?.(id, fork),
-      onEvents: (events) => {
-        // The session already appended these, so the fold has to be advanced
-        // directly — `receive` would refuse them as duplicates and fold
-        // nothing.
-        //
-        // Absorbing fires onChange, which would push straight back to the peer
-        // that just sent them. Harmless — the receiver deduplicates — but it is
-        // a round trip of pure echo, so the push is suppressed while a session
-        // is delivering.
-        held.space?.absorb(events);
-        this.options.onEvents?.(id, events);
-      },
-      onBlob: (hash, bytes) => this.options.onBlob?.(id, hexOf(hash), bytes.length),
-    });
-
-    this.sessions.add(session);
-    held.sessions.add(session);
-    return session;
-  }
-
-  /**
-   * Send anything a peer has not seen.
-   *
-   * Recomputed from the store rather than tracked, because what a session has
-   * sent is exactly what the store holds that the peer's vector does not — and
-   * the receiver deduplicates anyway, so an over-send costs a message.
-   */
-  private async pushNew(id: SpaceId): Promise<void> {
-    const held = this.spaces.get(id);
-    if (held === undefined || held.sessions.size === 0) return;
-
-    const events: Event[] = [];
-    for await (const e of held.store.readAll()) events.push(e);
-    for (const session of held.sessions) {
-      if (!session.isClosed) session.push(events);
-    }
+    this.client.requestBlob(id, hash);
   }
 
   async close(): Promise<void> {
-    for (const session of this.sessions) session.close();
-    this.sessions.clear();
-    for (const held of this.spaces.values()) await held.space?.close();
-    this.spaces.clear();
-    await this.store.close();
+    await this.client.close();
     if (this.server !== null) await this.server.close();
   }
-}
-
-function hexOf(bytes: Uint8Array): string {
-  let s = '';
-  for (const b of bytes) s += b.toString(16).padStart(2, '0');
-  return s;
-}
-
-/** Peek at a HELLO to learn which space a connection is about. */
-function spaceFromHello(data: Uint8Array): SpaceId | null {
-  if (data.length < 2 || data[0] !== 0x01) return null;
-  try {
-    const msg = JSON.parse(new TextDecoder().decode(data.subarray(1)));
-    if (msg?.type !== 'HELLO' || typeof msg.space !== 'string') return null;
-    return msg.space;
-  } catch {
-    return null;
-  }
-}
-
-/** A space id is its public key in hex, so the key is recoverable from it. */
-function keyFromId(id: SpaceId): PublicKey | null {
-  if (id.length !== 64 || !/^[0-9a-f]+$/.test(id)) return null;
-  const out = new Uint8Array(32);
-  for (let i = 0; i < 32; i++) out[i] = Number.parseInt(id.slice(i * 2, i * 2 + 2), 16);
-  return out;
 }
