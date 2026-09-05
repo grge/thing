@@ -11,7 +11,10 @@
     "test:watch": "vitest",
     "check": "tsc --build",
     "check:clean": "tsc --build --clean",
-    "build:cli": "esbuild packages/node/src/cli.ts --bundle --platform=node --format=esm --external:ws --external:@noble/* --outfile=packages/node/dist/cli.js"
+    "build:cli": "esbuild packages/node/src/cli.ts --bundle --platform=node --format=esm --external:ws --external:@noble/* --outfile=packages/node/dist/cli.js",
+    "dev": "vite --config packages/web/vite.config.ts",
+    "build:web": "vite build --config packages/web/vite.config.ts",
+    "check:web": "svelte-check --tsconfig packages/web/tsconfig.check.json --output human"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
@@ -20,6 +23,7 @@
     "fake-indexeddb": "^6.2.5",
     "fast-check": "^4.9.0",
     "svelte": "^5.57.0",
+    "svelte-check": "^4.7.6",
     "typescript": "^5.9.3",
     "vite": "^8.2.2",
     "vitest": "^4.1.11"

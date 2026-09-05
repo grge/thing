@@ -429,6 +429,22 @@ rather than before one exists.
 peer; and the failure modes — no peers, unreachable, key missing — say something
 true.
 
+**Built, not yet verified in a browser.** The transport, client layer,
+signalling endpoint and UI all compile and the app builds; what has not happened
+is two real browsers syncing, because that needs hands on a browser. Three
+notes on what was written:
+
+- **`Client` holds everything and the components hold nothing.** The previous
+  implementation kept twenty-odd pieces of reactive state in one 1000-line
+  component, so nothing about syncing could be reasoned about outside a
+  browser. The view subscribes and draws.
+- **The design tokens carried over unchanged** — greyscale, TUI-tight, colour
+  only where it means something. What was rebuilt is the component structure.
+- **`svelte-check` needs its own tsconfig**, pointed at built declarations
+  rather than sources. Otherwise it re-checks `core` with DOM types in scope,
+  which conflicts with the deliberately minimal declarations that keep it
+  platform-free.
+
 ---
 
 ## Stage 8 — Resolution and the mesh

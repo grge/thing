@@ -1,0 +1,400 @@
+/*
+ * Layout and components.
+ *
+ * Greyscale, TUI-tight: the primary control is a file tree, so rows are dense
+ * and colour appears only where it carries meaning — a link, a focus ring, a
+ * danger, and the marker saying whether you can write to a space.
+ *
+ * Tokens are in tokens.css and are not repeated here.
+ */
+@import './tokens.css';
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-interface);
+  font-size: var(--text--1);
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  padding: 0 var(--space-2);
+  min-height: var(--control-min, 1.5rem);
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: var(--canvas-raised);
+}
+
+button:disabled {
+  color: var(--ink-faint);
+  cursor: default;
+}
+
+button:focus-visible,
+input:focus-visible,
+[role='treeitem']:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -1px;
+}
+
+input {
+  font: inherit;
+  color: inherit;
+  background: var(--canvas-sunken);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 0 var(--space-2);
+  min-height: var(--row);
+}
+
+/* ── shell ─────────────────────────────────────────────────────────────── */
+
+.app {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100vh;
+}
+
+.tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  background: var(--canvas-sunken);
+  border-bottom: 1px solid var(--rule);
+  overflow-x: auto;
+}
+
+.tab {
+  border-radius: 0;
+  padding: var(--space-1) var(--space-3);
+  border-top: 2px solid transparent;
+  white-space: nowrap;
+  color: var(--ink-muted);
+}
+
+.tab.active {
+  background: var(--canvas);
+  color: var(--ink);
+}
+
+/* The one place a space's mode is coloured: whether you can write to it. */
+.tab.active[data-mode='writer'] {
+  border-top-color: var(--mode-writer);
+}
+.tab.active[data-mode='reader'] {
+  border-top-color: var(--mode-reader);
+}
+.tab.active[data-mode='elsewhere'] {
+  border-top-color: var(--mode-local);
+}
+
+.tab-peers {
+  color: var(--ink-faint);
+  font-size: var(--text--2);
+  margin-left: var(--space-1);
+}
+
+.tab-new {
+  border-radius: 0;
+  padding: 0 var(--space-3);
+}
+
+.tabs-spacer {
+  flex: 1;
+}
+
+.empty {
+  display: grid;
+  place-content: center;
+  gap: var(--space-3);
+  color: var(--ink-muted);
+}
+
+.panes {
+  display: grid;
+  grid-template-columns: 1fr;
+  min-height: 0;
+}
+
+.panes.has-selection {
+  grid-template-columns: minmax(16rem, 24rem) 1fr;
+}
+
+.pane-tree {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--rule);
+}
+
+.pane-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--rule);
+}
+
+.pane-title {
+  font-weight: 600;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pane-actions {
+  display: flex;
+  gap: 1px;
+}
+
+/* ── tree ──────────────────────────────────────────────────────────────── */
+
+.tree {
+  flex: 1;
+  overflow: auto;
+  padding: var(--space-1) 0;
+}
+
+.tree-empty {
+  color: var(--ink-faint);
+  padding: var(--space-3);
+  margin: 0;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--row);
+  padding-right: var(--space-2);
+  cursor: default;
+}
+
+.row:hover {
+  background: var(--canvas-raised);
+}
+
+.row.selected {
+  background: var(--canvas-sunken);
+}
+
+.row.drop {
+  outline: 1px dashed var(--action);
+  outline-offset: -1px;
+}
+
+.row.deleted .name {
+  color: var(--ink-faint);
+  text-decoration: line-through;
+}
+
+.twisty,
+.twisty-space {
+  width: var(--indent);
+  min-height: 0;
+  padding: 0;
+  color: var(--ink-faint);
+  flex: none;
+}
+
+.name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.badge {
+  font-size: var(--text--2);
+  color: var(--ink-faint);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 0 var(--space-1);
+}
+
+.row-actions {
+  display: none;
+  gap: 1px;
+}
+
+.row:hover .row-actions,
+.row.selected .row-actions {
+  display: flex;
+}
+
+.row-actions button {
+  min-height: 0;
+  padding: 0 var(--space-1);
+  color: var(--ink-faint);
+}
+
+/* ── preview ───────────────────────────────────────────────────────────── */
+
+.pane-preview {
+  min-height: 0;
+  overflow: auto;
+}
+
+.preview {
+  padding: var(--space-3);
+  max-width: var(--measure);
+}
+
+.preview-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.preview-name {
+  font-weight: 600;
+  flex: 1;
+}
+
+.preview-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 var(--space-3);
+  margin: 0 0 var(--space-4);
+  color: var(--ink-muted);
+  font-size: var(--text--2);
+}
+
+.preview-meta dt {
+  color: var(--ink-faint);
+}
+
+.preview-meta dd {
+  margin: 0;
+}
+
+.mono {
+  font-family: var(--font-data);
+}
+
+.note {
+  color: var(--ink-muted);
+  background: var(--canvas-raised);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: var(--space-2) var(--space-3);
+}
+
+.preview-text {
+  font-family: var(--font-data);
+  font-size: var(--text--1);
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--canvas-sunken);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: var(--space-3);
+  margin: 0;
+}
+
+.preview-image {
+  max-width: 100%;
+  border: 1px solid var(--rule);
+}
+
+/* ── share ─────────────────────────────────────────────────────────────── */
+
+.share {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--canvas-raised);
+  border-bottom: 1px solid var(--rule);
+}
+
+.share-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.share-label {
+  color: var(--ink-faint);
+  width: 3rem;
+  flex: none;
+}
+
+.share-code {
+  font-family: var(--font-data);
+  font-size: var(--text-0);
+  letter-spacing: 0.05em;
+  background: var(--canvas-sunken);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 0 var(--space-2);
+}
+
+.share-note {
+  color: var(--ink-faint);
+  font-size: var(--text--2);
+}
+
+.share-link,
+.share-locator {
+  flex: 1;
+  font-family: var(--font-data);
+  font-size: var(--text--2);
+}
+
+.share-close {
+  justify-self: start;
+}
+
+/* ── status ────────────────────────────────────────────────────────────── */
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  height: var(--row);
+  border-top: 1px solid var(--rule);
+  background: var(--canvas-raised);
+  color: var(--ink-muted);
+  font-size: var(--text--2);
+}
+
+.status-mode[data-mode='writer'] {
+  color: var(--mode-writer);
+}
+
+.status-mode[data-mode='reader'] {
+  color: var(--mode-reader);
+}
+
+.status-sep {
+  color: var(--ink-faint);
+}
+
+.status-spacer {
+  flex: 1;
+}
+
+/* A fork is not decorative: §2.3 says it is reported loudly. */
+.status-fork {
+  color: var(--danger);
+}
+
+.status-message {
+  color: var(--ink);
+}

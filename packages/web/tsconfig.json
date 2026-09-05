@@ -11,7 +11,7 @@
     "types": []
   },
   "include": [
-    "src"
+    "src/**/*.ts"
   ],
   "references": [
     {

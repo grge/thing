@@ -1,0 +1,32 @@
+{
+  "//": "For svelte-check only. tsc --build cannot compile .svelte, and svelte-check would otherwise re-check core with DOM types in scope \u2014 which conflicts with the deliberately minimal declarations that keep core platform-free.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": true,
+    "types": [
+      "vite/client"
+    ],
+    "skipLibCheck": true,
+    "paths": {
+      "@thing/core": [
+        "../core/dist/index.d.ts"
+      ],
+      "@thing/net": [
+        "../net/dist/index.d.ts"
+      ],
+      "@thing/store": [
+        "../store/dist/index.d.ts"
+      ],
+      "@thing/peer": [
+        "../peer/dist/index.d.ts"
+      ]
+    },
+    "baseUrl": "."
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.svelte",
+    "src/**/*.d.ts"
+  ]
+}
