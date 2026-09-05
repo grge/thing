@@ -474,6 +474,14 @@ address feeds what it accepts to `Client.adopt`.
 What remains is the correctness half: the store lock, and routing the CLI
 through the holder.
 
+The shape of that routing is settled (`CLIENTS.md`): **the client's public API is
+the only way in**, and every mode — in-process, one-shot CLI, attached TUI, and
+eventually a browser pointed at a server — is a transport to it. Writes go to
+the holder rather than being signed by the caller, because `seq` and `prev` come
+from the chain tip and only the process that owns the chain can allocate a
+position in it. The socket is local-only until there is an authentication story,
+since any caller on it can write to every space the holder holds.
+
 **Done when:** `thing put` against a running holder reaches connected peers
 without a restart, opening a held space from a second process fails with a
 clear error, and there is one implementation of `attach`.

@@ -1,8 +1,13 @@
 # Clients, holders, and how the pieces fit
 
-**Status: a proposal.** Nothing here is built. It supersedes the earlier drafts
-of `ADMIN.md`, which framed the terminal as a client of a server and got the
-default backwards.
+**Status: partly built.** `engine/client/` exists and both consumers are built
+on it (steps 2–4 below); the lock, the socket and the TUI are not. It supersedes
+the earlier drafts of `ADMIN.md`, which framed the terminal as a client of a
+server and got the default backwards.
+
+Sections marked with what an earlier draft claimed are kept that way
+deliberately: three of the wrong answers here were arrived at honestly and
+discarded for specific reasons, and those reasons are load-bearing.
 
 ---
 
@@ -120,13 +125,81 @@ does not survive as a parallel implementation; it becomes a thin construction of
 the shared one. That is the whole point — one `attach`, one `pushNew`, one place
 where the `absorb` subtlety lives.
 
+### The client's API is the only way in
+
+Everything above holds a `Client` and calls it. The next question is what
+happens when the caller is not in the same process — a CLI command, a TUI, a
+browser pointed at a server — and the answer that survived three wrong turns is
+the plainest one: **the client's public surface is the API, and every mode is a
+transport to it.**
+
+Three earlier attempts, and why each failed, because the failures are what
+argue for this:
+
+1. **A remote `SpaceStore`.** Appealing because the interface exists and the
+   conformance suite would cover it. Wrong because `append` is *verify*-then-
+   write: `ChainSet.admit` checks signatures, and §2.3's "nothing enters a store
+   unverified" would come to mean "unless my own socket sent it". `admit` is
+   also stateful against a live `ChainSet`, so two clients through one remote
+   store interleave into one chain. The conformance suite would have caught
+   neither — it is single-client throughout.
+
+2. **The CLI as an ephemeral peer**, syncing a replica and pushing writes back.
+   Wrong because the CLI and the holder are not two peers: they contend for
+   *one writer identity*. Both compute `seq` from the tip they last saw, both
+   sign, and the second is refused as a `fork`. Silent write loss, and a
+   fork-rejection retry loop to paper over it.
+
+3. **Splitting reads from writes** — replica for reads, a write verb for
+   writes, an admin channel for the rest. Three relationships with one object,
+   which is one more than the object has.
+
+What all three miss: **administration was always going to need an API.**
+`shutdown`, `peers`, `hold`, `forget` have no expression in the sync protocol,
+because sync is how two holders reconcile — never a vocabulary for telling a
+holder what to do. Once that API exists, routing reads and writes through it too
+is not extra machinery. It deletes the second mechanism.
+
+And the API already exists. It is `Client`, essentially unchanged:
+
+```
+hold / release / forget      which spaces this peer holds
+list / holding / space       what is here
+join / adopt / peers         connections
+requestBlob / availability   blobs
+recent / observe             activity, and the view model
+close                        lifecycle
+```
+
+plus `Space.write` for the write path. Admin verbs and data verbs in one object,
+because it was one object all along.
+
+**The write problem dissolves.** `write` is an API call, so the holder allocates
+`seq` against the tip it authoritatively owns, signs, appends, and pushes. One
+process advances a chain because only one process ever calls `append`. That is
+the §7.3 hazard closed by construction rather than by a lock — the lock is left
+guarding the case where there is no holder at all.
+
+**Constraint, recorded now rather than discovered later: the control socket is
+local only.** A caller that can reach it can write to every space the holder
+holds. That is *fine* for a Unix socket in a permission-gated data directory —
+anyone past that gate can read the key files anyway, so the holder is no more an
+oracle than the filesystem is. It stops being fine the moment the socket is a
+TCP port, and a `--port` flag is an obvious thing to want. No network transport
+until there is an authentication story, and the API should distinguish `write`
+from `shutdown` before it grows one.
+
 ### Three ways to run it
 
 ```
 thing              holder + TUI, one process       the default
 thing serve        holder, no interface            headless
 thing attach       TUI over a running holder       remote control
+thing <verb>       one-shot, print and exit        scripts and SSH
 ```
+
+Four transports to one API. The browser is a fifth (above), and the fact that it
+fits without a new vocabulary is the argument that the API is the right one.
 
 **`thing` is one process.** The TUI is a renderer over a holder, not a client of
 one. There is no protocol between the interface and the peer because there is
@@ -141,6 +214,74 @@ it is the existing peer with a screen.
 mode. Some things are cheap in-process and awkward over a socket — streaming a
 large blob preview, for one. The default must not be designed down to what the
 socket can carry.
+
+### The web interface is a fourth transport
+
+If the API is the only way in, the browser gets the same choice everything else
+does: hold a client, or talk to one. Today `web/client.ts` assumes the first —
+IndexedDB, `localStorage` keys, Web Locks — and that assumption is baked into
+the class rather than chosen.
+
+It should be chosen. The same UI, two ways:
+
+```
+browser + own storage    IndexedDB, its own keys, its own log      today
+browser + a server       a window onto a peer that runs elsewhere  new
+```
+
+The second is worth having for reasons the first cannot cover: a phone that
+should not hold a copy of everything, a shared machine where the log should not
+land in browser storage, and — most practically — *looking at a running server
+from a browser* instead of a terminal.
+
+**What makes this a real test of the API rather than a restatement.** The
+terminal cases can cheat: `thing` is in-process, and `thing attach` is a local
+socket with the same trust as the process itself. A browser can do neither. If
+the API survives a caller that is genuinely remote, genuinely untrusted, and
+cannot read the key files, it is the right API. If it only works locally, it was
+a function call wearing a protocol.
+
+Which surfaces the one thing that does not travel. The UI already reaches into
+the fold directly:
+
+```
+Tree.svelte      list(space.state, id)
+Preview.svelte   entry(space.state, id), contentHash(space.state, id)
+```
+
+Those are pure functions over `State`, and today they are free — the fold is in
+the same heap. Over a socket they are not, and this is the decision the remote
+web client turns on:
+
+- **Ship the fold.** The browser holds `State` and keeps calling `list` and
+  `entry` locally. The UI does not change at all; the transport syncs state
+  rather than answering queries. Costs a copy of the folded state in the
+  browser, which is much smaller than the log.
+- **Ship the answers.** `list` and `entry` become API calls. Nothing large is
+  held, but every navigation is a round trip and the UI has to become
+  async-aware throughout.
+
+**Ship the fold.** The state is derived and disposable, the UI stays
+synchronous, and it keeps the property that makes this design work elsewhere —
+one vocabulary, and the remote case differs only in where the state came from.
+"Ship the answers" is the browser equivalent of the remote-`SpaceStore` mistake:
+moving a boundary to a place where every read pays for it.
+
+Note this makes the remote browser a **replica of the fold, not of the log** —
+it holds derived state and no events, so it cannot sign, cannot write directly,
+and sends writes to the holder like any other client. Which is the same shape as
+the CLI, arrived at from the opposite direction.
+
+**What has to change in `web/`, and what does not.** The UI itself does not: it
+already talks to `spaces()`, `subscribe`, `space()` and a handful of verbs, and
+reaches into `state` for the rest. What changes is that `web/client.ts` stops
+*being* the client and starts *choosing* one — local capabilities, or a
+connection to a holder. That is the same refactor `node/peer.ts` already went
+through, and for the same reason.
+
+Not proposed for now. Recorded because it is what the API has to be able to
+support, and because designing the socket without it in view is how it ends up
+local-only by accident.
 
 ### The view model is the shared vocabulary
 
@@ -165,13 +306,15 @@ socket, not a port: filesystem permissions on the data directory already say who
 may administer this peer, so the access-control question answers itself. A port
 would need authentication of its own for no gain.
 
-The test for what belongs on it:
+It carries **the client's API** — every verb above, including writes, plus the
+view model coming back. The earlier draft of this document said it should carry
+administration and the view model but *not* editing, on the grounds that a
+remote peer would not be allowed to edit. That test was the wrong one: it asks
+what a *peer* may do, and a caller on this socket is not a peer. It is the
+holder's own control surface, gated by the permissions on the data directory.
 
-> *Would a remote peer be allowed to do this?*
-
-`put` would — a browser writes files, over the sync protocol, and needs nothing
-new. `shutdown` would not. So the socket carries **administration and the view
-model**, not editing.
+The right test is the one recorded above — local socket, full authority, and no
+network transport until authentication exists.
 
 ### The single-writer guarantee
 
@@ -210,15 +353,26 @@ Every space-touching command follows one rule:
 > If a holder has this space, ask it. Otherwise take the lock and open the store
 > directly.
 
-With a peer running, `thing put` connects and the holder folds and pushes to
-everyone connected. With nothing running, it is the offline editor it is today —
-which remains legitimate for seeding, recovery and inspection.
+Both sides of that are the *same client*; only the transport differs. With a
+peer running, the command holds a client that is a socket to the holder. With
+nothing running, it constructs one over local capabilities and becomes the
+holder for its own lifetime — today's offline editor, still legitimate for
+seeding, recovery and inspection.
 
-**The writing key.** A client that edits must sign, so it needs the keypair. The
-key file sits beside the store, which the holder has locked — but locks cover the
-log, and keys are never appended to, so a client reads it directly. Having the
-holder sign for clients would make it a signing oracle for anyone who can reach
-the socket.
+So the two branches are one line of construction, not two implementations of
+each command. That distinction is the whole reason for routing everything
+through the API: the alternative was five commands each written twice, which is
+the shape we just finished deleting from `Client` and `Peer`.
+
+**The writing key stays with the holder.** An earlier draft had clients read the
+key file and sign for themselves, reasoning that a signing holder would be an
+oracle for anyone who can reach the socket. Both halves were wrong. The oracle
+concern is empty for a local socket — anyone who can reach it can read the key
+file anyway — and signing locally does not work regardless: `seq` and `prev`
+come from the chain tip, and a client that signs against a tip the holder has
+already advanced produces a second event at one sequence number, which `admit`
+refuses as a `fork`. Only the process that owns the chain can allocate a
+position in it.
 
 ---
 
@@ -237,10 +391,20 @@ making corruption rare rather than absent. A race that fires monthly is one
 nobody can reproduce.
 
 **Why not make the TUI always attach, even locally?** It would make one code
-path instead of two, which is genuinely attractive. But it means the common case
-pays a serialisation round trip for state it could read directly, and it forces
-every future TUI feature through a socket protocol — the constraint would leak
-into the design of things that have no reason to be constrained.
+path instead of two, which is genuinely attractive — and the API decision above
+weakens the case against it, since both modes now call the same surface and no
+feature is available to one and not the other.
+
+What survives is cost, not capability. The default mode would pay serialisation
+on every redraw for state sitting in the same heap, and `thing` on a laptop
+would need a socket to talk to itself. Keeping the in-process path is a
+performance choice with the interface held constant, which is a much smaller
+claim than the one this paragraph used to make.
+
+It is worth revisiting if the two paths ever drift. Sharing an interface but not
+an implementation is exactly the setup that let `Client` and `Peer` diverge, and
+the mitigation is the same: the in-process path should be a thin construction of
+the API, not a shortcut around it.
 
 **Why not Ink (React for terminals)?** The whole repo has four runtime
 dependencies: two crypto, one WebSocket, one types package. Ink brings React and
@@ -271,9 +435,12 @@ right.
 5. **Route the CLI through the holder.** `thing put` against a running peer
    reaches connected clients without a restart. This is the bug that started all
    of it.
-6. **The control socket,** carrying the view model and the admin verbs.
+6. **The control socket,** carrying the client's API. Local only.
 7. **The TUI,** in-process first. `attach` after, once there is something to
    attach to.
+8. **The browser as a client of a holder** — the fold shipped over the socket,
+   the UI unchanged. Not soon, but the API is designed so this needs no new
+   vocabulary, and that is the test of whether step 6 got it right.
 
 Steps 1–5 close a correctness bug and delete a duplicated implementation. They
 are worth doing whether or not the TUI is ever built.
@@ -331,6 +498,22 @@ belongs to the protocol rather than to this class.
    capability model above means the answer is "supply the argument", which is the
    reason to model it that way now.
 
-5. **What does `attach` do that the in-process TUI cannot?** Worth deciding
-   deliberately rather than discovering. Large blob previews and anything
-   streaming are the obvious candidates for "in-process only".
+5. ~~**What does `attach` do that the in-process TUI cannot?**~~ **Answered by
+   the API being the only way in:** nothing. Both modes call the same surface,
+   so a feature that works in one works in the other. What remains is a
+   *performance* question rather than a capability one — a large blob preview
+   over a socket is slow, not impossible — and the fold-shipping decision in the
+   browser section is the same question in its sharpest form.
+
+6. **What is the API's transport encoding?** Unresolved and deliberately not
+   decided here. It must carry method calls, async iterables (`readAll`,
+   `blobHashes`), streamed bytes with backpressure, and a subscription for the
+   view model. The existing framing in `net/protocol.ts` solves the last three
+   for the sync protocol already, and is the obvious thing to look at first —
+   but sync frames are not method calls, and forcing one into the other is how
+   the remote-`SpaceStore` mistake happened.
+
+7. **Does the view model push or pull?** `observe` is a callback in-process. Over
+   a socket that is a subscription, and a client that redraws on every event of
+   a busy sync is a client that spends its time redrawing. Some coalescing
+   belongs in the protocol.
