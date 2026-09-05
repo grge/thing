@@ -457,21 +457,25 @@ a chain on one machine.
 
 Four pieces: an exclusive lock in `SpaceStore` (covered by the conformance
 suite), a CLI that connects to the holder when there is one, a local control
-socket for the verbs a remote peer must never invoke, and — lifting `Client`
-out of `packages/web` — a shared client core the terminal can reuse.
+socket for the verbs a remote peer must never invoke, and a named view model
+(`SpaceStatus`, `PeerStatus`, `Activity`) that `Peer` exposes — so an interface
+renders a shape rather than reaching into internals.
 
 **Done when:** `thing put` against a running `serve` reaches connected peers
 without a restart, and opening a held space from a second process fails with a
 clear error instead of appending alongside it.
 
-## Stage 7.6 — A terminal client
+## Stage 7.6 — The TUI
 
-Not scheduled; depends on the shared client core from 7.5. A TUI with the web
-client's shape — tree, preview, peers, activity — attached to a running holder
-over the control socket, or standalone holding its own spaces. See `ADMIN.md`.
+Not scheduled; depends on the view model from 7.5. `thing` with no arguments
+holds spaces *and* draws itself — one process, no protocol between the
+interface and the peer. `thing serve` is the same holder with the drawing
+omitted; `thing attach` is the drawing over a holder running elsewhere.
 
-Not to be started before the shared client exists: building it against the web
-client directly would fork the logic, which is the outcome worth avoiding.
+The web client is the design reference: space list, tree, preview, peers,
+activity. See `ADMIN.md`, including open question 4 — whether the TUI shares
+the web `Client` or renders `Peer` directly, which is what decides how large
+this stage is.
 
 ## Stage 8 — Resolution and the mesh
 

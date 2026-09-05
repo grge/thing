@@ -185,13 +185,13 @@ today — so the CLI needs no new mechanism for `put`, only the discipline of
 asking the holder. A separate local control socket carries the small set a
 remote peer must never invoke (`shutdown`, `hold`, `drop`).
 
-**A terminal client.** Falls out of the same split: a TUI is a client with a
-different renderer. `Client` in `packages/web` is already close to portable —
-its cross-package imports are platform-neutral and everything browser-specific
-is an injected dependency (store, keystore, lock, transport, signalling). Lift
-it into a shared package and a TUI is that loop drawing to a terminal. Not
-scheduled, and not to be started before the shared client exists: building it
-against the web client directly would fork the logic.
+**Three ways to run a peer.** `thing` holds spaces and draws itself; `thing
+serve` is the same holder headless; `thing attach` is the drawing over a holder
+running elsewhere. The TUI is a *renderer over a holder*, not a client of one —
+in the default mode there is no protocol between them at all, because they are
+one process. Only `attach` needs a wire, which is what lets it be the limited
+mode. `Peer` already holds what an interface would render; what is missing is a
+named shape for it. Not scheduled.
 
 ---
 
