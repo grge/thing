@@ -380,11 +380,50 @@ its keys, its names.
 
 ## Stage 7 — `web`: the browser client
 
-- WebRTC data channels; signalling behind the stage 5 interface.
+- WebRTC data channels implementing the same `Channel` the WebSocket transport
+  does, so nothing above the transport changes.
+- Signalling behind an interface, with one implementation, plus a signalling
+  endpoint on the headless peer.
 - Browser storage backend from stage 3.
 - A view over folded state: tree, preview, drag-in.
 - Share links, the derived short code, trust on first use (§5.4).
 - An exclusive lock per space (§7.3), so two tabs cannot fork one key.
+
+### What connects to what, and what is deferred
+
+Two browsers cannot dial each other, so they need **introduction** — one round
+trip to exchange connection details, after which the signalling server is out of
+the path. A browser reaching a headless peer needs none of that: it dials the
+address directly, which stage 6 already does.
+
+**Four pieces, and only one of them is ours:**
+
+| | Whose | Why |
+|---|---|---|
+| **STUN** | third-party, configured | Standard and stateless. It reveals a peer's public address, which any server it contacts already sees, so running one buys nothing. |
+| **TURN** | optional, configured | Supported because §5.6 says neither it nor the alternative dominates — two people exchanging something private may prefer a relay that carries ciphertext to a peer that holds their space. Not the default. |
+| **Signalling** | ours, behind an interface | The one piece that has to know about *this* system, because a peer is addressed by space rather than by a broker-assigned id. |
+| **Relaying** | not built | §5.6: two peers who cannot reach each other sync through a peer that holds the space, which stage 6 already demonstrates with no relay code. It also survives disconnection, which a byte-forwarding relay cannot. |
+
+**Not PeerJS.** It bundles signalling with a messaging layer, so its chunking
+ends up underneath ours and any measurement describes the library rather than
+the transport. Its ids are also a one-claimant namespace, which made a writer's
+second tab unable to claim a slot and produced workarounds nobody would choose.
+The archived tree's `Signalling` interface is the right shape — narrow, with the
+implementation reaching through to the raw data channel.
+
+**Rendezvous is opaque here.** Two peers agree on a token out of band — a share
+link carries it — and the signalling server matches them without learning which
+space they are meeting about. A server that could be asked "connect me to anyone
+serving space K" would learn which spaces exist and who wants them, which is the
+enumeration disclosure the design avoids elsewhere (§5.7). That question belongs
+with resolution, in stage 8.
+
+**So a browser learns about a peer from a share link, or not at all.** If A
+shares a space with B and a headless peer C also serves it, B reaches C only if
+the link names it (`&l=`). Discovering C by asking A is `RESOLVE`, and it is
+stage 8 — deliberately, so resolution is designed against a working client
+rather than before one exists.
 
 **Done when:** two browsers sync a space; a browser syncs with a stage 6 headless
 peer; and the failure modes — no peers, unreachable, key missing — say something
