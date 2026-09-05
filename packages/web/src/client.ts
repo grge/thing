@@ -96,6 +96,9 @@ export class Client {
   private signalling: WebSocketSignalling | null = null;
   /** Recent activity, newest first. Bounded: a debugging aid, not a log. */
   private readonly activity: Activity[] = [];
+  /** Failed attempts per address, for backing off. */
+  private readonly retries = new Map<string, number>();
+  private closed = false;
   private static readonly ACTIVITY_LIMIT = 200;
 
   constructor(
@@ -282,12 +285,20 @@ export class Client {
       });
     });
 
-    const session = this.attach(entry, `ws:${url}`, 'direct', {
-      send: (frame) => socket.send(frame.slice().buffer as ArrayBuffer),
-      get bufferedAmount() {
-        return socket.bufferedAmount;
+    const session = this.attach(
+      entry,
+      `ws:${url}`,
+      'direct',
+      {
+        send: (frame) => socket.send(frame.slice().buffer as ArrayBuffer),
+        get bufferedAmount() {
+          return socket.bufferedAmount;
+        },
       },
-    });
+      // This address has proved itself, so a later drop starts from a short
+      // delay rather than wherever the backoff had climbed to.
+      () => this.retries.delete(url),
+    );
 
     socket.addEventListener('message', (event) => {
       const data = (event as MessageEvent).data;
@@ -296,6 +307,10 @@ export class Client {
     socket.addEventListener('close', () => {
       this.note('connection', id, `${url} closed`);
       this.detach(entry, `ws:${url}`);
+      // A peer that restarted, a laptop that slept, a network that moved.
+      // None of these should mean a space silently stops syncing until
+      // someone notices and reconnects by hand.
+      this.scheduleRetry(id, url);
     });
 
     entry.connections.set(`ws:${url}`, {
@@ -376,6 +391,8 @@ export class Client {
     peer: string,
     _kind: PeerKind,
     channel: { send(frame: Uint8Array): void; readonly bufferedAmount: number },
+    /** Called when the peer delivers events — proof the connection is useful. */
+    onProgress?: () => void,
   ): Session {
     const session = new Session(entry.store, channel, {
       peer,
@@ -394,6 +411,7 @@ export class Client {
         // — `receive` would refuse them as duplicates and fold nothing.
         entry.space.absorb(events);
         this.note('log', hex(entry.key), `${events.length} event(s) from ${peer}`);
+        onProgress?.();
       },
       onBlob: (hash, bytes) =>
         this.note('blob', hex(entry.key), `${hex(hash).slice(0, 8)} — ${bytes.length} bytes`),
@@ -408,6 +426,38 @@ export class Client {
     entry.sessions.delete(peer);
     entry.connections.delete(peer);
     this.changed();
+  }
+
+  /**
+   * Reconnect after a drop, backing off.
+   *
+   * Doubling from a second to a minute: quick enough that a peer restarting is
+   * barely noticed, slow enough that a peer that is genuinely gone is not
+   * hammered. Cleared as soon as a connection succeeds, so a flaky link does
+   * not inherit a long delay from an earlier outage.
+   */
+  private scheduleRetry(id: string, url: string): void {
+    if (this.closed) return;
+    const attempt = (this.retries.get(url) ?? 0) + 1;
+    this.retries.set(url, attempt);
+    // Give up after a while rather than retrying forever: a peer that has
+    // refused a dozen times is not coming back on its own, and the connect
+    // control is there for when it does.
+    if (attempt > 8) {
+      this.note('connection', id, `giving up on ${url} after ${attempt - 1} attempts`);
+      return;
+    }
+    const delay = Math.min(60_000, 1000 * 2 ** (attempt - 1));
+
+    setTimeout(() => {
+      if (this.closed || !this.held.has(id)) return;
+      const entry = this.held.get(id);
+      // Someone may have reconnected by hand in the meantime.
+      if (entry !== undefined && entry.connections.size > 0) return;
+      void this.connectTo(id, url).catch(() => {
+        this.note('connection', id, `${url} still unreachable`);
+      });
+    }, delay);
   }
 
   /** Send anything a peer has not seen. */
@@ -472,6 +522,7 @@ export class Client {
   }
 
   async close(): Promise<void> {
+    this.closed = true;
     for (const entry of this.held.values()) {
       for (const conn of entry.connections.values()) conn.close();
       await entry.space.close();
