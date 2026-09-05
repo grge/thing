@@ -161,6 +161,54 @@ function parse(argv: readonly string[]): {
   return { positional, flags };
 }
 
+/**
+ * What a long-running peer says about itself.
+ *
+ * A server that prints one line at startup and then goes silent is one you
+ * cannot tell is working — you cannot see whether anyone connected, whether
+ * anything synced, or whether it is simply stuck. None of this is protocol; it
+ * is for whoever is watching the terminal.
+ *
+ * To stderr, so `thing serve` can still be piped for its stdout.
+ */
+function activityLog(enabled: boolean): {
+  onConnect?: (peer: string, space: string | null) => void;
+  onDisconnect?: (peer: string) => void;
+  onRefused?: (peer: string, space: string) => void;
+  onEvents?: (space: string, events: readonly unknown[]) => void;
+  onBlob?: (space: string, hash: string, bytes: number) => void;
+  onFork?: (space: string, fork: { writer: string; frontier: number }) => void;
+} {
+  if (!enabled) return {};
+  const at = (): string => new Date().toISOString().slice(11, 19);
+  const short = (s: string): string => s.slice(0, 8);
+  const say = (line: string): void => {
+    process.stderr.write(`${at()} ${line}\n`);
+  };
+
+  return {
+    onConnect: (peer, space) => {
+      // Twice per connection: once when it opens, once when it says what it is
+      // about. The second is the useful one.
+      say(space === null ? `${peer} connected` : `${peer} → ${short(space)}`);
+    },
+    onDisconnect: (peer) => say(`${peer} gone`),
+    onRefused: (peer, space) =>
+      say(`${peer} wanted ${short(space)}, refused (use --accept to hold it)`),
+    onEvents: (space, events) =>
+      // Counts arrivals, not net additions. Peers exchange overlapping ranges
+      // — reconciliation on HELLO, then again answering a WANT — and the store
+      // deduplicates, so a space that received six events may report them more
+      // than once. Fine for seeing that traffic is flowing; not a measure of
+      // how much is stored. `thing ls` is the answer to that.
+      say(`${short(space)} +${events.length} event(s)`),
+    onBlob: (space, hash, bytes) => say(`${short(space)} blob ${short(hash)} ${bytes} bytes`),
+    onFork: (space, fork) =>
+      // §2.3: a fork is reported loudly and does not stall the rest.
+      say(`${short(space)} FORK: writer ${short(fork.writer)} diverged at ${fork.frontier}`),
+  };
+}
+
 const USAGE = `thing — a peer-to-peer space
 
   thing create [--name X]              mint a space and print its key
@@ -168,6 +216,7 @@ const USAGE = `thing — a peer-to-peer space
   thing key <space>                    a space's full key, for sharing
   thing name <space> <petname>         call a space something local
   thing serve [--port N] [--accept]    accept connections
+                       [--quiet]       ... without the activity log
   thing join <key> <url>               dial a peer and sync one space
   thing ls <key>                       what a space contains
   thing put <key> <file> [--as name]   write a file into a space
@@ -264,13 +313,7 @@ async function main(argv: readonly string[]): Promise<number> {
         dir,
         listen: { port },
         acceptUnknownSpaces: flags['accept'] !== undefined,
-        onFork: (space, fork) => {
-          // §2.3: a fork is reported loudly and does not stall the rest.
-          process.stderr.write(
-            `fork in ${space.slice(0, 8)}: writer ${fork.writer.slice(0, 8)} ` +
-              `diverged at ${fork.frontier}\n`,
-          );
-        },
+        ...activityLog(flags['quiet'] === undefined),
       });
 
       // Hold everything already on disk, so a restart resumes serving.
@@ -297,7 +340,7 @@ async function main(argv: readonly string[]): Promise<number> {
       }
 
       const dir = dataDir();
-      const peer = new Peer({ dir });
+      const peer = new Peer({ dir, ...activityLog(flags['quiet'] === undefined) });
       // A key, always — joining is how a space this client has never met
       // arrives, so there is no local name to resolve yet.
       const key = keyFromHex(id);

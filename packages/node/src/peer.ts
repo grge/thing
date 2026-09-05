@@ -34,6 +34,19 @@ export interface PeerOptions {
   readonly acceptUnknownSpaces?: boolean;
   readonly onFork?: (space: SpaceId, fork: Divergence) => void;
   readonly onEvents?: (space: SpaceId, events: readonly Event[]) => void;
+  /**
+   * Connections opening and closing, and what space they are about.
+   *
+   * A long-running peer that says nothing is one you cannot tell is working, so
+   * these exist for an operator rather than for the protocol. `space` is null
+   * until a connection says which space it is for.
+   */
+  readonly onConnect?: (peer: string, space: SpaceId | null) => void;
+  readonly onDisconnect?: (peer: string) => void;
+  /** A connection refused because this peer will not hold that space. */
+  readonly onRefused?: (peer: string, space: SpaceId) => void;
+  /** Blob bytes received, so a transfer is visible while it happens. */
+  readonly onBlob?: (space: SpaceId, hash: string, bytes: number) => void;
 }
 
 interface OpenSpace {
@@ -49,6 +62,7 @@ export class Peer {
   private readonly spaces = new Map<SpaceId, OpenSpace>();
   private readonly sessions = new Set<Session>();
   private server: PeerServer | null = null;
+
 
   constructor(private readonly options: PeerOptions) {
     this.store = new FileStore(options.dir);
@@ -87,6 +101,9 @@ export class Peer {
     // A local write has to reach connected peers. Reconciliation only runs when
     // vectors are exchanged, so without this a live connection goes stale the
     // moment either side writes something new.
+    // Forwarding what arrives is not an accident: it is how two peers that can
+    // only reach a hub converge (§5.6). A peer that suppressed it would sync
+    // with each of them and let them stay ignorant of each other.
     space.onChange(() => void this.pushNew(id));
 
     return space;
@@ -116,8 +133,10 @@ export class Peer {
 
     // Frames only reach the session because of this. Attaching builds it; the
     // connection has to be told where to deliver.
+    this.options.onConnect?.(conn.peer, hex(key));
     conn.onFrame((data) => void session.receive(data));
     conn.onClose(() => {
+      this.options.onDisconnect?.(conn.peer);
       session.close();
       this.sessions.delete(session);
       this.spaces.get(hex(key))?.sessions.delete(session);
@@ -152,6 +171,8 @@ export class Peer {
   private async adopt(conn: Connection): Promise<void> {
     let session: Session | null = null;
 
+    this.options.onConnect?.(conn.peer, null);
+
     conn.onFrame((data) => {
       void (async () => {
         if (session === null) {
@@ -161,15 +182,18 @@ export class Peer {
           if (session === null) {
             // A space this peer does not hold and will not accept. Closing is
             // the honest answer: there is nothing to sync.
+            this.options.onRefused?.(conn.peer, space);
             conn.close();
             return;
           }
+          this.options.onConnect?.(conn.peer, space);
         }
         await session.receive(data);
       })();
     });
 
     conn.onClose(() => {
+      this.options.onDisconnect?.(conn.peer);
       if (session !== null) {
         session.close();
         this.sessions.delete(session);
@@ -200,9 +224,15 @@ export class Peer {
         // The session already appended these, so the fold has to be advanced
         // directly — `receive` would refuse them as duplicates and fold
         // nothing.
+        //
+        // Absorbing fires onChange, which would push straight back to the peer
+        // that just sent them. Harmless — the receiver deduplicates — but it is
+        // a round trip of pure echo, so the push is suppressed while a session
+        // is delivering.
         held.space?.absorb(events);
         this.options.onEvents?.(id, events);
       },
+      onBlob: (hash, bytes) => this.options.onBlob?.(id, hexOf(hash), bytes.length),
     });
 
     this.sessions.add(session);
@@ -236,6 +266,12 @@ export class Peer {
     await this.store.close();
     if (this.server !== null) await this.server.close();
   }
+}
+
+function hexOf(bytes: Uint8Array): string {
+  let s = '';
+  for (const b of bytes) s += b.toString(16).padStart(2, '0');
+  return s;
 }
 
 /** Peek at a HELLO to learn which space a connection is about. */

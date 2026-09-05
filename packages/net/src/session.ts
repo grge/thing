@@ -198,17 +198,27 @@ export class Session {
       // peer's problem, not something to retry.
     }
 
-    // Anything held may now be applicable.
-    if (this.pending.size > 0) {
+    // Anything held may now be applicable. Draining can cascade: applying one
+    // run may unblock the next, so this repeats until nothing more fits.
+    while (this.pending.size > 0) {
       const vv = await this.store.versionVector();
+      let progressed = false;
       for (const [writer, f] of vv) {
         const ready = this.pending.drain(writer, f.frontier);
         if (ready.length === 0) continue;
         result = await this.store.append(ready);
         accepted.push(...result.appended);
+        // Only real progress ends the loop; a run the store refused as
+        // duplicates would otherwise spin here forever.
+        if (result.appended.length > 0) progressed = true;
       }
+      if (!progressed) break;
     }
 
+    // Only what actually entered the log. A peer may send the same range more
+    // than once — reconciliation on HELLO, then again answering a WANT — and
+    // the store deduplicates, so reporting every *arrival* would suggest
+    // activity that did not happen.
     if (accepted.length > 0) this.options.onEvents?.(accepted);
 
     // Ask for whatever is still missing.
