@@ -12,10 +12,8 @@
  * a browser cannot be dialled, so it dials or is introduced (ARCHITECTURE.md
  * §5.6).
  */
-import { codeFor, type Event, hex, type KeyPair, type PublicKey } from '@thing/core';
-import { type Divergence, Session } from '@thing/net';
-import { Space } from '@thing/peer';
-import { namesFor, type SpaceNames, type SpaceStore } from '@thing/store';
+import { codeFor, type Divergence, type Event, hex, type KeyPair, namesFor, type PublicKey, Session, Space, type SpaceNames, type SpaceStore } from '@thing/engine';
+
 import { IdbStore } from './idbstore.js';
 import { type Keystore, LocalKeystore } from './keystore.js';
 import { WebSocketSignalling } from './signalling.js';

@@ -68,8 +68,16 @@ speculative. It exists in `node`, and `web` reimplements it without a name.
 compile error today, guarded by a test that exists precisely because widening
 `types` to fix one import silently loses the property everywhere.
 
-**A shared client belongs in `packages/peer`.** No new package, no new boundary
-rule, and the test that protects it is already written.
+**A shared client belongs in the engine.** No new boundary rule, and the test
+that protects it is already written.
+
+*(Since written: `core`, `store`, `net` and `peer` merged into
+`packages/engine`. Nothing imported a subset of them, nothing was published,
+and the four-way split had hidden the missing layer — `packages/peer` looked
+like a real boundary, so nobody noticed it had stopped one level short of its
+own doc comment. The platform boundary survives intact, since what matters is
+the line between platform-free and platform-bound, not the lines between
+`core` and `net`.)*
 
 ### 5. One stale comment, found while reading
 
@@ -85,7 +93,7 @@ removed. It should go with the work below rather than be left to mislead.
 
 ### One client, two transports
 
-Move `Client` into `packages/peer` as the single implementation of *being a
+Move `Client` into `packages/engine` as the single implementation of *being a
 peer*: holding spaces, folding, syncing, tracking connections and activity.
 
 It takes its platform as constructor arguments:
@@ -252,7 +260,7 @@ right.
 2. **Name `Connection` in the web client.** Extract the inline shape in
    `connectTo`/`adopt` to match `node/transport.ts`. Pure refactor, no behaviour
    change, and it makes step 3 mechanical.
-3. **Move `Client` to `packages/peer`,** taking store, keystore, lock, dial,
+3. **Move `Client` into the engine,** taking store, keystore, lock, dial,
    listen and signalling as arguments. `boundary.test.ts` catches any browser
    assumption that comes along for the ride. Web keeps working throughout.
 4. **Rebuild `Peer` on it.** Delete the duplicate `attach`/`pushNew`. Fix the

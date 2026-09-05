@@ -42,17 +42,23 @@ and the previous implementation has moved to [archive/](archive/), which is kept
 readable but is not built, tested, or imported.
 
 ```
-packages/core/    events, canonical encoding, signing, the fold   no I/O
-packages/net/     protocol, sync, blob transfer, resolution       no platform
-packages/store/   storage interface + browser and Node backends
-packages/peer/    a peer: core + net + store, wired together
-packages/web/     the browser client — WebRTC, UI
-packages/node/    the headless peer — WebSockets, CLI
+packages/engine/  the peer, platform-agnostic
+  core/             events, canonical encoding, signing, the fold
+  store/            where events live — an interface, and its contract
+  net/              protocol, sync, blob transfer, the ephemeral channel
+  fs/               the filesystem model over the fold
+packages/node/    disk, sockets, CLI — supplies what the engine needs
+packages/web/     IndexedDB, WebRTC, Svelte — likewise
 ```
 
-The split is enforced rather than intended: `core`, `net`, `store` and `peer`
-compile with no DOM and no Node types, so a stray `localStorage` is a compile
-error rather than something the headless peer discovers at run time.
+The engine is the program: it holds spaces, folds their logs, reconciles with
+other peers. It reaches for nothing — storage, connections and somewhere to keep
+keys are *supplied to it*, because the same code runs in a browser tab and in a
+headless server, and those differ in exactly those places and nowhere else.
+
+That is enforced rather than intended: the engine compiles with `"types": []`
+and an ES2022-only `lib`, so a stray `localStorage` is a compile error rather
+than something a server discovers at run time.
 
 **Nothing is owed to what exists.** No data migration, no wire compatibility, no
 stored-state compatibility. Old spaces are not readable and are not meant to be.

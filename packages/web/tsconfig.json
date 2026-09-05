@@ -15,16 +15,7 @@
   ],
   "references": [
     {
-      "path": "../core"
-    },
-    {
-      "path": "../net"
-    },
-    {
-      "path": "../store"
-    },
-    {
-      "path": "../peer"
+      "path": "../engine"
     }
   ]
 }

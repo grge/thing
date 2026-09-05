@@ -1,11 +1,14 @@
 {
   "files": [],
   "references": [
-    { "path": "./packages/core" },
-    { "path": "./packages/net" },
-    { "path": "./packages/store" },
-    { "path": "./packages/peer" },
-    { "path": "./packages/web" },
-    { "path": "./packages/node" }
+    {
+      "path": "packages/engine"
+    },
+    {
+      "path": "packages/node"
+    },
+    {
+      "path": "packages/web"
+    }
   ]
 }

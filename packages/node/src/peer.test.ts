@@ -6,8 +6,8 @@
  * the transport carries it — and that the claims in §5.6 about reachability
  * hold when there is something real to reach.
  */
-import { generateKeyPair, hex, type KeyPair, keyPairFromSeed, SEED_LEN } from '@thing/core';
-import { list, makeFile, makeFolder, read } from '@thing/peer';
+import { generateKeyPair, hex, type KeyPair, keyPairFromSeed, list, makeFile, makeFolder, read, SEED_LEN } from '@thing/engine';
+
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

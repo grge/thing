@@ -6,12 +6,12 @@
    * selection. Renaming and moving go back through `Space.write`, which is an
    * ordinary attribute write: the tree is derived, never stored.
    */
-  import { hex, type Uuid } from '@thing/core';
-  import { type Entry, list, move, remove, rename, restore, type Space } from '@thing/peer';
+  import { hex, type Uuid } from '@thing/engine';
+  import { type FileEntry, list, move, remove, rename, restore, type Space } from '@thing/engine';
   import Icon from './Icon.svelte';
 
   interface Props {
-    entries: Entry[];
+    entries: FileEntry[];
     selected: Uuid | null;
     space: Space | null;
     writable: boolean;
@@ -32,18 +32,18 @@
     expanded = next;
   }
 
-  function childrenOf(id: Uuid): Entry[] {
+  function childrenOf(id: Uuid): FileEntry[] {
     return space === null ? [] : list(space.state, id);
   }
 
-  async function doRename(entry: Entry): Promise<void> {
+  async function doRename(entry: FileEntry): Promise<void> {
     if (space === null) return;
     const name = prompt('Rename', entry.name);
     if (name === null || name === '') return;
     await rename(space, entry.id, name);
   }
 
-  async function onDrop(target: Entry): Promise<void> {
+  async function onDrop(target: FileEntry): Promise<void> {
     dropTarget = null;
     if (space === null || dragging === null || !target.isFolder) return;
     const source = entries.find((e) => hex(e.id) === dragging);
@@ -53,7 +53,7 @@
   }
 </script>
 
-{#snippet row(entry: Entry, depth: number)}
+{#snippet row(entry: FileEntry, depth: number)}
   <div
     class="row"
     class:selected={selected !== null && hex(selected) === hex(entry.id)}

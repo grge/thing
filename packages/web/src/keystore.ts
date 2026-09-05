@@ -14,7 +14,7 @@
  * is keep the key in a form a person could export, which is the precondition
  * for any answer.
  */
-import { generateKeyPair, type KeyPair, keyPairFromSeed, SEED_LEN } from '@thing/core';
+import { generateKeyPair, type KeyPair, keyPairFromSeed, SEED_LEN } from '@thing/engine';
 
 const KEY_PREFIX = 'thing:key:';
 const SPACES = 'thing:spaces';

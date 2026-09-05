@@ -7,8 +7,8 @@
    * (§2.4). So this can know a file's name, kind and size while having nothing
    * to show — and says so, rather than looking broken.
    */
-  import { hex, type Uuid } from '@thing/core';
-  import { contentHash, entry, isTextual, read, type Space } from '@thing/peer';
+  import { hex, type Uuid } from '@thing/engine';
+  import { contentHash, entry, isTextual, read, type Space } from '@thing/engine';
   import { onMount } from 'svelte';
   import type { Client } from '../client.js';
   import Icon from './Icon.svelte';

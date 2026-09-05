@@ -12,10 +12,8 @@
  * Unlike a byte-forwarding relay it also survives disconnection: the events are
  * *here*, so the other side can collect them whenever it next connects.
  */
-import { type Event, hex, type KeyPair, type PublicKey } from '@thing/core';
-import { type Divergence, Session } from '@thing/net';
-import { Space } from '@thing/peer';
-import type { SpaceId, SpaceStore } from '@thing/store';
+import { type Divergence, type Event, hex, type KeyPair, type PublicKey, Session, Space, type SpaceId, type SpaceStore } from '@thing/engine';
+
 import { FileStore } from './filestore.js';
 import { type Connection, dial, PeerServer } from './transport.js';
 
@@ -62,7 +60,6 @@ export class Peer {
   private readonly spaces = new Map<SpaceId, OpenSpace>();
   private readonly sessions = new Set<Session>();
   private server: PeerServer | null = null;
-
 
   constructor(private readonly options: PeerOptions) {
     this.store = new FileStore(options.dir);

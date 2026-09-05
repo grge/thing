@@ -7,7 +7,7 @@
  * Both wrap a socket in the same two-method `Channel` and hand it to the same
  * `Session`, so nothing above this file knows which happened.
  */
-import type { Channel } from '@thing/net';
+import type { Channel } from '@thing/engine';
 import { WebSocketServer, type WebSocket as WsSocket } from 'ws';
 
 /**

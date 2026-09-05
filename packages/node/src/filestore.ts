@@ -22,29 +22,9 @@
  * boundary test caught exactly that. The interface and the shared chain logic
  * stay platform-free; each backend lives with the runtime it needs.
  */
-import {
-  type Event,
-  type Hash,
-  hashLarge,
-  hex,
-  type PublicKey,
-} from '@thing/core';
+import { type AppendRejection, type AppendResult, ChainSet, decodeEvent, encodeEvent, type Event, FRAME_HEADER, type Hash, hashLarge, hex, inChainOrder, type PublicKey, type SeqRange, type SpaceId, type SpaceStore, type Store, type VersionVector } from '@thing/engine';
 import { appendFile, mkdir, open as openFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import {
-  type AppendRejection,
-  type AppendResult,
-  ChainSet,
-  decodeEvent,
-  encodeEvent,
-  FRAME_HEADER,
-  inChainOrder,
-  type SeqRange,
-  type SpaceId,
-  type SpaceStore,
-  type Store,
-  type VersionVector,
-} from '@thing/store';
 
 class FileSpaceStore implements SpaceStore {
   private chains: ChainSet;

@@ -20,18 +20,7 @@
  * interface and the shared chain logic stay platform-free; each backend lives
  * with the runtime it needs.
  */
-import { type Event, type Hash, hashLarge, hex, type PublicKey } from '@thing/core';
-import {
-  type AppendRejection,
-  type AppendResult,
-  ChainSet,
-  inChainOrder,
-  type SeqRange,
-  type SpaceId,
-  type SpaceStore,
-  type Store,
-  type VersionVector,
-} from '@thing/store';
+import { type AppendRejection, type AppendResult, ChainSet, type Event, type Hash, hashLarge, hex, inChainOrder, type PublicKey, type SeqRange, type SpaceId, type SpaceStore, type Store, type VersionVector } from '@thing/engine';
 
 const EVENTS = 'events';
 const BLOBS = 'blobs';

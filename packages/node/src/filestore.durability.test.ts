@@ -6,7 +6,7 @@
  * open a *new* `FileStore` over the same directory, so nothing carries over in
  * process — the only thing that can make them pass is bytes on disk.
  */
-import { hex, keyPairFromSeed, ROOT, SEED_LEN, Writer } from '@thing/core';
+import { hex, keyPairFromSeed, ROOT, SEED_LEN, Writer } from '@thing/engine';
 import { appendFile, readFile, writeFile } from 'node:fs/promises';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

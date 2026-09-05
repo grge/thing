@@ -15,8 +15,8 @@
    * it tells you the thing exists and is quiet rather than leaving you
    * wondering whether it is broken.
    */
-  import { hex } from '@thing/core';
-  import type { Space } from '@thing/peer';
+  import { hex } from '@thing/engine';
+  import type { Space } from '@thing/engine';
   import type { Client, SpaceStatus } from '../client.js';
   import Icon from './Icon.svelte';
   import type { IconName } from './icons.js';

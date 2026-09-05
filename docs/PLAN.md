@@ -461,7 +461,7 @@ understood twice. Only five of `client.ts`'s 566 lines touch a browser global,
 all of them transport construction.
 
 Steps, each useful alone: the store lock; name `Connection` in web; move
-`Client` to `packages/peer` with store, keystore, lock, dial, listen and
+`Client` into `packages/engine` with store, keystore, lock, dial, listen and
 signalling injected; rebuild `Peer` on it; route the CLI through the holder.
 
 **Done when:** `thing put` against a running holder reaches connected peers

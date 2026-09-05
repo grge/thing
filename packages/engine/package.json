@@ -1,0 +1,30 @@
+{
+  "name": "@thing/engine",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "A peer, platform-agnostic: storage and connections are supplied to it.",
+  "main": "./dist/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "development": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./conformance": {
+      "types": "./dist/store/conformance.d.ts",
+      "development": "./src/store/conformance.ts",
+      "default": "./dist/store/conformance.js"
+    },
+    "./testkit": {
+      "types": "./dist/core/testkit.d.ts",
+      "development": "./src/core/testkit.ts",
+      "default": "./dist/core/testkit.js"
+    }
+  },
+  "dependencies": {
+    "@noble/ed25519": "^3.2.0",
+    "@noble/hashes": "^2.4.0"
+  },
+  "types": "./dist/index.d.ts"
+}

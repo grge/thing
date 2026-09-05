@@ -13,7 +13,7 @@
  * relay and survives disconnection — but a relay that carries ciphertext it
  * cannot read is a genuinely different good, so the door stays open.
  */
-import type { Channel } from '@thing/net';
+import type { Channel } from '@thing/engine';
 import type { Signalling, SignalPayload } from './signalling.js';
 
 /** Public STUN, replaceable. Nothing here depends on whose it is. */

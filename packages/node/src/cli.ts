@@ -21,9 +21,8 @@
  * key is something a person must be able to back up and move, and a real answer
  * belongs with whatever the product decides about identity.
  */
-import { codeFor, generateKeyPair, hex, type KeyPair, keyPairFromSeed } from '@thing/core';
-import { contentHash, entry, list, makeFile, read, type Space } from '@thing/peer';
-import { namesFor, resolveName, type SpaceNames } from '@thing/store';
+import { codeFor, contentHash, entry, generateKeyPair, hex, type KeyPair, keyPairFromSeed, list, makeFile, namesFor, read, resolveName, type Space, type SpaceNames } from '@thing/engine';
+
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';

@@ -9,10 +9,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@thing/core": "*",
-    "@thing/net": "*",
-    "@thing/store": "*",
-    "@thing/peer": "*",
+    "@thing/engine": "*",
     "ws": "^8.21.3"
   },
   "bin": {

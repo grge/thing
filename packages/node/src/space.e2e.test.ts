@@ -7,8 +7,8 @@
  * fresh `Folder`, and it must agree with the incremental fold that built the
  * original.
  */
-import { hex, keyPairFromSeed, ROOT, SEED_LEN } from '@thing/core';
-import { contentHash, list, makeFile, makeFolder, read, remove, rename, Space } from '@thing/peer';
+import { contentHash, hex, keyPairFromSeed, list, makeFile, makeFolder, read, remove, rename, ROOT, SEED_LEN, Space } from '@thing/engine';
+
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

@@ -1,12 +1,12 @@
 /**
  * The Node backend against the shared conformance suite.
  *
- * The suite is the same one the memory backend runs (`@thing/store`), which is
+ * The suite is the same one the memory backend runs (`@thing/engine`), which is
  * the point: a browser and a headless peer must behave identically, and the
  * only way to be sure is one set of expectations rather than two that look
  * similar.
  */
-import { conformanceTests, type Store } from '@thing/store';
+import { conformanceTests, type Store } from '@thing/engine';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

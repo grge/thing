@@ -8,7 +8,7 @@
  *
  * Nothing here is replicated. §5.5: every peer names spaces for itself.
  */
-import type { PetnameStore, SpaceId } from '@thing/store';
+import type { PetnameStore, SpaceId } from '@thing/engine';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 

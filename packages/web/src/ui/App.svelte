@@ -9,8 +9,8 @@
    * reactive state in one file meant none of it could be reasoned about without
    * a browser.
    */
-  import { hex, ROOT, type Uuid } from '@thing/core';
-  import { list, makeFile, makeFolder } from '@thing/peer';
+  import { hex, ROOT, type Uuid } from '@thing/engine';
+  import { list, makeFile, makeFolder } from '@thing/engine';
   import { onMount } from 'svelte';
   import { Client, parseShareLink, type SpaceStatus } from '../client.js';
   import Debug from './Debug.svelte';

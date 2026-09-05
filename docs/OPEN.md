@@ -176,7 +176,7 @@ happens to be shaped for it.
 **One client, two transports.** Proposed in `CLIENTS.md`. `web/client.ts` and
 `node/peer.ts` converged independently on the same structure, and only five of
 `client.ts`'s 566 lines touch a browser global — all transport construction. A
-shared client belongs in `packages/peer`, which is already on the platform-free
+shared client belongs in `packages/engine`, which is already on the platform-free
 side of the boundary `boundary.test.ts` enforces. Reachability becomes a
 capability (`listen` supplied or not) rather than what separates two classes,
 which is what makes a browser and a headless server the same kind of thing.
