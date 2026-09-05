@@ -9,6 +9,7 @@
 export { FileStore } from './filestore.js';
 export { Peer, type PeerOptions } from './peer.js';
 export { FilePetnames } from './petnames.js';
+export { SignalServer, type SignalServerOptions } from './signalserver.js';
 export {
   channelFor,
   type Connection,
