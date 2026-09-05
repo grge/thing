@@ -15,6 +15,8 @@ export {
   Writer as ByteWriter,
 } from './bytes.js';
 
+export { CODE_ALPHABET, CODE_LENGTH, codeFor, isCode } from './code.js';
+
 export {
   type ChainFault,
   checkChain,

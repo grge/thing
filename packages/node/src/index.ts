@@ -8,6 +8,7 @@
 
 export { FileStore } from './filestore.js';
 export { Peer, type PeerOptions } from './peer.js';
+export { FilePetnames } from './petnames.js';
 export {
   channelFor,
   type Connection,

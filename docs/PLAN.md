@@ -366,6 +366,16 @@ notes:
   a third converge because sync already works, and the hub keeps the space, so a
   peer can collect it after the other has gone.
 
+**Also built here: the three naming layers** (§5.4, §5.5), because a CLI that
+needs a 64-character paste for every command is one nobody tests with. A space
+answers to its petname, its own suggested name, its short code, or its key —
+resolved in that order, with an ambiguous name an error rather than a guess.
+
+The short code is in `core` because §5.4 needs it for share links too, so stage
+7 inherits a tested implementation. Petnames live in the store's own directory:
+a petname belongs to the client, and the directory *is* the client — its spaces,
+its keys, its names.
+
 ---
 
 ## Stage 7 — `web`: the browser client

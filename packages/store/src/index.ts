@@ -17,6 +17,14 @@ export { ChainSet, type ChainState, emptyChain, inChainOrder } from './chainstat
 export { decodeEvent, encodeEvent, FRAME_HEADER } from './framing.js';
 export { conformanceTests } from './conformance.js';
 export { MemoryStore } from './memory.js';
+export {
+  namesFor,
+  type PetnameStore,
+  type Resolution,
+  type ResolveFailure,
+  resolveName,
+  type SpaceNames,
+} from './naming.js';
 export type {
   AppendRejection,
   AppendResult,

@@ -21,12 +21,14 @@
  * key is something a person must be able to back up and move, and a real answer
  * belongs with whatever the product decides about identity.
  */
-import { generateKeyPair, hex, type KeyPair, keyPairFromSeed } from '@thing/core';
+import { codeFor, generateKeyPair, hex, type KeyPair, keyPairFromSeed } from '@thing/core';
 import { contentHash, entry, list, makeFile, read, type Space } from '@thing/peer';
+import { namesFor, resolveName, type SpaceNames } from '@thing/store';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import { Peer } from './peer.js';
+import { FilePetnames } from './petnames.js';
 
 const UTF8 = new TextEncoder();
 
@@ -73,15 +75,66 @@ function keyFromHex(s: string): Uint8Array {
   return out;
 }
 
-/** A peer holding one space, with its key if we have it. */
-async function openSpace(id: string): Promise<{ peer: Peer; space: Space }> {
-  const dir = dataDir();
+/**
+ * Everything this client knows a space by (§5.5).
+ *
+ * The suggested name is read from the root, which means opening the space —
+ * cheap for a handful, and the only way to know what a space calls itself.
+ */
+async function knownSpaces(dir: string): Promise<SpaceNames[]> {
   const peer = new Peer({ dir });
-  const key = keyFromHex(id);
-  const writer = await loadKey(dir, id);
-  const space = await peer.hold(key, writer);
+  const petnames = await new FilePetnames(dir).all();
+  const byId = new Map<string, string>();
+  for (const [name, id] of petnames) byId.set(id, name);
+
+  const out: SpaceNames[] = [];
+  try {
+    for (const id of await peer.list()) {
+      const key = keyFromHex(id);
+      const space = await peer.hold(key, await loadKey(dir, id));
+      // The suggested name lives on the root (§3.5), which is a slice map
+      // rather than an object — the root is where a space's own attributes go.
+      const suggested = space?.state.root.get(':name')?.value ?? null;
+      out.push(
+        namesFor(key, {
+          petname: byId.get(id) ?? null,
+          suggested: typeof suggested === 'string' ? suggested : null,
+        }),
+      );
+    }
+  } finally {
+    await peer.close();
+  }
+  return out;
+}
+
+/**
+ * Turn what a person typed into one space.
+ *
+ * Petname, then suggested name, then code, then key prefix (§4.6) — and an
+ * ambiguous name is an error rather than a guess.
+ */
+async function findSpace(dir: string, query: string): Promise<string> {
+  const spaces = await knownSpaces(dir);
+  const found = resolveName(query, spaces);
+  if (found.ok) return found.id;
+  if (found.why.kind === 'ambiguous') {
+    throw new Error(
+      `"${query}" could mean ${found.why.matches.length} spaces: ` +
+        found.why.matches.map((m) => m.slice(0, 8)).join(', '),
+    );
+  }
+  throw new Error(`no space called "${query}"`);
+}
+
+/** A peer holding one space, with its key if we have it. */
+async function openSpace(query: string): Promise<{ peer: Peer; space: Space; id: string }> {
+  const dir = dataDir();
+  const id = await findSpace(dir, query);
+  const peer = new Peer({ dir });
+  const space = await peer.hold(keyFromHex(id), await loadKey(dir, id));
   if (space === null) throw new Error(`could not open ${id}`);
-  return { peer, space };
+  return { peer, space, id };
 }
 
 /** `--flag value` and `--flag=value`, plus positionals. */
@@ -112,12 +165,15 @@ const USAGE = `thing — a peer-to-peer space
 
   thing create [--name X]              mint a space and print its key
   thing list                           spaces held here
+  thing name <space> <petname>         call a space something local
   thing serve [--port N] [--accept]    accept connections
   thing join <key> <url>               dial a peer and sync one space
   thing ls <key>                       what a space contains
   thing put <key> <file> [--as name]   write a file into a space
   thing get <key> <name> [--out file] [--from url]
                                        read one back, fetching if needed
+
+A <space> is a petname, the space's own name, its short code, or its key.
 
 Spaces live in $THING_DIR, or the XDG data directory.`;
 
@@ -141,13 +197,41 @@ async function main(argv: readonly string[]): Promise<number> {
       await peer.close();
 
       process.stdout.write(`${hex(key.publicKey)}\n`);
+      process.stderr.write(`code ${codeFor(key.publicKey)}\n`);
       return 0;
     }
 
     case 'list': {
-      const peer = new Peer({ dir: dataDir() });
-      for (const id of await peer.list()) process.stdout.write(`${id}\n`);
-      await peer.close();
+      // Never an unadorned key: 64 hex characters is unreadable and
+      // untypeable, which is what the code and the names are for (§5.4, §5.5).
+      for (const s of await knownSpaces(dataDir())) {
+        const label = s.petname !== null ? `${s.display} (petname)` : s.display;
+        process.stdout.write(`${s.code}  ${label.padEnd(24)} ${s.id.slice(0, 8)}…\n`);
+      }
+      return 0;
+    }
+
+    case 'name': {
+      // A petname is this client's own (§5.5). Nothing is replicated, and two
+      // clients may call the same space different things.
+      const query = positional[1];
+      const name = positional[2];
+      const dir = dataDir();
+      if (query === undefined) {
+        process.stderr.write('usage: thing name <space> <petname>   (or --forget <petname>)\n');
+        return 2;
+      }
+      const petnames = new FilePetnames(dir);
+      if (flags['forget'] !== undefined) {
+        await petnames.remove(query);
+        return 0;
+      }
+      if (name === undefined) {
+        process.stderr.write('usage: thing name <space> <petname>\n');
+        return 2;
+      }
+      await petnames.set(name, await findSpace(dir, query));
+      process.stdout.write(`${name}\n`);
       return 0;
     }
 
@@ -192,10 +276,13 @@ async function main(argv: readonly string[]): Promise<number> {
 
       const dir = dataDir();
       const peer = new Peer({ dir });
-      await peer.hold(keyFromHex(id), await loadKey(dir, id));
-      await peer.connect(url, keyFromHex(id));
+      // A key, always — joining is how a space this client has never met
+      // arrives, so there is no local name to resolve yet.
+      const key = keyFromHex(id);
+      await peer.hold(key, await loadKey(dir, id));
+      await peer.connect(url, key);
 
-      process.stdout.write(`syncing ${id.slice(0, 8)} with ${url}; ctrl-c to stop\n`);
+      process.stdout.write(`syncing ${codeFor(key)} with ${url}; ctrl-c to stop\n`);
       await new Promise<void>((resolve) => {
         process.on('SIGINT', () => resolve());
         process.on('SIGTERM', () => resolve());
@@ -246,7 +333,7 @@ async function main(argv: readonly string[]): Promise<number> {
         process.stderr.write('usage: thing get <key> <name>\n');
         return 2;
       }
-      const { peer, space } = await openSpace(id);
+      const { peer, space, id: spaceId } = await openSpace(id);
       const found = list(space.state).find((e) => e.name === name);
       if (found === undefined) {
         process.stderr.write(`no such entry: ${name}\n`);
@@ -258,7 +345,7 @@ async function main(argv: readonly string[]): Promise<number> {
         // Events replicate to everyone; blobs are pulled by whoever wants them
         // (§2.4). So the metadata can be here while the content is not, and
         // fetching it means asking a peer.
-        const session = await peer.connect(flags['from']!, keyFromHex(id));
+        const session = await peer.connect(flags['from']!, keyFromHex(spaceId));
         const hash = contentHash(space.state, found.id);
         if (hash !== null) {
           session.requestBlob(hash);
