@@ -18,6 +18,8 @@
   import { hex } from '@thing/core';
   import type { Space } from '@thing/peer';
   import type { Client, SpaceStatus } from '../client.js';
+  import Icon from './Icon.svelte';
+  import type { IconName } from './icons.js';
 
   interface Props {
     client: Client;
@@ -30,6 +32,16 @@
   const { client, space, open, epoch, onclose }: Props = $props();
 
   type Panel = 'log' | 'peers' | 'sync' | 'ephemeral' | 'events';
+
+  /** One per thing worth looking at, in the order they matter when debugging. */
+  const PANELS: { id: Panel; label: string; icon: IconName }[] = [
+    { id: 'log', label: 'activity', icon: 'activity' },
+    { id: 'peers', label: 'peers', icon: 'users' },
+    { id: 'sync', label: 'sync', icon: 'gitFork' },
+    { id: 'ephemeral', label: 'ephemeral', icon: 'radio' },
+    { id: 'events', label: 'state', icon: 'boxes' },
+  ];
+
   let panel = $state<Panel>('log');
 
   const activity = $derived.by(() => {
@@ -97,16 +109,21 @@
 <div class="debug">
   <div class="pane-head">
     <span class="viewswitch" role="group" aria-label="Debug view">
-      {#each [['log', 'activity'], ['peers', 'peers'], ['sync', 'sync'], ['ephemeral', 'ephemeral'], ['events', 'state']] as [id, label] (id)}
+      {#each PANELS as p (p.id)}
         <button
           class="switch"
-          class:on={panel === id}
-          onclick={() => (panel = id as Panel)}>{label}</button
+          class:on={panel === p.id}
+          onclick={() => (panel = p.id)}
+          title={p.label}
+          aria-pressed={panel === p.id}
         >
+          <Icon name={p.icon} />
+          <span class="switch-label">{p.label}</span>
+        </button>
       {/each}
     </span>
     <span class="pane-spacer"></span>
-    <button onclick={onclose} title="Close">close</button>
+    <button onclick={onclose} title="Close" aria-label="Close"><Icon name="x" /></button>
   </div>
 
   <div class="debug-body">

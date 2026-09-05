@@ -10,6 +10,7 @@
    * The key goes in the URL fragment, so it never reaches a server.
    */
   import type { Client, SpaceStatus } from '../client.js';
+  import Icon from './Icon.svelte';
 
   interface Props {
     client: Client;
@@ -47,7 +48,10 @@
   <div class="share-row">
     <span class="share-label">link</span>
     <input class="share-link" readonly value={link} />
-    <button onclick={copy}>{copied ? 'copied' : 'copy'}</button>
+    <button onclick={copy} title={copied ? 'Copied' : 'Copy link'} aria-label="Copy link">
+      <Icon name="copy" />
+      {copied ? 'copied' : ''}
+    </button>
   </div>
 
   <div class="share-row">

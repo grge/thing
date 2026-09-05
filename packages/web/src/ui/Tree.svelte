@@ -8,6 +8,7 @@
    */
   import { hex, type Uuid } from '@thing/core';
   import { type Entry, list, move, remove, rename, restore, type Space } from '@thing/peer';
+  import Icon from './Icon.svelte';
 
   interface Props {
     entries: Entry[];
@@ -88,7 +89,7 @@
           toggle(entry.id);
         }}
         aria-label={expanded.has(hex(entry.id)) ? 'Collapse' : 'Expand'}
-        >{expanded.has(hex(entry.id)) ? '▾' : '▸'}</button
+        ><Icon name={expanded.has(hex(entry.id)) ? 'chevronDown' : 'chevronRight'} size={12} /></button
       >
     {:else}
       <span class="twisty-space"></span>
@@ -98,7 +99,9 @@
 
     {#if entry.object.bodyRuleMissing !== undefined}
       <!-- §3.4: an unknown body rule costs one object, never the space. -->
-      <span class="badge" title="No rule for {entry.object.bodyRuleMissing}">unreadable</span>
+      <span class="badge" title="No rule for {entry.object.bodyRuleMissing}">
+        <Icon name="fileQuestion" size={12} />
+      </span>
     {/if}
 
     {#if writable}
@@ -108,7 +111,8 @@
             e.stopPropagation();
             void doRename(entry);
           }}
-          title="Rename">✎</button
+          title="Rename"
+          aria-label="Rename"><Icon name="pencil" size={12} /></button
         >
         {#if entry.deleted}
           <button
@@ -116,7 +120,8 @@
               e.stopPropagation();
               if (space !== null) void restore(space, entry.id);
             }}
-            title="Restore">↺</button
+            title="Restore"
+            aria-label="Restore"><Icon name="rotate" size={12} /></button
           >
         {:else}
           <button
@@ -124,7 +129,8 @@
               e.stopPropagation();
               if (space !== null) void remove(space, entry.id);
             }}
-            title="Delete">✕</button
+            title="Delete"
+            aria-label="Delete"><Icon name="trash" size={12} /></button
           >
         {/if}
       </span>

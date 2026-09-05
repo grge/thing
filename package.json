@@ -14,7 +14,8 @@
     "build:cli": "esbuild packages/node/src/cli.ts --bundle --platform=node --format=esm --external:ws --external:@noble/* --outfile=packages/node/dist/cli.js",
     "dev": "vite --config packages/web/vite.config.ts",
     "build:web": "vite build --config packages/web/vite.config.ts",
-    "check:web": "svelte-check --tsconfig packages/web/tsconfig.check.json --output human"
+    "check:web": "svelte-check --tsconfig packages/web/tsconfig.check.json --output human",
+    "icons": "node scripts/icons.mjs"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
@@ -22,6 +23,7 @@
     "esbuild": "^0.28.2",
     "fake-indexeddb": "^6.2.5",
     "fast-check": "^4.9.0",
+    "lucide-static": "^1.41.0",
     "svelte": "^5.57.0",
     "svelte-check": "^4.7.6",
     "typescript": "^5.9.3",

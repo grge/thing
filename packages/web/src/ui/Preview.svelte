@@ -10,6 +10,7 @@
   import { hex, type Uuid } from '@thing/core';
   import { contentHash, entry, read, type Space } from '@thing/peer';
   import type { Client } from '../client.js';
+  import Icon from './Icon.svelte';
 
   interface Props {
     client: Client;
@@ -81,7 +82,9 @@
     <div class="preview-head">
       <span class="preview-name">{item.name}</span>
       {#if bytes !== null}
-        <button onclick={download} title="Download">⤓</button>
+        <button onclick={download} title="Download" aria-label="Download"
+          ><Icon name="download" /></button
+        >
       {/if}
     </div>
 

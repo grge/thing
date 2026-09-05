@@ -14,6 +14,7 @@
   import { onMount } from 'svelte';
   import { Client, parseShareLink, type SpaceStatus } from '../client.js';
   import Debug from './Debug.svelte';
+  import Icon from './Icon.svelte';
   import Join from './Join.svelte';
   import Preview from './Preview.svelte';
   import Share from './Share.svelte';
@@ -172,13 +173,25 @@
         {#if s.peers > 0}<span class="tab-peers">{s.peers}</span>{/if}
       </button>
     {/each}
-    <button class="tab-new" onclick={newSpace} title="New space">new</button>
-    <button class="tab-new" class:on={joining} onclick={() => (joining = !joining)} title="Join a space"
-      >join</button
+    <button class="tab-new" onclick={newSpace} title="New space" aria-label="New space">
+      <Icon name="plus" />
+    </button>
+    <button
+      class="tab-new"
+      class:on={joining}
+      onclick={() => (joining = !joining)}
+      title="Join a space"
+      aria-label="Join a space"
+      aria-pressed={joining}><Icon name="logIn" /></button
     >
     <span class="tabs-spacer"></span>
-    <button class="tab-new" class:on={debugging} onclick={() => (debugging = !debugging)}
-      title="What is happening">debug</button
+    <button
+      class="tab-new"
+      class:on={debugging}
+      onclick={() => (debugging = !debugging)}
+      title="What is happening"
+      aria-label="What is happening"
+      aria-pressed={debugging}><Icon name="activity" /></button
     >
   </div>
 
@@ -200,24 +213,32 @@
         <div class="pane-head">
           <span class="pane-title">{active.names.display}</span>
           <span class="pane-actions">
-            <!--
-              Words rather than glyphs. A mixed set of arrows and circles reads
-              as decoration and none of them is unambiguous; at this size a
-              short label is both smaller to parse and honest about what it
-              does.
-            -->
-            <button onclick={addFolder} disabled={!active.writable} title="New folder">folder</button>
+            <button
+              onclick={addFolder}
+              disabled={!active.writable}
+              title="New folder"
+              aria-label="New folder"><Icon name="folderPlus" /></button
+            >
             <button
               onclick={() => fileInput?.click()}
               disabled={!active.writable}
-              title="Add files">add</button
+              title="Add files"
+              aria-label="Add files"><Icon name="upload" /></button
             >
             <button
               class:on={showDeleted}
               onclick={() => (showDeleted = !showDeleted)}
-              title="Show deleted">deleted</button
+              title={showDeleted ? 'Hide deleted' : 'Show deleted'}
+              aria-label={showDeleted ? 'Hide deleted' : 'Show deleted'}
+              aria-pressed={showDeleted}><Icon name={showDeleted ? 'eye' : 'eyeOff'} /></button
             >
-            <button class:on={sharing} onclick={() => (sharing = !sharing)} title="Share">share</button>
+            <button
+              class:on={sharing}
+              onclick={() => (sharing = !sharing)}
+              title="Share"
+              aria-label="Share"
+              aria-pressed={sharing}><Icon name="share" /></button
+            >
           </span>
         </div>
 

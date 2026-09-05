@@ -566,3 +566,50 @@ button.on {
 .chan--signalling {
   color: var(--ink-muted);
 }
+
+/* ── icons ─────────────────────────────────────────────────────────────── */
+
+/*
+ * Icons take their size and colour from the text they sit beside, so a
+ * disabled button dims its icon and a mode-coloured control tints it without
+ * any icon-specific rule.
+ */
+.icon {
+  display: block;
+  flex: none;
+}
+
+button:has(.icon) {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  justify-content: center;
+}
+
+.row-actions button,
+.twisty {
+  color: var(--ink-faint);
+}
+
+.row-actions button:hover,
+.twisty:hover {
+  color: var(--ink);
+}
+
+.badge:has(.icon) {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-1);
+  color: var(--ink-faint);
+}
+
+/* The switcher shows icons; labels appear when there is room. */
+.switch-label {
+  display: none;
+}
+
+@media (min-width: 60rem) {
+  .switch-label {
+    display: inline;
+  }
+}
