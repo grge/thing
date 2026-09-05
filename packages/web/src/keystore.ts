@@ -19,6 +19,7 @@ import { generateKeyPair, type KeyPair, keyPairFromSeed, SEED_LEN } from '@thing
 const KEY_PREFIX = 'thing:key:';
 const SPACES = 'thing:spaces';
 const PETNAMES = 'thing:petnames';
+const LOCATORS = 'thing:locators';
 
 export interface Keystore {
   /** Mint a space: a fresh keypair, stored. */
@@ -34,6 +35,15 @@ export interface Keystore {
   /** What this browser calls a space (§5.5). Local, never replicated. */
   petname(id: string): string | null;
   setPetname(id: string, name: string): void;
+  /**
+   * Where a space was last reached.
+   *
+   * A cached locator, in §5.3's sense: **first tried, first discarded**. It is
+   * stale by default and must never be the reason a space is reported gone —
+   * it exists so reopening a tab does not mean pasting an address again.
+   */
+  locator(id: string): string | null;
+  rememberLocator(id: string, url: string): void;
 }
 
 /**
@@ -82,10 +92,23 @@ export class LocalKeystore implements Keystore {
     const names = this.petnames();
     delete names[id];
     localStorage.setItem(PETNAMES, JSON.stringify(names));
+    const locators = this.map(LOCATORS);
+    delete locators[id];
+    localStorage.setItem(LOCATORS, JSON.stringify(locators));
   }
 
   petname(id: string): string | null {
     return this.petnames()[id] ?? null;
+  }
+
+  locator(id: string): string | null {
+    return this.map(LOCATORS)[id] ?? null;
+  }
+
+  rememberLocator(id: string, url: string): void {
+    const all = this.map(LOCATORS);
+    all[id] = url;
+    localStorage.setItem(LOCATORS, JSON.stringify(all));
   }
 
   setPetname(id: string, name: string): void {
@@ -101,8 +124,12 @@ export class LocalKeystore implements Keystore {
   }
 
   private petnames(): Record<string, string> {
+    return this.map(PETNAMES);
+  }
+
+  private map(key: string): Record<string, string> {
     try {
-      const raw = JSON.parse(localStorage.getItem(PETNAMES) ?? '{}');
+      const raw = JSON.parse(localStorage.getItem(key) ?? '{}');
       return typeof raw === 'object' && raw !== null ? (raw as Record<string, string>) : {};
     } catch {
       return {};

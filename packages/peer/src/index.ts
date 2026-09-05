@@ -23,4 +23,5 @@ export {
   restore,
 } from './files.js';
 
+export { isTextual, kindForName } from './mime.js';
 export { type ChangeListener, Space, type SpaceOptions } from './space.js';

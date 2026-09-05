@@ -71,20 +71,39 @@
 
   async function joinFrom(link: ReturnType<typeof parseShareLink>): Promise<void> {
     if (link === null) return;
-    await client.hold(fromHex(link.key));
+    try {
+      await client.hold(fromHex(link.key));
+      // Visible immediately: connecting can take a moment or fail, and a tab
+      // that appeared only on success would hide a space genuinely held.
+      spaces = client.spaces();
+    } catch (err) {
+      // Opening storage can fail — private browsing denies IndexedDB, and a
+      // blocked database upgrade hangs. Either way, saying so beats a tab
+      // that silently never appears.
+      say(`Could not open that space: ${describe(err)}`);
+      return;
+    }
     activeId = link.key;
     // A link naming a reachable peer works with no signalling at all.
     if (link.locator !== null) {
       try {
         await client.connectTo(link.key, link.locator);
-      } catch {
-        say('That peer could not be reached.');
+        // Refresh again: connecting changes the peer count, and everything
+        // downstream — the footer, whether a file can be fetched — reads it
+        // from here.
+        spaces = client.spaces();
+      } catch (err) {
+        // Say what actually went wrong. A generic "could not connect" hides
+        // the difference between an unreachable address, a refused space and
+        // a storage failure, which are three quite different problems.
+        say(`Could not reach ${link.locator}: ${describe(err)}`);
       }
     } else if (link.token !== null) {
       try {
         await client.meetAt(link.key, link.token);
-      } catch {
-        say('No signalling server, so this space cannot find peers yet.');
+        spaces = client.spaces();
+      } catch (err) {
+        say(`Could not be introduced: ${describe(err)}`);
       }
     }
   }
@@ -101,14 +120,46 @@
     token: string | null;
     locator: string | null;
   }): Promise<void> {
-    joining = false;
+    // Refresh the list *before* closing the form: `joining = false` unmounts
+    // the component this call came from, and a tab only appears once `spaces`
+    // holds the space. Closing first leaves a moment with no form and no tab,
+    // which looks exactly like nothing happened.
     await joinFrom({ ...link, name: null });
     spaces = client.spaces();
+    joining = false;
+  }
+
+  /**
+   * Reconnect a space that is held but has no peers.
+   *
+   * A space can be held with nobody to reach: the address it arrived by is
+   * remembered but stale, or it was never recorded. Either way a person needs
+   * to be able to say where to look — which is what resolution (§5.3) will
+   * eventually do for them, at stage 8.
+   */
+  async function reconnect(): Promise<void> {
+    if (active === null) return;
+    const remembered = client.lastLocator(active.id);
+    const url = prompt('Connect to which peer?', remembered ?? 'ws://127.0.0.1:9944');
+    if (url === null || url.trim() === '') return;
+    try {
+      await client.connectTo(active.id, url.trim());
+      spaces = client.spaces();
+    } catch (err) {
+      say(`Could not reach ${url}: ${describe(err)}`);
+    }
+  }
+
+  function describe(err: unknown): string {
+    return err instanceof Error ? err.message : String(err);
   }
 
   function say(text: string): void {
     message = text;
-    setTimeout(() => (message = null), 4000);
+    // eslint-disable-next-line no-console -- the status bar is one line; the
+    // console is where a person debugging actually looks.
+    console.warn('[thing]', text);
+    setTimeout(() => (message = null), 8000);
   }
 
   async function newSpace(): Promise<void> {
@@ -239,6 +290,12 @@
               aria-label="Share"
               aria-pressed={sharing}><Icon name="share" /></button
             >
+            <button
+              onclick={() => void reconnect()}
+              title={active.peers > 0 ? 'Connected' : 'Connect to a peer'}
+              aria-label="Connect to a peer"
+              disabled={active.peers > 0}><Icon name="link" /></button
+            >
           </span>
         </div>
 
@@ -261,7 +318,7 @@
         </div>
       {:else if selected !== null && space !== null}
         <div class="pane-preview">
-          <Preview {client} spaceId={active.id} {space} id={selected} />
+          <Preview {client} spaceId={active.id} {space} id={selected} peerCount={active.peers} />
         </div>
       {/if}
     </div>

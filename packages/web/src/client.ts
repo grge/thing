@@ -157,12 +157,33 @@ export class Client {
     return this.held.get(id)?.space ?? null;
   }
 
+  /** Where a space was last reached, if this browser remembers (§5.3). */
+  lastLocator(id: string): string | null {
+    return this.keys.locator(id);
+  }
+
   /** Open every space this browser has a record of. */
   async restore(): Promise<void> {
     for (const id of await this.keys.spaces()) {
       await this.hold(fromHex(id));
     }
     this.changed();
+
+    // Reconnect where a space was last reached. Without this a reload leaves
+    // every space held but connected to nobody, so metadata is there and
+    // asking peers for a blob asks no one (§2.4).
+    //
+    // A cached locator is stale by default (§5.3): it is tried, and failing is
+    // ordinary rather than an error worth reporting.
+    for (const id of this.held.keys()) {
+      const url = this.keys.locator(id);
+      if (url === null) continue;
+      try {
+        await this.connectTo(id, url);
+      } catch {
+        this.note('connection', id, `${url} did not answer; it may have moved`);
+      }
+    }
   }
 
   /**
@@ -283,6 +304,8 @@ export class Client {
       since: Date.now(),
       state: 'open',
     });
+    // Remembered so a reload reconnects rather than needing the address again.
+    this.keys.rememberLocator(id, url);
     this.note('connection', id, `dialled ${url}`);
     await session.start();
     this.changed();

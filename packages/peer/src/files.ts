@@ -8,6 +8,7 @@
  * helper, not a subsystem.
  */
 import { attr, childrenOf, type Hash, hex, type ObjectState, ROOT, type State, type Uuid, UUID_LEN } from '@thing/core';
+import { kindForName } from './mime.js';
 import type { Space } from './space.js';
 
 const UTF8 = new TextEncoder();
@@ -62,7 +63,9 @@ export async function makeFile(
 
   await space.write(id, ':name', UTF8.encode(name));
   await space.write(id, ':parent', options.parent ?? ROOT);
-  await space.write(id, ':kind', UTF8.encode(options.kind ?? 'application/octet-stream'));
+  // A guess from the name beats `application/octet-stream` on every file: a
+  // caller that knows better passes `kind`, and a browser always does.
+  await space.write(id, ':kind', UTF8.encode(options.kind ?? kindForName(name)));
   await space.write(id, ':body', hash);
 
   return { id, hash };
