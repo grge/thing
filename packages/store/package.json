@@ -10,5 +10,6 @@
   },
   "dependencies": {
     "@thing/core": "*"
-  }
+  },
+  "types": "./src/index.ts"
 }

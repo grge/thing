@@ -118,6 +118,28 @@ export class Space {
   }
 
   /**
+   * Fold events that are already in the log.
+   *
+   * For a caller that appended them itself — a sync session, which must write
+   * to storage before acknowledging anything (§2.3), and then needs the fold to
+   * catch up. Going through `receive` would refuse them as duplicates and fold
+   * nothing, which is the correct behaviour for *new* events and the wrong one
+   * here.
+   *
+   * Safe because folding is idempotent: an event folded twice changes nothing.
+   */
+  absorb(events: readonly Event[]): void {
+    // A connection can deliver events while the space is closing, and there is
+    // nothing wrong with that: the events are already in the log, so dropping
+    // the *fold* of them loses nothing — reopening replays them. Throwing here
+    // would turn an ordinary shutdown race into an unhandled rejection.
+    if (this.closed || events.length === 0) return;
+    this.folder.apply(events);
+    this.writerState?.observe(events);
+    this.emit();
+  }
+
+  /**
    * Write one event: mint, sign, append, fold.
    *
    * Goes through `receive`, so a local write takes exactly the same path as a

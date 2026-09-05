@@ -351,6 +351,21 @@ strangers; refusing means a space must be introduced before it can be synced.
 restarts and resumes from disk, two peers that dial only a third converge
 through it, and nothing here imports anything browser-specific.
 
+**Done.** A `Peer` over both halves of a WebSocket transport, plus a CLI. Three
+notes:
+
+- **Two things were missing that only a real connection reveals.** A session
+  built for an outbound connection was never told where to deliver frames, and
+  nothing pushed events written *after* the handshake — reconciliation runs once,
+  so a live connection went silently stale the moment either side wrote.
+- **`Space.absorb` exists because a session appends before folding.** Storage
+  verifies and admits (§2.3), so by the time the fold should advance, the events
+  are already in the log — and `receive` would refuse them as duplicates and fold
+  nothing. Folding is idempotent, so absorbing them directly is safe.
+- **The hub case needed no code**, which was the claim. Two peers that dial only
+  a third converge because sync already works, and the hub keeps the space, so a
+  peer can collect it after the other has gone.
+
 ---
 
 ## Stage 7 — `web`: the browser client

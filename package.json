@@ -10,10 +10,12 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "tsc --build",
-    "check:clean": "tsc --build --clean"
+    "check:clean": "tsc --build --clean",
+    "build:cli": "esbuild packages/node/src/cli.ts --bundle --platform=node --format=esm --external:ws --external:@noble/* --outfile=packages/node/dist/cli.js"
   },
   "devDependencies": {
     "@types/node": "^26.4.0",
+    "esbuild": "^0.28.2",
     "fake-indexeddb": "^6.2.5",
     "fast-check": "^4.9.0",
     "typescript": "^5.9.3",
@@ -21,6 +23,8 @@
   },
   "dependencies": {
     "@noble/ed25519": "^3.2.0",
-    "@noble/hashes": "^2.4.0"
+    "@noble/hashes": "^2.4.0",
+    "@types/ws": "^8.18.1",
+    "ws": "^8.21.3"
   }
 }

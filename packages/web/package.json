@@ -13,5 +13,6 @@
     "@thing/net": "*",
     "@thing/store": "*",
     "@thing/peer": "*"
-  }
+  },
+  "types": "./src/index.ts"
 }

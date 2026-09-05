@@ -12,6 +12,11 @@
     "@thing/core": "*",
     "@thing/net": "*",
     "@thing/store": "*",
-    "@thing/peer": "*"
-  }
+    "@thing/peer": "*",
+    "ws": "^8.21.3"
+  },
+  "bin": {
+    "thing": "./dist/cli.js"
+  },
+  "types": "./src/index.ts"
 }

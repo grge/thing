@@ -12,5 +12,6 @@
     "@thing/core": "*",
     "@thing/net": "*",
     "@thing/store": "*"
-  }
+  },
+  "types": "./src/index.ts"
 }

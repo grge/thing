@@ -272,6 +272,24 @@ export class Session {
     if (batch.length > 0) this.send({ type: 'EVENTS', events: batch.map(toWire) });
   }
 
+  /**
+   * Push events to the peer.
+   *
+   * Reconciliation happens once, when vectors are exchanged. Everything written
+   * *after* that has to be pushed, or two connected peers would each sit on
+   * their own new events until something forced another handshake — which is
+   * how a live connection ends up silently stale.
+   *
+   * The receiver verifies and deduplicates as always, so pushing something it
+   * already holds costs a message and nothing else.
+   */
+  push(events: readonly Event[]): void {
+    if (events.length === 0) return;
+    for (let at = 0; at < events.length; at += BATCH) {
+      this.send({ type: 'EVENTS', events: events.slice(at, at + BATCH).map(toWire) });
+    }
+  }
+
   /** Ask a peer for a blob, resuming where an earlier attempt stopped. */
   requestBlob(hash: Uint8Array): void {
     const h = hex(hash);

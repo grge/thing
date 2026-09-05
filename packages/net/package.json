@@ -11,5 +11,6 @@
   "dependencies": {
     "@thing/core": "*",
     "@thing/store": "*"
-  }
+  },
+  "types": "./src/index.ts"
 }

@@ -247,7 +247,11 @@ export class FileStore implements Store {
 
   async list(): Promise<readonly SpaceId[]> {
     try {
-      return await readdir(this.root);
+      const names = await readdir(this.root);
+      // A space is a directory named by its key. Anything else in here belongs
+      // to whoever chose the directory — the CLI keeps key files alongside —
+      // and is not a space.
+      return names.filter((n) => n.length === 64 && /^[0-9a-f]+$/.test(n));
     } catch {
       return [];
     }
