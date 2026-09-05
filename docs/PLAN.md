@@ -297,6 +297,21 @@ starting states, a fork is detected and reported, a 4 MB blob transfers
 byte-exact with resume, and an ephemeral message expires without ever reaching
 storage.
 
+**Done.** Four modules — protocol, sync, blobs, ephemeral — plus a `Session`
+that drives one connection. Three notes:
+
+- **Three channels share one connection**, separated by a tag byte: control,
+  chunks, ephemeral. The separation is what makes "ephemeral messages are never
+  stored" structural rather than a rule something has to remember, and there is
+  a test asserting a presence message and a `HAVE` leave the log untouched.
+- **A fork is reported once.** Both peers detect the same divergence
+  independently *and* tell each other, so the first implementation surfaced one
+  fork three times. Keyed by writer and both tips, so a genuinely new divergence
+  is still reported.
+- **`Session` is the only place that touches a store.** Everything below it —
+  reconciliation, chunking, expiry — is pure, so the cases worth testing are
+  reachable without a network.
+
 ---
 
 ## Stage 6 — `node`: the headless peer
