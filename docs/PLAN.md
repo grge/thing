@@ -447,6 +447,23 @@ notes on what was written:
 
 ---
 
+## Stage 7.5 — Administering a running peer
+
+Designed in `ADMIN.md`; not started. Pulled out of stage 7 because manual
+testing exposed it as a correctness bug rather than a missing convenience:
+`thing put` appends to a served space's log with no lock and no way to tell the
+running server, so a write is invisible until restart and two writers can fork
+a chain on one machine.
+
+Three pieces: an exclusive lock in `SpaceStore` (covered by the conformance
+suite), a control socket on `serve`, and a CLI that asks the holder when there
+is one. See `ADMIN.md` for the operator command set and the open questions —
+chiefly whether the control socket speaks the sync protocol or one of its own.
+
+**Done when:** `thing put` against a running `serve` reaches connected peers
+without a restart, and opening a held space from a second process fails with a
+clear error instead of appending alongside it.
+
 ## Stage 8 — Resolution and the mesh
 
 §5.3, which the archived tree never had.

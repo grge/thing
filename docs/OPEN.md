@@ -173,6 +173,13 @@ looks like as a directory, how a body rule other than blob is presented, what
 happens to attributes with no filesystem analogue. Noted because the design
 happens to be shaped for it.
 
+**Administering a running peer.** Designed in `ADMIN.md`, not built. The
+current CLI writes to a space's directory behind a running `serve`, which does
+not reach the server's in-memory fold *and* races its appends with no lock —
+the hazard `writelock.ts` already solves for browser tabs, one layer down and
+unsolved. The fix is structural: one writer per space, and a control socket so
+the CLI is a client of its own server rather than a second writer.
+
 ---
 
 ## Next
