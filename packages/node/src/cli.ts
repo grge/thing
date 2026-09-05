@@ -164,7 +164,8 @@ function parse(argv: readonly string[]): {
 const USAGE = `thing — a peer-to-peer space
 
   thing create [--name X]              mint a space and print its key
-  thing list                           spaces held here
+  thing list [--keys]                  spaces held here
+  thing key <space>                    a space's full key, for sharing
   thing name <space> <petname>         call a space something local
   thing serve [--port N] [--accept]    accept connections
   thing join <key> <url>               dial a peer and sync one space
@@ -202,12 +203,33 @@ async function main(argv: readonly string[]): Promise<number> {
     }
 
     case 'list': {
-      // Never an unadorned key: 64 hex characters is unreadable and
-      // untypeable, which is what the code and the names are for (§5.4, §5.5).
-      for (const s of await knownSpaces(dataDir())) {
-        const label = s.petname !== null ? `${s.display} (petname)` : s.display;
-        process.stdout.write(`${s.code}  ${label.padEnd(24)} ${s.id.slice(0, 8)}…\n`);
+      // The code and the name are for *using* a space here; the key is for
+      // sharing it, and `join` needs all 64 characters. A truncated prefix
+      // serves neither purpose, so it is either shown whole or not at all.
+      const spaces = await knownSpaces(dataDir());
+      if (flags['keys'] !== undefined) {
+        for (const s of spaces) process.stdout.write(`${s.id}\n`);
+        return 0;
       }
+      for (const s of spaces) {
+        const label = s.petname !== null ? `${s.display} (petname)` : s.display;
+        process.stdout.write(`${s.code}  ${label}\n`);
+      }
+      if (spaces.length > 0) {
+        process.stderr.write(`\n${spaces.length} space(s). --keys for full keys, or: thing key <space>\n`);
+      }
+      return 0;
+    }
+
+    case 'key': {
+      // The full key, for sharing. Nothing else prints one, because everything
+      // else is about using a space this client already holds.
+      const query = positional[1];
+      if (query === undefined) {
+        process.stderr.write('usage: thing key <space>\n');
+        return 2;
+      }
+      process.stdout.write(`${await findSpace(dataDir(), query)}\n`);
       return 0;
     }
 
@@ -407,6 +429,14 @@ async function main(argv: readonly string[]): Promise<number> {
       return command === undefined || command === 'help' ? 0 : 2;
   }
 }
+
+// `thing list | head -1` closes stdout early, and an unhandled EPIPE would
+// crash rather than exit quietly. A CLI that cannot be piped is a CLI nobody
+// pipes.
+process.stdout.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EPIPE') process.exit(0);
+  throw err;
+});
 
 main(process.argv.slice(2))
   .then((code) => {
