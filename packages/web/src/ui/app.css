@@ -398,3 +398,171 @@ input {
 .status-message {
   color: var(--ink);
 }
+
+/* ── join ──────────────────────────────────────────────────────────────── */
+
+.join {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--canvas-raised);
+  border-bottom: 1px solid var(--rule);
+}
+
+.join-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.join-label {
+  color: var(--ink-faint);
+  width: 3rem;
+  flex: none;
+}
+
+.join-input {
+  flex: 1;
+  font-family: var(--font-data);
+  font-size: var(--text--2);
+}
+
+.join-note {
+  margin: 0;
+  color: var(--ink-faint);
+  font-size: var(--text--2);
+}
+
+.join-note--bad {
+  color: var(--danger);
+}
+
+.join-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.join-actions button,
+.empty-actions button {
+  border-color: var(--rule);
+}
+
+.empty-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* ── debug ─────────────────────────────────────────────────────────────── */
+
+.debug {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.debug-body {
+  flex: 1;
+  overflow: auto;
+  padding: var(--space-2);
+}
+
+.pane-spacer {
+  flex: 1;
+}
+
+.viewswitch {
+  display: flex;
+  gap: 1px;
+}
+
+.switch,
+button.on {
+  color: var(--ink);
+  background: var(--canvas-sunken);
+}
+
+.switch {
+  color: var(--ink-faint);
+  background: transparent;
+}
+
+.switch.on {
+  color: var(--ink);
+  background: var(--canvas-sunken);
+}
+
+.debug-head {
+  margin: var(--space-3) 0 var(--space-1);
+  font-size: var(--text--2);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-faint);
+}
+
+.debug-head:first-child {
+  margin-top: 0;
+}
+
+.debug-note {
+  margin: var(--space-2) 0;
+  color: var(--ink-faint);
+  font-size: var(--text--2);
+  max-width: var(--measure);
+}
+
+.debug-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text--2);
+}
+
+.debug-table th {
+  text-align: left;
+  font-weight: 400;
+  color: var(--ink-faint);
+  border-bottom: 1px solid var(--rule);
+  padding: 0 var(--space-2) var(--space-1) 0;
+}
+
+.debug-table td {
+  padding: 1px var(--space-2) 1px 0;
+  vertical-align: top;
+}
+
+.debug-table .num {
+  text-align: right;
+  font-family: var(--font-data);
+}
+
+.debug-table .muted {
+  color: var(--ink-faint);
+}
+
+.debug-table .value {
+  font-family: var(--font-data);
+  word-break: break-all;
+}
+
+.has-gap {
+  color: var(--danger);
+}
+
+/* Which channel a line came from (§10), since that is the real structure. */
+.chan {
+  font-size: var(--text--2);
+  color: var(--ink-faint);
+}
+
+.chan--log {
+  color: var(--mode-writer);
+}
+
+.chan--ephemeral {
+  color: var(--mode-reader);
+}
+
+.chan--connection,
+.chan--signalling {
+  color: var(--ink-muted);
+}

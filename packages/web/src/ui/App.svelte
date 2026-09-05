@@ -13,6 +13,8 @@
   import { list, makeFile, makeFolder } from '@thing/peer';
   import { onMount } from 'svelte';
   import { Client, parseShareLink, type SpaceStatus } from '../client.js';
+  import Debug from './Debug.svelte';
+  import Join from './Join.svelte';
   import Preview from './Preview.svelte';
   import Share from './Share.svelte';
   import Tree from './Tree.svelte';
@@ -26,6 +28,8 @@
   let selected = $state<Uuid | null>(null);
   let showDeleted = $state(false);
   let sharing = $state(false);
+  let joining = $state(false);
+  let debugging = $state(false);
   let message = $state<string | null>(null);
   let fileInput = $state<HTMLInputElement | null>(null);
   /** Bumped on every client change, so derived values recompute. */
@@ -82,6 +86,23 @@
         say('No signalling server, so this space cannot find peers yet.');
       }
     }
+  }
+
+  /**
+   * Join a space by link or key.
+   *
+   * This browser has no writing key for it, so it opens as a replica: it
+   * stores, verifies and serves, and cannot write (§6.1). That is not a
+   * degraded state — it is what most participants are.
+   */
+  async function join(link: {
+    key: string;
+    token: string | null;
+    locator: string | null;
+  }): Promise<void> {
+    joining = false;
+    await joinFrom({ ...link, name: null });
+    spaces = client.spaces();
   }
 
   function say(text: string): void {
@@ -151,31 +172,52 @@
         {#if s.peers > 0}<span class="tab-peers">{s.peers}</span>{/if}
       </button>
     {/each}
-    <button class="tab-new" onclick={newSpace} title="New space" aria-label="New space">+</button>
+    <button class="tab-new" onclick={newSpace} title="New space">new</button>
+    <button class="tab-new" class:on={joining} onclick={() => (joining = !joining)} title="Join a space"
+      >join</button
+    >
     <span class="tabs-spacer"></span>
+    <button class="tab-new" class:on={debugging} onclick={() => (debugging = !debugging)}
+      title="What is happening">debug</button
+    >
   </div>
+
+  {#if joining}
+    <Join onjoin={(link) => void join(link)} oncancel={() => (joining = false)} />
+  {/if}
 
   {#if active === null}
     <div class="empty">
       <p>No spaces yet.</p>
-      <button onclick={newSpace}>Create one</button>
+      <span class="empty-actions">
+        <button onclick={newSpace}>Create one</button>
+        <button onclick={() => (joining = true)}>Join one</button>
+      </span>
     </div>
   {:else}
-    <div class="panes" class:has-selection={selected !== null}>
+    <div class="panes" class:has-selection={selected !== null || debugging}>
       <div class="pane-tree">
         <div class="pane-head">
           <span class="pane-title">{active.names.display}</span>
           <span class="pane-actions">
-            <button onclick={addFolder} disabled={!active.writable} title="New folder">＋</button>
+            <!--
+              Words rather than glyphs. A mixed set of arrows and circles reads
+              as decoration and none of them is unambiguous; at this size a
+              short label is both smaller to parse and honest about what it
+              does.
+            -->
+            <button onclick={addFolder} disabled={!active.writable} title="New folder">folder</button>
             <button
               onclick={() => fileInput?.click()}
               disabled={!active.writable}
-              title="Add files">⇪</button
+              title="Add files">add</button
             >
-            <button onclick={() => (showDeleted = !showDeleted)} title="Show deleted"
-              >{showDeleted ? '◉' : '◎'}</button
+            <button
+              class:on={showDeleted}
+              onclick={() => (showDeleted = !showDeleted)}
+              title="Show deleted">deleted</button
             >
-            <button onclick={() => (sharing = !sharing)} title="Share">⤴</button>
+            <button class:on={sharing} onclick={() => (sharing = !sharing)} title="Share">share</button>
           </span>
         </div>
 
@@ -192,7 +234,11 @@
         />
       </div>
 
-      {#if selected !== null && space !== null}
+      {#if debugging}
+        <div class="pane-preview">
+          <Debug {client} space={active} open={space} {epoch} onclose={() => (debugging = false)} />
+        </div>
+      {:else if selected !== null && space !== null}
         <div class="pane-preview">
           <Preview {client} spaceId={active.id} {space} id={selected} />
         </div>

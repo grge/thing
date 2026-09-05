@@ -29,6 +29,24 @@ export interface PeerStatus {
   readonly id: string;
   readonly kind: PeerKind;
   readonly space: string;
+  readonly since: number;
+  /** Where the connection got to, for a connection that did not open. */
+  readonly state: 'connecting' | 'open' | 'failed';
+  readonly detail?: string;
+}
+
+/**
+ * Something worth showing an operator.
+ *
+ * Not protocol: a peer that says nothing is one you cannot tell is working, and
+ * the three channels (§10) are otherwise invisible. Kept bounded, because this
+ * is a debugging aid and not a log.
+ */
+export interface Activity {
+  readonly at: number;
+  readonly channel: 'connection' | 'log' | 'blob' | 'ephemeral' | 'signalling';
+  readonly space: string | null;
+  readonly text: string;
 }
 
 /** What a view needs to know about one space, without folding anything itself. */
@@ -63,7 +81,10 @@ interface Held {
   readonly store: SpaceStore;
   readonly space: Space;
   readonly sessions: Map<string, Session>;
-  readonly connections: Map<string, { close(): void; kind: PeerKind }>;
+  readonly connections: Map<
+    string,
+    { close(): void; kind: PeerKind; since: number; state: 'connecting' | 'open' | 'failed'; detail?: string }
+  >;
   readonly lock: WriteLock;
   forks: Divergence[];
 }
@@ -73,6 +94,9 @@ export class Client {
   private readonly held = new Map<string, Held>();
   private readonly listeners = new Set<() => void>();
   private signalling: WebSocketSignalling | null = null;
+  /** Recent activity, newest first. Bounded: a debugging aid, not a log. */
+  private readonly activity: Activity[] = [];
+  private static readonly ACTIVITY_LIMIT = 200;
 
   constructor(
     private readonly keys: Keystore = new LocalKeystore(),
@@ -87,6 +111,29 @@ export class Client {
 
   private changed(): void {
     for (const listener of this.listeners) listener();
+  }
+
+  /** Note something an operator might want to see. */
+  private note(channel: Activity['channel'], space: string | null, text: string): void {
+    this.activity.unshift({ at: Date.now(), channel, space, text });
+    if (this.activity.length > Client.ACTIVITY_LIMIT) this.activity.length = Client.ACTIVITY_LIMIT;
+    this.changed();
+  }
+
+  /** Recent activity across all three channels, newest first. */
+  recent(): readonly Activity[] {
+    return this.activity;
+  }
+
+  /** What a peer told us it holds, for a space (§2.4, §10). */
+  availability(id: string): { peer: string; blobs: number }[] {
+    const entry = this.held.get(id);
+    if (entry === undefined) return [];
+    return [...entry.sessions].map(([peer, session]) => ({
+      peer,
+      // Only what this session's peer advertised; presence is per-connection.
+      blobs: session.ephemeral.present().size,
+    }));
   }
 
   /* ── spaces ───────────────────────────────────────────────────────────── */
@@ -225,9 +272,18 @@ export class Client {
       const data = (event as MessageEvent).data;
       if (data instanceof ArrayBuffer) void session.receive(new Uint8Array(data));
     });
-    socket.addEventListener('close', () => this.detach(entry, `ws:${url}`));
+    socket.addEventListener('close', () => {
+      this.note('connection', id, `${url} closed`);
+      this.detach(entry, `ws:${url}`);
+    });
 
-    entry.connections.set(`ws:${url}`, { close: () => socket.close(), kind: 'direct' });
+    entry.connections.set(`ws:${url}`, {
+      close: () => socket.close(),
+      kind: 'direct',
+      since: Date.now(),
+      state: 'open',
+    });
+    this.note('connection', id, `dialled ${url}`);
     await session.start();
     this.changed();
   }
@@ -250,6 +306,7 @@ export class Client {
     this.signalling = signalling;
 
     signalling.onPeer((peer) => {
+      this.note('signalling', id, `introduced to ${peer}`);
       void (async () => {
         try {
           const conn = await connectVia(signalling, peer, {
@@ -259,14 +316,20 @@ export class Client {
             ...this.options.rtc,
           });
           this.adopt(entry, conn);
-        } catch {
+        } catch (err) {
           // A peer that could not be reached is ordinary — it may have gone,
-          // or be behind something ICE could not traverse.
-          this.changed();
+          // or be behind something ICE could not traverse. Worth saying so
+          // rather than failing silently.
+          this.note(
+            'connection',
+            id,
+            `could not reach ${peer}: ${err instanceof Error ? err.message : 'unknown'}`,
+          );
         }
       })();
     });
 
+    this.note('signalling', id, `waiting at ${token}`);
     await signalling.join(token);
   }
 
@@ -274,7 +337,13 @@ export class Client {
     const session = this.attach(entry, conn.peer, 'introduced', conn.channel);
     conn.onFrame((data) => void session.receive(data));
     conn.onClose(() => this.detach(entry, conn.peer));
-    entry.connections.set(conn.peer, { close: () => conn.close(), kind: 'introduced' });
+    entry.connections.set(conn.peer, {
+      close: () => conn.close(),
+      kind: 'introduced',
+      since: Date.now(),
+      state: 'open',
+    });
+    this.note('connection', hex(entry.key), `data channel open to ${conn.peer}`);
     void session.start();
     this.changed();
   }
@@ -291,21 +360,27 @@ export class Client {
         // §2.3: reported, never silently ignored, and never fatal — a fork is
         // confined to one writer's chain.
         entry.forks = [...entry.forks, fork];
-        this.changed();
+        this.note(
+          'log',
+          hex(entry.key),
+          `FORK: writer ${fork.writer.slice(0, 8)} diverged at ${fork.frontier}`,
+        );
       },
       onEvents: (events) => {
         // The session appended these already, so the fold is advanced directly
         // — `receive` would refuse them as duplicates and fold nothing.
         entry.space.absorb(events);
-        this.changed();
+        this.note('log', hex(entry.key), `${events.length} event(s) from ${peer}`);
       },
-      onBlob: () => this.changed(),
+      onBlob: (hash, bytes) =>
+        this.note('blob', hex(entry.key), `${hex(hash).slice(0, 8)} — ${bytes.length} bytes`),
     });
     entry.sessions.set(peer, session);
     return session;
   }
 
   private detach(entry: Held, peer: string): void {
+    this.note('connection', hex(entry.key), `${peer} gone`);
     entry.sessions.get(peer)?.close();
     entry.sessions.delete(peer);
     entry.connections.delete(peer);
@@ -336,7 +411,14 @@ export class Client {
     const out: PeerStatus[] = [];
     for (const [id, entry] of this.held) {
       for (const [peer, conn] of entry.connections) {
-        out.push({ id: peer, kind: conn.kind, space: id });
+        out.push({
+          id: peer,
+          kind: conn.kind,
+          space: id,
+          since: conn.since,
+          state: conn.state,
+          ...(conn.detail === undefined ? {} : { detail: conn.detail }),
+        });
       }
     }
     return out;
