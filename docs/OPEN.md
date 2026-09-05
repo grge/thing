@@ -173,12 +173,25 @@ looks like as a directory, how a body rule other than blob is presented, what
 happens to attributes with no filesystem analogue. Noted because the design
 happens to be shaped for it.
 
-**Administering a running peer.** Designed in `ADMIN.md`, not built. The
-current CLI writes to a space's directory behind a running `serve`, which does
-not reach the server's in-memory fold *and* races its appends with no lock —
-the hazard `writelock.ts` already solves for browser tabs, one layer down and
-unsolved. The fix is structural: one writer per space, and a control socket so
-the CLI is a client of its own server rather than a second writer.
+**Holders and clients.** Designed in `ADMIN.md`, not built. The current CLI
+writes to a space's directory behind a running `serve`, which does not reach the
+server's in-memory fold *and* races its appends with no lock — the hazard
+`writelock.ts` already solves for browser tabs, one layer down and unsolved.
+
+The fix is a role split the architecture already implies: a **holder** owns a
+space's log and there is exactly one; a **client** asks a holder to do things.
+Editing is what clients do, over the sync protocol, exactly as the browser does
+today — so the CLI needs no new mechanism for `put`, only the discipline of
+asking the holder. A separate local control socket carries the small set a
+remote peer must never invoke (`shutdown`, `hold`, `drop`).
+
+**A terminal client.** Falls out of the same split: a TUI is a client with a
+different renderer. `Client` in `packages/web` is already close to portable —
+its cross-package imports are platform-neutral and everything browser-specific
+is an injected dependency (store, keystore, lock, transport, signalling). Lift
+it into a shared package and a TUI is that loop drawing to a terminal. Not
+scheduled, and not to be started before the shared client exists: building it
+against the web client directly would fork the logic.
 
 ---
 

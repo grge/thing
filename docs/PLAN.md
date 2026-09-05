@@ -447,7 +447,7 @@ notes on what was written:
 
 ---
 
-## Stage 7.5 — Administering a running peer
+## Stage 7.5 — Holders and clients
 
 Designed in `ADMIN.md`; not started. Pulled out of stage 7 because manual
 testing exposed it as a correctness bug rather than a missing convenience:
@@ -455,14 +455,23 @@ testing exposed it as a correctness bug rather than a missing convenience:
 running server, so a write is invisible until restart and two writers can fork
 a chain on one machine.
 
-Three pieces: an exclusive lock in `SpaceStore` (covered by the conformance
-suite), a control socket on `serve`, and a CLI that asks the holder when there
-is one. See `ADMIN.md` for the operator command set and the open questions —
-chiefly whether the control socket speaks the sync protocol or one of its own.
+Four pieces: an exclusive lock in `SpaceStore` (covered by the conformance
+suite), a CLI that connects to the holder when there is one, a local control
+socket for the verbs a remote peer must never invoke, and — lifting `Client`
+out of `packages/web` — a shared client core the terminal can reuse.
 
 **Done when:** `thing put` against a running `serve` reaches connected peers
 without a restart, and opening a held space from a second process fails with a
 clear error instead of appending alongside it.
+
+## Stage 7.6 — A terminal client
+
+Not scheduled; depends on the shared client core from 7.5. A TUI with the web
+client's shape — tree, preview, peers, activity — attached to a running holder
+over the control socket, or standalone holding its own spaces. See `ADMIN.md`.
+
+Not to be started before the shared client exists: building it against the web
+client directly would fork the logic, which is the outcome worth avoiding.
 
 ## Stage 8 — Resolution and the mesh
 
