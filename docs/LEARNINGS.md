@@ -10,7 +10,53 @@ found, so that when a rewrite happens there is something better than memory.
 
 ---
 
-## 1. `writer` is three concepts wearing one name
+## 1. Signing proves authority, not attribution — and nothing else does either
+
+**The deepest of these**, and the one several others are symptoms of.
+
+A signature currently answers **"was a key entitled to make this write?"** It
+does not answer **"who made this change?"**, and no other part of the system does
+either. Those look like the same question and are not: the first is about
+permission, the second is about a person, and this design only ever built the
+first.
+
+Three places where the gap shows, in increasing severity:
+
+**A user is a different key in every space.** `mint()` produces a keypair per
+space, so there is nothing that says two writers in two spaces are one person.
+Nobody can be followed, and "what has Alice been doing" is not expressible.
+
+**The space key is one key with several holders.** §7.2.1 admits root events on
+a signature from the space key alone. So two people co-administering a space —
+adding a writer, renaming — must *share that key*. At that point the log records
+that the space key granted access and **cannot record which of them did it**.
+This is not a missing feature; attribution is actively destroyed by the
+mechanism that provides authority. Sharing a key is how the design intends
+shared administration to work.
+
+**A key does not name a person even in principle.** Keys are stored as raw seeds
+(§5.1) and are meant to be movable between devices. A key proves possession of a
+secret; it never proved a person, and nothing above it makes that leap.
+
+**What follows.** If this system is ever meant to have a social dimension —
+people with a presence, changes attributable to them, someone to follow — that is
+not a feature to add later on top of what exists. It needs identity to be a
+first-class thing that is *distinct from* both the space key and the writer key,
+with signing carrying attribution alongside authority. That is roughly what
+Keyhive separates (capabilities delegated to keys, identity deliberately left to
+a layer above) and what SSB's fusion identity gropes toward.
+
+It also reframes the two decisions taken in `APPEND-POINTS.md`. Opaque points
+were chosen partly because "there is no Alice for a certificate to bind to" —
+which is correct today and is exactly the thing a social system would have to
+change first.
+
+**Carry forward:** decide early whether signatures attribute or merely authorise.
+They are separable, most of the cost is in choosing late, and the current answer
+— authority only — was never explicitly chosen. It fell out of using one key for
+identity, authority and chain position at once.
+
+## 2. `writer` is three concepts wearing one name
 
 Today one field answers three different questions:
 
@@ -23,13 +69,14 @@ Today one field answers three different questions:
 `APPEND-POINTS.md` splits the second off. The first and third are still fused,
 and the level above all of them — **a person, stable across spaces** — does not
 exist at all: a writer key is minted per space, and is the space key for the
-space's creator.
+space's creator. That missing level is §1 above; this entry is the mechanical
+half of the same problem.
 
 **Carry forward:** decide the identity model *before* the event envelope.
 Everything downstream inherits its shape, and the envelope is the hardest thing
 to change once logs exist.
 
-## 2. Dense sequence numbers were chosen for sync and paid for everywhere else
+## 3. Dense sequence numbers were chosen for sync and paid for everywhere else
 
 `seq` exists so a version vector can say "I hold 0–47 contiguous". That is a
 genuinely good property: cheap to compute, cheap to compare, cheap on the wire.
@@ -49,7 +96,7 @@ lock is needed, whether the CLI is a peer, and what sync costs. Make it
 explicitly and early, with the downstream consequences written down, rather than
 as an implementation detail of "how do we detect gaps".
 
-## 3. Design pressure is a signal, and it was ignored twice
+## 4. Design pressure is a signal, and it was ignored twice
 
 The admin-tooling design got steadily more elaborate — a control API, then a
 write verb, then a split between reads and writes, then a fifth transport — and
@@ -66,7 +113,7 @@ as exceptional rather than as something two of your own processes do routinely.
 **Carry forward:** when a design keeps needing another layer to work around one
 sentence in the spec, suspect the sentence.
 
-## 4. A constraint stated as a premise stops being questioned
+## 5. A constraint stated as a premise stops being questioned
 
 §7.3 opens with *"a private key is meant to be held by one device at a time"*
 and then spends a section on surviving the violation. Stated that way it reads
@@ -76,7 +123,7 @@ as a fact about keys rather than as a consequence of a choice made in §2.1.
 produces it. "One device at a time, *because* `seq` is dense" invites the
 question that "one device at a time" closes.
 
-## 5. Invariants leak into distant sections without saying so
+## 6. Invariants leak into distant sections without saying so
 
 §6 proposes deriving the encryption nonce from `(writer, seq)`, unique "by
 construction under §7.3's constraint". That is a load-bearing dependency between
@@ -88,7 +135,7 @@ would silently produce nonce reuse under one key.
 declared where the invariant is *defined*, not only where it is used. §2.1 should
 say what depends on chain uniqueness.
 
-## 6. Package boundaries hid a missing layer
+## 7. Package boundaries hid a missing layer
 
 Four packages (`core`, `store`, `net`, `peer`) with nothing importing a subset
 of them. The split bought nothing measurable and cost something real: `peer`
@@ -101,7 +148,7 @@ were the same 300 lines twice.
 others, not to express layering. Layering is a reading order; a directory
 expresses it fine.
 
-## 7. Some bugs are only reachable from two processes
+## 8. Some bugs are only reachable from two processes
 
 The duplicate-frame-handler bug passed 324 unit tests and was found by running
 two real peers and noticing a delivery count double against a baseline. The
@@ -112,7 +159,21 @@ reachable from a single-process test.
 start, and record baseline counters (events delivered, sessions opened) so a
 doubling is visible rather than merely plausible.
 
-## 8. Small verification failures are silent
+## 9. The spec's reasoning is usually better than a first read of it
+
+Twice now a section looked like an arbitrary restriction and turned out to be
+load-bearing once the *why* was read. §7.2.1 ("only the space key writes the
+root") reads as a limitation; it exists to remove a genuine circularity — the
+writer set lives on the root, the root is materialised by the fold, the fold
+excludes non-writers — and §7.2 records that the obvious fix of folding twice
+lets a stranger write "I am a writer" and be believed. §6's nonce clause is the
+same pattern: a rule whose dependency is stated once, in passing.
+
+**Carry forward:** where a section states a rule, state what breaks without it
+in the same breath. Both of these did explain themselves, but far enough from
+the rule that the rule could be read alone and misjudged.
+
+## 10. Small verification failures are silent
 
 `grep` reports nothing on `fold.ts` because it contains an intentional `\0` as a
 map-key separator, which makes grep treat it as binary. A claim central to
