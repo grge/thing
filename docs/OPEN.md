@@ -34,12 +34,13 @@ Roughly in order of how much would change if the answer went the other way.
 | 10 | Do dense per-writer sequence numbers stay at all, given that the literature calls them unsafe against a *malicious* writer? See [EQUIVOCATION.md](EQUIVOCATION.md). Append points do not answer this. | §2.1, §2.3, §7.3 |
 | 11 | Does signing ever have to carry *attribution* rather than only authority — and does this system want a notion of a person at all? See [LEARNINGS.md](LEARNINGS.md) §1. | §5.1, §7.2.1 |
 
-**An OR-set is now wanted concretely.** §3.2's rule table names one and nothing
-implements it. [MAIN-SPACE.md](MAIN-SPACE.md)'s `:at` — the locators a link
-knows — is the first real demand: a register would silently drop a locator
-learned on one device when another writes, and the failure mode is a space that
-becomes unreachable because the address that worked was overwritten by one that
-does not.
+**An OR-set is still unimplemented, and still not needed.** An earlier version of
+this note claimed [MAIN-SPACE.md](MAIN-SPACE.md)'s `:at` was the first concrete
+demand for one. Written before reading §5.3 properly, and wrong: `:at` is the
+*cache* of addresses that worked, where removal is rare and imprecise, so a
+grow-only set with read-time expiry does the job without an OR-set's causal tags
+or its canonical-form work. The rule table still names an OR-set and nothing
+implements it; wanting one for the vocabulary and needing one here are different.
 
 **Question 10 is what append points leave behind.** Stage 7.6 fixes the *honest*
 case — your own two processes — by giving each its own chain. A malicious writer

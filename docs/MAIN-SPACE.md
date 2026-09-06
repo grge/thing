@@ -70,29 +70,64 @@ tiering, unchanged.
 hints that go stale. Conflating them was never on the table and is worth
 restating because a link is exactly where the temptation lives.
 
-### `:at` — the locator list
+### `:at` — remembered addresses
 
-Not a register. A register keeps one address, and a space genuinely has several
-— a home server, a laptop, a hub that also carries it. §5.3 says locators are a
-*list* with expiry.
+**What this is, precisely.** §5.3 names three sources of locators, and `:at` is
+only the third:
 
-So `:at` wants a set rule, and the vocabulary does not have one. Two options:
+1. **The space's own declaration** — a signed list on *its* root, where the
+   writers say they serve it. Durable, replicated with that log, and nothing to
+   do with a link in someone else's space.
+2. **A share link's hint** — bootstrap, not stored anywhere.
+3. **A cache** — addresses that worked before. *"First tried, first discarded":*
+   stale by default, and never the reason a space is reported gone.
 
-- **An OR-set**, which §3.2's rule table already names as a merge rule and
-  nothing implements yet.
-- **A register holding an encoded list**, which is what `:writers` does and is
-  why concurrent membership edits lose one (§7.4).
+`:at` is the cache. §5.3 says what it is for and pointedly does not say where it
+lives; a link attribute is a good answer, because the alternative is a durable
+per-client store outside any space — which reproduces persistence, merging
+across your own devices, and surviving a reload, all of which the log already
+does. That would also be the second appearance of the *durable, local,
+unreplicated* category this design keeps deferring, and a category that arrives
+twice is usually real.
 
-The OR-set is right here, and this is the first concrete demand for it. A
-locator learned on your laptop and one learned on your phone should both
-survive; last-writer-wins would drop one, and the failure would be invisible —
-a space that becomes unreachable because the address that worked got
-overwritten by one that no longer does.
+**It is a memory, not a claim.** An earlier draft objected that recording where
+you found someone else's space asserts something about a thing you do not
+control. It does not: nobody has to believe it, and being wrong costs a dial.
+That is §5.3's own description of the cache.
 
-**Expiry is not a rule concern.** A locator's age is a property of when it was
-*written*, which `wall` already carries. Stale entries are filtered at read
-time, not merged away — a rule that dropped them would make the fold depend on
-the current time, which §3.6 forbids.
+**Live availability is a different thing and stays out.** Announcements — *who
+is serving this right now* — travel on the ephemeral channel with a TTL, per
+§5.3, and belong nowhere near an append-only log: a claim you can never withdraw
+is the wrong shape for one that expires.
+
+#### Which rule
+
+Several addresses are genuinely useful — a home server, a laptop, a hub that
+also carries it — so this is set-shaped rather than register-shaped, and losing
+one silently is the bad outcome: a space becomes unreachable because a good
+address was overwritten by a dead one.
+
+| | cost | loses |
+| --- | --- | --- |
+| register | free, exists today | concurrent additions from two devices |
+| **grow-only set + read-time expiry** | **small; no causal tags** | **explicit removal** |
+| OR-set | causal tags in values, and its own canonical form (§3.6) | nothing |
+
+**The middle one.** Removal here is rare and imprecise — you stop announcing, an
+address ages out — and §5.3's model is TTL-shaped already, so the ability to
+explicitly forget is not worth an OR-set's price. That price is real: §3.2 notes
+an OR-set's removes must record which adds they observed, so values grow with
+history and the tag serialisation has to be pinned, which is the work the
+sequence rule just did for §3.6.
+
+An OR-set is still worth building for the vocabulary's sake — §3.2 names it and
+nothing implements it — but wanting it and needing it here are different, and
+this does not need it.
+
+**Expiry is a read-time filter, not a merge.** An entry's age comes from `wall`,
+which every event carries. A rule that dropped stale entries would make the fold
+depend on the current time, which §3.6 forbids — the same conclusion the
+sequence work reached about tombstones.
 
 ## Resolution falls out
 
@@ -378,7 +413,8 @@ Cheap, in the engine, before any UI:
 1. **A link folds in a client that has never heard of links.** The tree is
    correct, the object appears, its kind is unrecognised (§3.1).
 2. **Two devices with one main-space key converge on an inventory**, including
-   concurrent link additions — the OR-set case that a register would fail.
+   concurrent link additions, and concurrent `:at` additions from two devices —
+   the case a register would silently lose.
 3. **Resolution answers from links.** A peer holding a link to K reports its
    `:at` values; one that does not, does not.
 4. **A cycle between two spaces terminates.** See below; the answer differs for
