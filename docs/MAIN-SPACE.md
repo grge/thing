@@ -56,8 +56,10 @@ An object with `:kind` naming it a link, plus:
 | --- | --- | --- |
 | `:name` | register | what this peer calls it — the old petname |
 | `:space` | register | the target's public key, 32 bytes |
-| `:at` | (below) | where it has been reached |
 | `:parent` | register | which folder it sits in, like any object |
+
+**No address.** A link names a space and says nothing about where it is; see
+below and [LOCATORS.md](LOCATORS.md).
 
 `:name` and `:parent` are the fixed attribute vocabulary already (§3.2), so a
 link folds in phase 2 with no new rule and no declaration. That is the point: a
@@ -70,77 +72,45 @@ tiering, unchanged.
 hints that go stale. Conflating them was never on the table and is worth
 restating because a link is exactly where the temptation lives.
 
-### `:at` — remembered addresses
+### Addresses are not on the link — see LOCATORS.md
 
-**What this is, precisely.** §5.3 names three sources of locators, and `:at` is
-only the third:
+An earlier draft of this document put the locator cache on the link, as an `:at`
+attribute, and worked out which merge rule it wanted. **That was wrong**, and
+[LOCATORS.md](LOCATORS.md) has the correction and the scenario analysis behind
+it.
 
-1. **The space's own declaration** — a signed list on *its* root, where the
-   writers say they serve it. Durable, replicated with that log, and nothing to
-   do with a link in someone else's space.
-2. **A share link's hint** — bootstrap, not stored anywhere.
-3. **A cache** — addresses that worked before. *"First tried, first discarded":*
-   stale by default, and never the reason a space is reported gone.
+The short version: §5.3 had already rejected a locator on a stored link, for a
+reason the design conversation had not reached — *a rotted address embedded in
+replicated data is worse than no address at all*, because it looks
+authoritative, gets tried, and propagates to everyone holding your space. A
+stale entry in a client-side cache costs one dial and dies with the client.
 
-`:at` is the cache. §5.3 says what it is for and pointedly does not say where it
-lives; a link attribute is a good answer, because the alternative is a durable
-per-client store outside any space — which reproduces persistence, merging
-across your own devices, and surviving a reload, all of which the log already
-does. That would also be the second appearance of the *durable, local,
-unreplicated* category this design keeps deferring, and a category that arrives
-twice is usually real.
+So **a link carries `:name`, `:space` and `:parent`, and no address.** Where a
+space is served is said by that space's own root (`:serves`), by peers on the
+ephemeral channel, and by a client-side cache that is in no space at all.
 
-**It is a memory, not a claim.** An earlier draft objected that recording where
-you found someone else's space asserts something about a thing you do not
-control. It does not: nobody has to believe it, and being wrong costs a dial.
-That is §5.3's own description of the cache.
-
-**Live availability is a different thing and stays out.** Announcements — *who
-is serving this right now* — travel on the ephemeral channel with a TTL, per
-§5.3, and belong nowhere near an append-only log: a claim you can never withdraw
-is the wrong shape for one that expires.
-
-#### Which rule
-
-Several addresses are genuinely useful — a home server, a laptop, a hub that
-also carries it — so this is set-shaped rather than register-shaped, and losing
-one silently is the bad outcome: a space becomes unreachable because a good
-address was overwritten by a dead one.
-
-| | cost | loses |
-| --- | --- | --- |
-| register | free, exists today | concurrent additions from two devices |
-| **grow-only set + read-time expiry** | **small; no causal tags** | **explicit removal** |
-| OR-set | causal tags in values, and its own canonical form (§3.6) | nothing |
-
-**The middle one.** Removal here is rare and imprecise — you stop announcing, an
-address ages out — and §5.3's model is TTL-shaped already, so the ability to
-explicitly forget is not worth an OR-set's price. That price is real: §3.2 notes
-an OR-set's removes must record which adds they observed, so values grow with
-history and the tag serialisation has to be pinned, which is the work the
-sequence rule just did for §3.6.
-
-An OR-set is still worth building for the vocabulary's sake — §3.2 names it and
-nothing implements it — but wanting it and needing it here are different, and
-this does not need it.
-
-**Expiry is a read-time filter, not a merge.** An entry's age comes from `wall`,
-which every event carries. A rule that dropped stale entries would make the fold
-depend on the current time, which §3.6 forbids — the same conclusion the
-sequence work reached about tombstones.
+The rule question that draft answered — grow-only set with read-time expiry
+rather than an OR-set — was the right answer to the wrong attribute. It carries
+over to `:serves`, which is genuinely a set for the same reasons.
 
 ## Resolution falls out
 
 §5.3 asks for one thing: **given a public key, produce candidate locators.**
 
-Under this model that is a query over data a peer already holds for another
-reason. *Do you have a link whose `:space` is K? If so, what are its `:at`
-values?* Nobody maintains an index; the links exist because someone curated
-them.
+Under this model a peer answers from what it already knows for other reasons:
+the spaces it serves, and what its **current connections** have announced. Not
+from addresses stored in its links — those carry none (above), and a cached
+address that rotted is worse than no answer.
+
+What links *do* contribute is the shape of the graph. A hub holding a link to K
+is a peer likely to be connected to something serving K, which is why
+*"reaching a space that contains a link generally means reaching what it points
+at"* (§5.3). The curation carries the knowledge without the addresses being
+written down.
 
 This explains why hubs are useful without granting them authority. A hub answers
-more queries because it holds more links — not because it is trusted. §5.3's
-safety argument carries over untouched:
+more queries because it is connected to more peers — not because it is trusted.
+§5.3's safety argument carries over untouched:
 
 > Because verification is against the key, a resolver cannot lie in any way that
 > matters. A wrong or hostile answer makes you *dial* something; it cannot make
@@ -413,10 +383,11 @@ Cheap, in the engine, before any UI:
 1. **A link folds in a client that has never heard of links.** The tree is
    correct, the object appears, its kind is unrecognised (§3.1).
 2. **Two devices with one main-space key converge on an inventory**, including
-   concurrent link additions, and concurrent `:at` additions from two devices —
-   the case a register would silently lose.
-3. **Resolution answers from links.** A peer holding a link to K reports its
-   `:at` values; one that does not, does not.
+   concurrent link additions, and concurrent `:serves` additions from two
+   devices — the case a register would silently lose.
+3. **Resolution answers from live connections**, not from stored addresses: a
+   peer serving K, or connected to one that does, answers; a peer merely
+   holding a link to K does not invent an address for it.
 4. **A cycle between two spaces terminates.** See below; the answer differs for
    fetching and for drawing, and neither needs a depth limit.
 5. **A client replicates a server's space** over a socket and renders it, with

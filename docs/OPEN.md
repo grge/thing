@@ -34,13 +34,13 @@ Roughly in order of how much would change if the answer went the other way.
 | 10 | Do dense per-writer sequence numbers stay at all, given that the literature calls them unsafe against a *malicious* writer? See [EQUIVOCATION.md](EQUIVOCATION.md). Append points do not answer this. | §2.1, §2.3, §7.3 |
 | 11 | Does signing ever have to carry *attribution* rather than only authority — and does this system want a notion of a person at all? See [LEARNINGS.md](LEARNINGS.md) §1. | §5.1, §7.2.1 |
 
-**An OR-set is still unimplemented, and still not needed.** An earlier version of
-this note claimed [MAIN-SPACE.md](MAIN-SPACE.md)'s `:at` was the first concrete
-demand for one. Written before reading §5.3 properly, and wrong: `:at` is the
-*cache* of addresses that worked, where removal is rare and imprecise, so a
-grow-only set with read-time expiry does the job without an OR-set's causal tags
-or its canonical-form work. The rule table still names an OR-set and nothing
-implements it; wanting one for the vocabulary and needing one here are different.
+**An OR-set is still unimplemented, and still not needed.** The set that does
+want a rule is `:serves` — where a space's writers say it is served
+([LOCATORS.md](LOCATORS.md)) — and a grow-only set with read-time expiry covers
+it: removal is rare and imprecise, and §5.3's model is TTL-shaped already. An
+OR-set's causal tags and canonical form (§3.2, §3.6) are not worth buying for
+that. The rule table still names one and nothing implements it; wanting it for
+the vocabulary and needing it here are different.
 
 **Question 10 is what append points leave behind.** Stage 7.6 fixes the *honest*
 case — your own two processes — by giving each its own chain. A malicious writer
