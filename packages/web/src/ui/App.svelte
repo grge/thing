@@ -1,11 +1,12 @@
 <!--
-  The browser client: tabs over spaces.
+  The browser client (`docs/WEB.md`).
 
-  Deliberately small. It exercises the model — open a space, see its tree,
-  follow a link into another tab, keep one if you want it — and nothing more.
-  The previous version merged a space list, a tree, a preview and a debug panel
-  into one component; this is the part that had to be rebuilt for the tab model,
-  and the rest is worth adding back deliberately rather than carrying over.
+  Sidebar tree, preview pane. Below 40rem it becomes one pane and selecting a
+  file pushes the preview over the tree — the breakpoint and the mechanism both
+  come from `docs/v0/MOBILE.md`, which settled them by building it once.
+
+  Tabs are open spaces (`docs/MAIN-SPACE.md`): opening writes nothing, and
+  following a link opens another rather than descending in place.
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
@@ -30,14 +31,15 @@
   let tabs = $state<Tab[]>([]);
   let activeId = $state<string | null>(null);
   let path = $state<Uuid[]>([]);
-  let error = $state<string | null>(null);
   let selected = $state<Uuid | null>(null);
+  let error = $state<string | null>(null);
   let dragging = $state(false);
   let fileInput = $state<HTMLInputElement | null>(null);
 
   const active = $derived(tabs.find((t) => t.id === activeId) ?? null);
   const here = $derived<Uuid>(path.length === 0 ? ROOT : path[path.length - 1]!);
   const entries = $derived<FileEntry[]>(active === null ? [] : list(active.state, here));
+  const writable = $derived(active?.writable === true);
 
   function refresh(): void {
     tabs = client.view();
@@ -48,7 +50,7 @@
     const off = client.subscribe(refresh);
 
     // A share link is the one locator source that works before you know
-    // anybody (docs/LOCATORS.md) — so it is how a browser gets started.
+    // anybody (`docs/LOCATORS.md`), so it is how a browser gets started.
     const link = parseShareLink(location.hash);
     if (link !== null) {
       void (async () => {
@@ -66,38 +68,39 @@
     return off;
   });
 
-  async function open(id: string): Promise<void> {
+  function show(id: string): void {
     activeId = id;
     path = [];
+    selected = null;
   }
 
-  /** Following a link opens a tab. It writes nothing (docs/MAIN-SPACE.md). */
+  /** Following a link opens a tab. It writes nothing (`docs/MAIN-SPACE.md`). */
   async function follow(name: string): Promise<void> {
     if (activeId === null) return;
     const tab = await client.follow(activeId, name);
-    if (tab !== null) {
-      activeId = tab.id;
-      path = [];
-    }
+    if (tab !== null) show(tab.id);
   }
 
   async function closeTab(id: string): Promise<void> {
     await client.closeTab(id);
-    if (activeId === id) activeId = null;
-    path = [];
+    if (activeId === id) {
+      activeId = null;
+      path = [];
+      selected = null;
+    }
     refresh();
   }
 
   async function create(): Promise<void> {
-    const tab = await client.create('untitled');
-    activeId = tab.id;
-    path = [];
+    show((await client.create('untitled')).id);
   }
 
   function enter(e: FileEntry): void {
     if (isLink(e)) void follow(e.name);
-    else if (e.isFolder) path = [...path, e.id];
-    else selected = e.id;
+    else if (e.isFolder) {
+      path = [...path, e.id];
+      selected = null;
+    } else selected = e.id;
   }
 
   function up(): void {
@@ -106,10 +109,10 @@
   }
 
   /**
-   * Add files to the space in the current folder.
+   * Add files to the space, in the folder currently open.
    *
-   * `kind` comes from the browser when it has one — it knows more than a
-   * filename does — and `makeFile` guesses from the name otherwise (§4.2).
+   * `kind` comes from the browser when it has one, since it knows more than a
+   * filename does; `makeFile` guesses from the name otherwise (§4.2).
    */
   async function addFiles(files: FileList | null): Promise<void> {
     if (files === null || activeId === null) return;
@@ -151,8 +154,12 @@
   }
 </script>
 
-<main
-  ondragover={(e) => { e.preventDefault(); dragging = true; }}
+<div
+  class="app"
+  ondragover={(e) => {
+    e.preventDefault();
+    dragging = true;
+  }}
   ondragleave={() => (dragging = false)}
   ondrop={onDrop}
   class:dragging
@@ -160,110 +167,229 @@
 >
   <nav class="tabs">
     {#each tabs as tab (tab.id)}
-      <button class="tab" class:active={tab.id === activeId} onclick={() => open(tab.id)}>
-        {tab.name ?? tab.id.slice(0, 8)}
-        {#if tab.peers > 0}<span class="dot" title="{tab.peers} connected"></span>{/if}
-      </button>
-      <button class="shut" onclick={() => closeTab(tab.id)} title="close">×</button>
+      <span class="tab" class:active={tab.id === activeId}>
+        <button class="label" onclick={() => show(tab.id)}>
+          {tab.name ?? tab.id.slice(0, 8)}
+          {#if tab.peers > 0}<span class="dot" title="{tab.peers} connected"></span>{/if}
+        </button>
+        <button class="shut" onclick={() => closeTab(tab.id)} title="close">×</button>
+      </span>
     {/each}
-    <button class="tab new" onclick={create}>+ new space</button>
+    <button class="tab new" onclick={create}>+ space</button>
   </nav>
 
   {#if error !== null}
-    <p class="error">{error}</p>
+    <p class="error" role="alert">{error}</p>
   {/if}
 
   {#if active === null}
-    <p class="empty">
-      No space open. A share link opens one; <button class="inline" onclick={create}>make one</button>
-      to start your own.
-    </p>
-  {:else}
-    <header>
-      <span class="id">{active.id.slice(0, 8)}</span>
-      {#if !active.writable}<span class="ro">read-only</span>{/if}
-      {#if active.forks.length > 0}<span class="fork">{active.forks.length} fork(s)</span>{/if}
-    </header>
-
-    <div class="bar">
-      {#if path.length > 0}
-        <button class="up" onclick={up}>← up</button>
-      {/if}
-      {#if active.writable}
-        <button onclick={() => fileInput?.click()}>+ file</button>
-        <button onclick={newFolder}>+ folder</button>
-      {/if}
-    </div>
-    <input
-      type="file"
-      multiple
-      bind:this={fileInput}
-      onchange={(e) => void addFiles((e.currentTarget as HTMLInputElement).files)}
-      hidden
-    />
-
-    <ul class="tree">
-      {#each entries as e (hex(e.id))}
-        <li>
-          <button class="entry" onclick={() => enter(e)}>
-            <span class="glyph">{isLink(e) ? '→' : e.isFolder ? '/' : ' '}</span>
-            {e.name}
-          </button>
-        </li>
-      {:else}
-        <li class="empty">nothing here</li>
-      {/each}
-    </ul>
-
-    {#if selected !== null}
-      <Preview
-        {client}
-        space={client.space(active.id)!}
-        spaceId={active.id}
-        id={selected}
-        peers={active.peers}
-      />
-    {/if}
-
-    {#if links(active.state).length > 0}
-      <p class="note">
-        {links(active.state).length} link(s) — following one opens a tab and changes nothing.
+    <div class="empty">
+      <p>Nothing open.</p>
+      <p class="muted">
+        Open a space with a share link, or
+        <button class="inline" onclick={create}>make one of your own</button>.
       </p>
-    {/if}
+    </div>
+  {:else}
+    <div class="panes" class:has-selection={selected !== null}>
+      <section class="pane-tree">
+        <header>
+          <span class="id" title={active.id}>{active.id.slice(0, 8)}</span>
+          {#if !writable}<span class="tag">read-only</span>{/if}
+          {#if active.forks.length > 0}
+            <span class="tag warn">{active.forks.length} fork(s)</span>
+          {/if}
+        </header>
 
-    {#if active.writable}
-      <p class="note">Drop files anywhere to add them here.</p>
-    {/if}
+        <div class="bar">
+          {#if path.length > 0}
+            <button onclick={up}>← up</button>
+          {/if}
+          {#if writable}
+            <button onclick={() => fileInput?.click()}>+ file</button>
+            <button onclick={newFolder}>+ folder</button>
+          {/if}
+        </div>
+        <input
+          type="file"
+          multiple
+          bind:this={fileInput}
+          onchange={(e) => void addFiles((e.currentTarget as HTMLInputElement).files)}
+          hidden
+        />
+
+        <ul class="tree">
+          {#each entries as e (hex(e.id))}
+            <li>
+              <button
+                class="entry"
+                class:selected={selected !== null && hex(selected) === hex(e.id)}
+                onclick={() => enter(e)}
+              >
+                <span class="glyph">{isLink(e) ? '→' : e.isFolder ? '▸' : ''}</span>
+                <span class="name">{e.name}</span>
+              </button>
+            </li>
+          {:else}
+            <li class="muted pad">
+              {writable ? 'Empty — drop a file in.' : 'Empty.'}
+            </li>
+          {/each}
+        </ul>
+
+        {#if links(active.state).length > 0}
+          <p class="muted pad small">
+            {links(active.state).length} link(s) — following one opens a tab.
+          </p>
+        {/if}
+      </section>
+
+      <section class="pane-preview">
+        {#if selected !== null}
+          <button class="back" onclick={() => (selected = null)}>← files</button>
+          <Preview
+            {client}
+            space={client.space(active.id)!}
+            spaceId={active.id}
+            id={selected}
+            peers={active.peers}
+          />
+        {:else}
+          <p class="muted pad">Select a file.</p>
+        {/if}
+      </section>
+    </div>
   {/if}
-</main>
+</div>
 
 <style>
-  main { padding: var(--space-4, 1rem); font-family: var(--font-mono, monospace); }
-  .tabs { display: flex; gap: 0.25rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; }
-  .tab { background: none; border: 1px solid var(--line, #444); color: inherit;
-         padding: 0.2rem 0.6rem; cursor: pointer; font: inherit; }
-  .tab.active { background: var(--raised, #222); }
-  .tab.new { border-style: dashed; opacity: 0.7; }
-  .shut { background: none; border: none; color: inherit; opacity: 0.5; cursor: pointer; }
-  .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%;
-         background: var(--ok, #6a6); margin-left: 0.4rem; }
-  header { display: flex; gap: 0.75rem; align-items: baseline; margin-bottom: 0.5rem; opacity: 0.8; }
-  .id { opacity: 0.6; }
-  .ro, .fork { font-size: 0.85em; opacity: 0.7; }
+  .app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    font-family: var(--font-interface);
+    font-size: var(--text-0);
+    color: var(--ink);
+    background: var(--canvas);
+  }
+  .app.dragging { outline: 2px dashed var(--action); outline-offset: -4px; }
+
+  .tabs {
+    display: flex;
+    gap: var(--space-1);
+    align-items: center;
+    flex-wrap: wrap;
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--rule);
+    background: var(--canvas-raised);
+  }
+  .tab {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--rule);
+    background: var(--canvas);
+  }
+  .tab.active { border-color: var(--rule-strong); background: var(--canvas-sunken); }
+  .tab .label, .tab .shut, .tab.new {
+    background: none;
+    border: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    padding: var(--space-1) var(--space-2);
+  }
+  .tab.new { border: 1px dashed var(--rule); color: var(--ink-muted); }
+  .shut { color: var(--ink-faint); }
+  .dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--mode-writer);
+    margin-left: var(--space-1);
+  }
+
+  .panes {
+    display: grid;
+    grid-template-columns: minmax(14rem, 22rem) 1fr;
+    flex: 1;
+    min-height: 0;
+  }
+  .pane-tree {
+    border-right: 1px solid var(--rule);
+    overflow: auto;
+    min-height: 0;
+    padding: var(--space-3);
+  }
+  .pane-preview {
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+    min-height: 0;
+    padding: var(--space-3);
+  }
+
+  header { display: flex; gap: var(--space-2); align-items: baseline; }
+  .id { font-family: var(--font-data); font-size: var(--text--1); color: var(--ink-faint); }
+  .tag { font-size: var(--text--2); color: var(--ink-muted); }
+  .tag.warn { color: var(--danger); }
+
+  .bar { display: flex; gap: var(--space-2); padding: var(--space-2) 0; }
+  .bar button {
+    background: none;
+    border: 1px solid var(--rule);
+    color: var(--ink-muted);
+    font: inherit;
+    font-size: var(--text--1);
+    padding: var(--space-1) var(--space-2);
+    cursor: pointer;
+  }
+  .bar button:hover { color: var(--ink); border-color: var(--rule-strong); }
+
   .tree { list-style: none; padding: 0; margin: 0; }
-  .entry { background: none; border: none; color: inherit; font: inherit;
-           cursor: pointer; padding: 0.15rem 0; text-align: left; width: 100%; }
-  .entry:hover { background: var(--raised, #222); }
-  .glyph { display: inline-block; width: 1.2em; opacity: 0.6; }
-  .empty, .note { opacity: 0.6; font-size: 0.9em; }
-  .error { color: var(--bad, #c66); }
-  .inline { background: none; border: none; color: inherit; text-decoration: underline;
-            cursor: pointer; font: inherit; padding: 0; }
-  .up { background: none; border: none; color: inherit; cursor: pointer; font: inherit;
-        opacity: 0.7; padding: 0; }
-  .bar { display: flex; gap: 0.75rem; align-items: center; padding-bottom: 0.5rem; }
-  .bar button { background: none; border: 1px solid var(--line, #444); color: inherit;
-                font: inherit; padding: 0.1rem 0.5rem; cursor: pointer; opacity: 0.8; }
-  .bar button:hover { opacity: 1; }
-  main.dragging { outline: 2px dashed var(--line, #666); outline-offset: -6px; }
+  .entry {
+    display: flex;
+    gap: var(--space-2);
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    color: inherit;
+    font: inherit;
+    padding: var(--space-1) var(--space-2);
+    cursor: pointer;
+  }
+  .entry:hover { background: var(--canvas-raised); }
+  .entry.selected { background: var(--canvas-sunken); }
+  .glyph { width: 1em; color: var(--ink-faint); }
+  .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .empty { padding: var(--space-6); }
+  .muted { color: var(--ink-muted); }
+  .pad { padding: var(--space-2); }
+  .small { font-size: var(--text--1); }
+  .error { color: var(--danger); padding: var(--space-2) var(--space-3); margin: 0; }
+  .inline {
+    background: none; border: none; color: var(--link);
+    text-decoration: underline; cursor: pointer; font: inherit; padding: 0;
+  }
+  .back { display: none; }
+
+  /*
+   * One pane below 40rem, and selecting pushes the preview over the tree
+   * (`docs/v0/MOBILE.md`). Everything else stays as it is — including the
+   * gestures a touch device cannot reach, which are tracked separately rather
+   * than made to work here.
+   */
+  @media (max-width: 40rem) {
+    .panes { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+    .panes:not(.has-selection) .pane-preview { display: none; }
+    .panes.has-selection .pane-tree { display: none; }
+    .pane-tree { border-right: none; }
+    .back {
+      display: block;
+      background: none; border: none; color: var(--link);
+      font: inherit; cursor: pointer;
+      padding: 0 0 var(--space-2) 0; text-align: left;
+    }
+  }
 </style>

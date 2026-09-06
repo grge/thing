@@ -112,10 +112,15 @@ degradation chain. Text, image and PDF to start. Every file gets a **download**
 button regardless of whether anything can render it — that is the honest
 fallback and it is missing today.
 
-**Links.** Creating one needs a key and a name, which is a small dialog. Two
-sources for the key: pasted, or **from an open tab** — "add a link to the space
-in that tab", which is how a hub gets curated and is much less fiddly than
-copying a 64-character key.
+**Links.** The gesture is **dragging a tab into a space**: it means *keep this
+here*, and it is the same act as dragging a file in — content arriving from
+outside. A hub gets curated by opening spaces and dragging their tabs into it,
+which needs no key typed and no dialog.
+
+That is also the clearest expression of the model's central distinction: a tab
+is a space you are *looking at*, a link is one you have *kept*, and dragging one
+into the other is exactly the moment that changes. Pasting a key stays available
+for a space nobody has open, but it is the fallback rather than the path.
 
 **Share.** A link carrying `k`, `n`, `t`, and optionally `l` (§5.4). The `l`
 hint is the one locator source that works before you know anybody, so it is not
@@ -130,15 +135,21 @@ link is tappable.
 
 Each stage should leave a client someone can use.
 
-1. **Layout: sidebar tree, preview pane, mobile breakpoint.** Everything else
-   sits inside this, and doing it later means moving every panel.
+1. ~~**Layout: sidebar tree, preview pane, mobile breakpoint.**~~ **Done.**
+   `minmax(14rem, 22rem) 1fr`, collapsing to one pane at 40rem with selection
+   pushing the preview over the tree — the mechanism `docs/v0/MOBILE.md`
+   arrived at by building it. `app.css` went from 615 lines to 70: the rest was
+   component CSS for components this rebuild does not have, and a global rule
+   for a component that does not exist is a rule nothing checks. It is in
+   `archive/ui/app.css` for when a panel comes back.
 2. **Download, rename, delete.** The tree is not usable without them, and they
    are small.
 3. **Drag: re-parent within a tree, and desktop-to-tree.** `archive/ui/Tree.svelte`
    has a working implementation to read.
 4. **The renderer registry**, with text, image and PDF. Ports mostly whole.
-5. **Links: create from a key, create from an open tab.** The model's central
-   act, and currently impossible in the UI.
+5. **Links: drag a tab into a space.** The model's central act, currently
+   impossible in the UI, and the gesture that makes *open* versus *keep*
+   visible. Pasting a key as a fallback.
 6. **Share and join**, including a pasted code rather than only a URL.
 7. **Debug panel** — vectors, forks, peers, activity.
 8. **Settings** — signalling, ICE, keys.
