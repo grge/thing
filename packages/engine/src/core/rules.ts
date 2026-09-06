@@ -158,6 +158,12 @@ export const ATTRIBUTE_RULES: Readonly<Record<string, AnyRule>> = {
   // no special case — the root is an object whose slices happen to be admitted
   // on a signature rather than a writer-set lookup.
   ':writers': erase(stringRegister),
+  // §7.2.2: which writers moderate. A register like `:writers`, and named in
+  // the fixed vocabulary for the same reason — every client must fold the
+  // membership of a space without consulting a declaration (§3.2). §7.4 leaves
+  // open whether moderator *actions* need a vocabulary of their own; this is
+  // only the list.
+  ':moderators': erase(stringRegister),
   ':view': erase(stringRegister),
 };
 

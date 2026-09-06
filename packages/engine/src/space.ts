@@ -19,11 +19,22 @@ import {
   type KeyPair,
   type PublicKey,
   resumeFrom,
+  ROOT,
   type State,
   type Uuid,
   Writer,
 } from './core/index.js';
 import type { AppendResult, SpaceStore, VersionVector } from './store/index.js';
+import {
+  addModerator,
+  addWriter,
+  mayWrite,
+  type MembershipChange,
+  moderators,
+  removeModerator,
+  removeWriter,
+  writers,
+} from './members.js';
 
 /** What a space needs to exist. */
 export interface SpaceOptions {
@@ -69,16 +80,13 @@ export class Space {
     space.folder.apply(events);
 
     if (options.writer !== undefined) {
-      // Resume this writer's own chain where it left off, so a restart
-      // continues the chain rather than forking it (§7.3).
-      const own = events
-        .filter((e) => hex(e.writer) === hex(options.writer!.publicKey))
-        .sort((a, b) => a.seq - b.seq);
-      space.writerState = new Writer(
-        options.key,
-        options.writer,
-        resumeFrom(options.key, own),
-      );
+      // Open a *new* append point rather than resuming an old one (§2.1). Which
+      // of this identity's chains a previous process was on is not knowable
+      // here, and guessing wrong is the fork this design removes. What must
+      // carry over is the Lamport clock, which `resumeFrom` takes from the
+      // events and `observe` then raises past everything else in the log.
+      const own = events.filter((e) => hex(e.writer) === hex(options.writer!.publicKey));
+      space.writerState = new Writer(options.key, options.writer, resumeFrom(options.key, own));
       space.writerState.observe(events);
     }
 
@@ -97,6 +105,68 @@ export class Space {
   /** Whether this peer can write. False for a replica with no key. */
   get writable(): boolean {
     return this.writerState !== null;
+  }
+
+  /**
+   * Whether this space's writer is actually admitted (§7.2.1).
+   *
+   * Distinct from `writable`, which only asks whether a key is held. A key that
+   * is not in the writer set signs events that every peer will store and no
+   * peer will fold — which looks like working and is not, so it is worth being
+   * able to ask before writing rather than after.
+   */
+  get admitted(): boolean {
+    const writer = this.options.writer;
+    if (writer === null || writer === undefined) return false;
+    return mayWrite(this.state, this.options.key, writer.publicKey);
+  }
+
+  /* ── membership (§7.2) ────────────────────────────────────────────────── */
+
+  /** Everyone who may write, or null if no set is declared (admits everyone). */
+  get writers(): readonly string[] | null {
+    return writers(this.state, this.options.key);
+  }
+
+  /** Writers marked as moderators (§7.2.2). */
+  get moderators(): readonly string[] {
+    return moderators(this.state, this.options.key);
+  }
+
+  /**
+   * Add a writer. Returns the event, or null if they could already write.
+   *
+   * **Only the space key can do this**, and a caller holding any other key gets
+   * an event every peer will drop (§7.2.1). That is checked here rather than
+   * left to fail silently at the fold.
+   */
+  async addWriter(who: PublicKey): Promise<Event | null> {
+    return this.changeMembership(addWriter(this.state, this.options.key, who));
+  }
+
+  /**
+   * Remove a writer. Their existing events remain and keep folding (§7.2.3):
+   * removal means "may no longer write", never "was never here".
+   */
+  async removeWriter(who: PublicKey): Promise<Event | null> {
+    return this.changeMembership(removeWriter(this.state, this.options.key, who));
+  }
+
+  async addModerator(who: PublicKey): Promise<Event | null> {
+    return this.changeMembership(addModerator(this.state, this.options.key, who));
+  }
+
+  async removeModerator(who: PublicKey): Promise<Event | null> {
+    return this.changeMembership(removeModerator(this.state, this.options.key, who));
+  }
+
+  private async changeMembership(change: MembershipChange | null): Promise<Event | null> {
+    if (change === null) return null;
+    const writer = this.options.writer;
+    if (writer === undefined || hex(writer.publicKey) !== hex(this.options.key)) {
+      throw new Error('only the space key may change membership (§7.2.1)');
+    }
+    return this.write(ROOT, change.attr, change.value);
   }
 
   /**

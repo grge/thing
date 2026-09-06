@@ -35,4 +35,17 @@ export * from './net/index.js';
 export * from './fs/files.js';
 export { isTextual, kindForName } from './fs/mime.js';
 export { type ChangeListener, Space, type SpaceOptions } from './space.js';
+export {
+  addModerator,
+  addWriter,
+  isModerator,
+  mayWrite,
+  type MembershipChange,
+  MODERATORS,
+  moderators,
+  removeModerator,
+  removeWriter,
+  WRITERS,
+  writers,
+} from './members.js';
 export * from './client/index.js';
