@@ -13,7 +13,7 @@ code in `src/` currently does — see *Status* below.
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | **The design.** Self-contained, assumes no prior context. Every section marked Proven / Decided / Open |
 | [docs/PLAN.md](docs/PLAN.md) | **The implementation plan** — stages, what each answers, what moves to archive |
 | [docs/OPEN.md](docs/OPEN.md) | Open questions. Mutable — changes as questions close |
-| [docs/LEARNINGS.md](docs/LEARNINGS.md) | What building this taught, for whenever the design is rewritten again |
+| [docs/LEARNINGS.md](docs/LEARNINGS.md) | What building this taught, for whenever the design is rewritten again — plus ideas worth not losing |
 | [docs/CLIENTS.md](docs/CLIENTS.md) | How the CLI, TUI and browser relate to a running peer — the engine's API as the only way in |
 | [docs/APPEND-POINTS.md](docs/APPEND-POINTS.md) | Splitting `writer` into an identity and a per-process append point: the trace, and the decisions |
 | [docs/DEPS.md](docs/DEPS.md) | Proposed: naming the heads a writer had seen, so "was this allowed when written" is answerable |

@@ -243,3 +243,67 @@ command that could not have found anything. It happened to be true.
 
 **Carry forward:** when a check underpins a design decision, make it fail
 loudly. `grep -c` returning 0 and grep declining to read the file look identical.
+
+---
+
+# Ideas worth not losing
+
+Not lessons from what went wrong — things worth building that came up while
+doing something else. Recorded at the level of the idea; none is designed.
+
+## The nuclear revoke
+
+**The problem it answers.** `deps` (see `DEPS.md`) narrows backdating without
+closing it: a writer about to be revoked can sign events naming only
+pre-revocation heads, release them later, and they fold. That is
+indistinguishable from an honest peer that was offline, and the literature is
+clear that causality alone cannot separate the two.
+
+**The idea.** A second, deliberate act: not *this writer may no longer write*
+but **nothing this key ever signed counts**. A root attribute — `:purged`,
+say — listing keys whose events never fold, at any position in history.
+
+**Why it works where "valid now" does not.** §7.2.3 rejects making ordinary
+removal mean *valid now*, and both its reasons fail to apply here:
+
+- *"A revocation retroactively unwrites history"* — which is the intent, once,
+  deliberately, rather than the silent default of every removal.
+- *"When a peer learns of the revocation determines what it computes"* — it does
+  not, because a purge is **an event in the log**, signed by the space key. A
+  peer that has not received it has not received it, and converges when it does.
+  Ordinary eventual consistency, not the manufactured fork §7.2.3 fears.
+
+It is also **monotonic**, which the formally-verified alternative (expanding a
+revocation's scope to concurrent events) is not — that one has peers
+temporarily disagree and converge later, which sits badly with §3.6.
+
+And it closes backdating *completely* rather than narrowing it, because it makes
+no claim about time. Backdating works by claiming a past; a purge does not care
+what past is claimed.
+
+**What it does not do, and the docs should say so.** It does not make a space
+safe from a bad actor. They can still write, their events still replicate, peers
+still store them, and anyone who synced before the purge has already seen the
+content. What changes is that the space converges on excluding them. **It is a
+moderation tool, not a security boundary** — "nuclear option" promises more than
+it delivers.
+
+What it does change is the asymmetry: an attacker reduced to backdating faces an
+administrator who can invalidate their entire history in one event.
+
+**Open before it could be built.**
+
+- **What happens to events that causally depend on purged ones?** Alice makes a
+  folder, Bob fills it, Alice is purged. The fold is total (§3.4) so Bob's files
+  probably survive and reparent — but *probably* is not good enough, and this is
+  the cascading-invalidation problem the Byzantine-CRDT literature warns about.
+  Worth prototyping before designing.
+- **It must be visibly exceptional.** A separate verb, never a flag on
+  `removeWriter`. §7.2.3's chat example is exactly why this is not the default.
+- **Only the space key can do it**, which is automatic for a root attribute and
+  inherits §1's problem: co-administrators share that key, so the log cannot
+  record which of them purged someone.
+
+Most of the machinery exists — `admitsWith` already computes admission per
+event, and a purge is one more predicate on the same pass.
+
