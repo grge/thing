@@ -121,6 +121,16 @@ Split first: the key wants backup and recovery, the inventory is derivable from
 storage, the petname store already has its contract, and the locator cache wants
 to be forgettable.
 
+**Done** — `engine/local.ts` names the four, both backends implement them, and
+one conformance suite checks both. The split turned out to be load-bearing for a
+reason that had nothing to do with tidiness: an interface mirroring a peer's
+state needs to replicate three of the four and **must never replicate the
+fourth**. That column cannot be expressed while a secret and a cache share an
+interface. Two of the predictions above held exactly — the inventory *is*
+derivable from storage on the filesystem, and the petname store already had its
+contract — and the third was worse than described: `node` had no locator cache
+at all, which is why `thing join` had always needed the address typed again.
+
 ## 3a. The wire format costs 2.1x what it needs to
 
 Measured while sizing something else. A real event is **206 bytes on disk** and

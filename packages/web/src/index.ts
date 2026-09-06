@@ -17,7 +17,13 @@ export {
 } from './client.js';
 
 export { IdbStore } from './idbstore.js';
-export { type Keystore, LocalKeystore } from './keystore.js';
+export {
+  browserLocalState,
+  LocalInventory,
+  LocalKeyring,
+  LocalLocators,
+  LocalPetnames,
+} from './local.js';
 
 export {
   type Signalling,

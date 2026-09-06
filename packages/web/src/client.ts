@@ -31,7 +31,7 @@ import {
 } from '@thing/engine';
 
 import { IdbStore } from './idbstore.js';
-import { type Keystore, LocalKeystore } from './keystore.js';
+import { browserLocalState, type LocalPetnames } from './local.js';
 import { WebSocketSignalling } from './signalling.js';
 import { connectVia, type RtcConnection, type RtcOptions } from './webrtc.js';
 import { acquireWriteLock } from './writelock.js';
@@ -69,16 +69,24 @@ export class Client extends PeerClient {
   /** Failed attempts per address, for backing off. */
   private readonly retries = new Map<string, number>();
 
+  private readonly local: ReturnType<typeof browserLocalState>;
+
   constructor(
-    private readonly keys: Keystore = new LocalKeystore(),
+    local: ReturnType<typeof browserLocalState> = browserLocalState(),
     private readonly browser: ClientOptions = {},
   ) {
     super({
       store: new IdbStore(),
-      keys: { keyFor: (id) => keys.keyFor(id) },
+      keys: { keyFor: (id) => local.keys.keyFor(id) },
       lock: (id) => acquireWriteLock(id),
     });
+    this.local = local;
     this.observe({ onChange: () => this.changed() });
+  }
+
+  /** The petname store, typed so a view can ask id -> name. */
+  private petnamesOf(): LocalPetnames {
+    return this.local.petnames;
   }
 
   /** Subscribe to any change worth redrawing for. Returns an unsubscribe. */
@@ -100,7 +108,7 @@ export class Client extends PeerClient {
         const h = this.entry(id)!;
         return {
           id,
-          names: namesFor(h.key, { petname: this.keys.petname(id) }),
+          names: namesFor(h.key, { petname: this.petnamesOf().nameFor(id) }),
           writable: h.space.writable,
           // A key this browser holds, but another tab is writing with (§7.3).
           openElsewhere: !h.space.writable && h.hasKey,
@@ -113,18 +121,18 @@ export class Client extends PeerClient {
 
   /** Where a space was last reached, if this browser remembers (§5.3). */
   lastLocator(id: string): string | null {
-    return this.keys.locator(id);
+    return this.local.locators.get(id);
   }
 
   override async hold(key: PublicKey, writer?: KeyPair): Promise<Space> {
     const space = await super.hold(key, writer);
-    await this.keys.remember(hex(key));
+    await this.local.inventory.remember(hex(key));
     return space;
   }
 
   /** Open every space this browser has a record of. */
   async restore(): Promise<void> {
-    for (const id of await this.keys.spaces()) {
+    for (const id of await this.local.inventory.all()) {
       await this.hold(fromHex(id));
     }
     this.changed();
@@ -136,7 +144,7 @@ export class Client extends PeerClient {
     // A cached locator is stale by default (§5.3): it is tried, and failing is
     // ordinary rather than an error worth reporting.
     for (const id of this.holding()) {
-      const url = this.keys.locator(id);
+      const url = this.local.locators.get(id);
       if (url === null) continue;
       try {
         await this.connectTo(id, url);
@@ -148,7 +156,7 @@ export class Client extends PeerClient {
 
   /** Mint a space. This browser holds the key, so it is the only writer. */
   async create(name?: string): Promise<string> {
-    const key = await this.keys.mint();
+    const key = await this.local.keys.mint();
     const space = await this.hold(key.publicKey, key);
     if (name !== undefined && name !== '') {
       // The suggested name goes on the root, written by the space key (§3.5).
@@ -161,7 +169,9 @@ export class Client extends PeerClient {
   /** Forget a space entirely: its log, its blobs, its key. */
   override async forget(id: string): Promise<void> {
     await super.forget(id);
-    await this.keys.forget(id);
+    await this.local.keys.forget(id);
+    await this.local.inventory.forget(id);
+    this.local.locators.forget(id);
     this.changed();
   }
 
@@ -204,7 +214,7 @@ export class Client extends PeerClient {
     });
 
     // Remembered so a reload reconnects rather than needing the address again.
-    this.keys.rememberLocator(id, url);
+    this.local.locators.set(id, url);
     this.note('connection', id, `dialled ${url}`);
     await session.start();
     this.changed();

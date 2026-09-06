@@ -10,7 +10,7 @@
  *   thing create [--name X]              mint a space and print its key
  *   thing list                           spaces held here
  *   thing serve [--port N]               accept connections
- *   thing join <key> <url>               dial a peer and sync one space
+ *   thing join <key> [url]               dial a peer and sync one space
  *   thing ls <key> [path]                what a space contains
  *   thing put <key> <file> [--as name]   write a file into a space
  *   thing get <key> <name> [--out file] [--from url]
@@ -21,11 +21,12 @@
  * key is something a person must be able to back up and move, and a real answer
  * belongs with whatever the product decides about identity.
  */
-import { codeFor, contentHash, entry, generateKeyPair, hex, type KeyPair, keyPairFromSeed, list, makeFile, namesFor, read, resolveName, type Space, type SpaceNames } from '@thing/engine';
+import { codeFor, contentHash, entry, hex, type KeyPair, list, makeFile, namesFor, read, resolveName, type Space, type SpaceNames } from '@thing/engine';
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
+import { FileKeyring, FileLocators } from './local.js';
 import { Peer } from './peer.js';
 import { FilePetnames } from './petnames.js';
 
@@ -46,23 +47,16 @@ function dataDir(): string {
   return join(homedir(), '.local', 'share', 'thing');
 }
 
-function keyPath(dir: string, id: string): string {
-  return join(dir, `${id}.key`);
-}
-
-/** Load a space's writing key, if this machine holds one. */
+/**
+ * Load a space's writing key, if this machine holds one.
+ *
+ * Through `FileKeyring` rather than reading the file directly: it is the same
+ * layout, checked against the same conformance suite as the browser's keyring,
+ * so the two cannot drift. `undefined` rather than null because that is what
+ * `Peer.hold` takes.
+ */
 async function loadKey(dir: string, id: string): Promise<KeyPair | undefined> {
-  try {
-    const seed = await readFile(keyPath(dir, id));
-    return await keyPairFromSeed(new Uint8Array(seed));
-  } catch {
-    return undefined;
-  }
-}
-
-async function saveKey(dir: string, key: KeyPair): Promise<void> {
-  await mkdir(dir, { recursive: true });
-  await writeFile(keyPath(dir, hex(key.publicKey)), key.privateKey, { mode: 0o600 });
+  return (await new FileKeyring(dir).keyFor(id)) ?? undefined;
 }
 
 function keyFromHex(s: string): Uint8Array {
@@ -218,7 +212,7 @@ const USAGE = `thing — a peer-to-peer space
   thing name <space> <petname>         call a space something local
   thing serve [--port N] [--accept]    accept connections
                        [--quiet]       ... without the activity log
-  thing join <key> <url>               dial a peer and sync one space
+  thing join <key> [url]               dial a peer, remembering where
   thing ls <key>                       what a space contains
   thing put <key> <file> [--as name]   write a file into a space
   thing get <key> <name> [--out file] [--from url]
@@ -234,9 +228,10 @@ async function main(argv: readonly string[]): Promise<number> {
 
   switch (command) {
     case 'create': {
-      const key = await generateKeyPair();
       const dir = dataDir();
-      await saveKey(dir, key);
+      // Minted through the keyring, which writes it 0600 beside its space —
+      // the same layout the browser's keyring uses, checked by one suite.
+      const key = await new FileKeyring(dir).mint();
 
       const peer = new Peer({ dir });
       const space = await peer.hold(key.publicKey, key);
@@ -334,9 +329,19 @@ async function main(argv: readonly string[]): Promise<number> {
 
     case 'join': {
       const id = positional[1];
-      const url = positional[2];
+      // §5.3: a remembered address, so joining a space twice does not mean
+      // typing where it lives twice. Stale by default — it is tried, and
+      // failing is ordinary rather than an error worth reporting.
+      const dirForUrl = dataDir();
+      const remembered = id === undefined
+        ? null
+        : (await new FileLocators(dirForUrl).load()).get(id);
+      const url = positional[2] ?? remembered ?? undefined;
       if (id === undefined || url === undefined) {
-        process.stderr.write('usage: thing join <key> <url>\n');
+        process.stderr.write('usage: thing join <key> [url]\n');
+        if (id !== undefined) {
+          process.stderr.write('no remembered address for that space\n');
+        }
         return 2;
       }
 
@@ -347,6 +352,8 @@ async function main(argv: readonly string[]): Promise<number> {
       const key = keyFromHex(id);
       await peer.hold(key, await loadKey(dir, id));
       await peer.connect(url, key);
+      // Remembered only once it has proved itself.
+      (await new FileLocators(dir).load()).set(id, url);
 
       process.stdout.write(`syncing ${codeFor(key)} with ${url}; ctrl-c to stop\n`);
       await new Promise<void>((resolve) => {

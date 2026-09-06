@@ -48,4 +48,10 @@ export {
   WRITERS,
   writers,
 } from './members.js';
+export {
+  type Inventory,
+  type Keyring,
+  type LocalState,
+  type LocatorCache,
+} from './local.js';
 export * from './client/index.js';

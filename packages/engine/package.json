@@ -20,6 +20,11 @@
       "types": "./dist/core/testkit.d.ts",
       "development": "./src/core/testkit.ts",
       "default": "./dist/core/testkit.js"
+    },
+    "./local-conformance": {
+      "types": "./dist/local.conformance.d.ts",
+      "development": "./src/local.conformance.ts",
+      "default": "./dist/local.conformance.js"
     }
   },
   "dependencies": {
