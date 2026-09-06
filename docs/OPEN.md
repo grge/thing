@@ -1,8 +1,12 @@
-# Open questions and build order
+# Open questions
 
 Companion to [ARCHITECTURE.md](ARCHITECTURE.md), which describes the design and
 changes rarely, and to [PLAN.md](PLAN.md), which sets out the implementation
 stages. This one tracks what is still undecided, and changes as questions close.
+
+**PLAN.md owns the build order.** This file used to carry one too, and they
+drifted; what is left here is the *dependency reasoning* behind the order, which
+is the part that does not belong in a stage list.
 
 Most of these are answered *by* a stage rather than before it; PLAN.md names
 which stage decides what.
@@ -26,21 +30,22 @@ Roughly in order of how much would change if the answer went the other way.
 | 7 | Is membership a whole-list register or a set of add/remove operations? | §7.4 |
 | 8 | Does a peer keep replicating the losing branch of a resolved chain fork? | §7.3 |
 | 9 | How is a blob reference expressed, and is `:kind` doing two jobs? | §3.9, §4.2 |
-| 10 | Can one identity write from two processes at once? Traced in [APPEND-POINTS.md](APPEND-POINTS.md): split `writer` into identity + append point. Subtractive — removes the lock, the write API and the tab lock. | §2.1, §2.3, §7.3 |
-| 11 | Do dense per-writer sequence numbers stay at all, given that the literature calls them unsafe against a *malicious* writer? See [EQUIVOCATION.md](EQUIVOCATION.md). Question 10 does not answer this. | §2.1, §2.3, §7.3 |
+| 10 | Do dense per-writer sequence numbers stay at all, given that the literature calls them unsafe against a *malicious* writer? See [EQUIVOCATION.md](EQUIVOCATION.md). Append points do not answer this. | §2.1, §2.3, §7.3 |
+| 11 | Does signing ever have to carry *attribution* rather than only authority — and does this system want a notion of a person at all? See [LEARNINGS.md](LEARNINGS.md) §1. | §5.1, §7.2.1 |
 
-**Questions 10 and 11 are one problem seen twice.** 10 is the honest case — your
-own two processes — and is a small, subtractive change. 11 is the Byzantine case
-and is a much larger one. 10 does not solve 11, and saying so is the point of
-splitting them: it would be easy to build 10, feel the relief, and forget that a
-malicious writer can still equivocate within a single append point.
+**Question 10 is what append points leave behind.** Stage 7.6 fixes the *honest*
+case — your own two processes — by giving each its own chain. A malicious writer
+can still equivocate within one append point, and §7.3's resolution is still the
+answer for that. It would be easy to build append points, feel the relief of the
+lock going away, and forget that half the problem is untouched.
 
-**Question 10 is the deepest of the original set.** It is the only one that would change the event
-format, and it arrived from the opposite direction to the rest: not from asking
-what the design should be, but from two sessions of admin tooling growing
-steadily more elaborate around a constraint nobody had questioned. The finding
-is that `seq` buys gap detection and brings one-key-one-writer along uninvited,
-and that convergence never used it. Unmeasured, and deliberately not decided.
+**Question 11 is the one a rewrite would start from.** It arrived from the
+opposite direction to the rest: not from asking what the design should be, but
+from two sessions of admin tooling growing more elaborate around a constraint
+nobody had questioned. Signing currently proves that *a key was entitled* to
+write, and nothing anywhere proves *who wrote*. §7.2.1 makes that worse than a
+gap — co-administering a space means sharing the space key, so the log cannot
+record which holder acted.
 
 **Question 1 is the bet.** It is the only one whose answer would change what the
 system *is* rather than how it is built. It also fails soft: if the vocabulary
@@ -56,12 +61,17 @@ what holds under any competent authenticated cipher — but it must be settled
 before encryption ships, and the nonce-uniqueness problem is the kind that loses
 everything at once when it is got wrong.
 
-**Questions 5 to 10 are implementation-shaped.** They will be answered better
+**Questions 5 to 9 are implementation-shaped.** They will be answered better
 with code in front of you than in advance, and nothing depends on settling them
-first. Question 10 has one known constraint worth carrying: a snapshot of a
+first. Question 9 has one known constraint worth carrying: a snapshot of a
 log-backed body is itself a blob belonging to an object whose body is not one, so
 "is this body a blob" and "is this value stored out of line" are separate
 questions and probably want separate answers.
+
+**Questions 10 and 11 are different in kind.** Both would change the substrate,
+both came from building rather than from designing, and neither is scheduled.
+`LEARNINGS.md` collects what they and their neighbours suggest for whenever this
+design is rewritten.
 
 ---
 
@@ -69,6 +79,14 @@ questions and probably want separate answers.
 
 Kept because a closed question is worth being able to recognise as closed, and
 because two of these were once the most expensive things on the list.
+
+**Can one identity write from two processes? — decided, not yet built.** Split
+`writer` into an identity and a per-process *append point*, so two processes of
+one identity extend different chains and never contend for a position.
+`APPEND-POINTS.md` has the trace and the two choices settled (per process;
+opaque 16 bytes, not a keypair); PLAN.md stage 7.6 has the work. It is
+subtractive — the store lock, the write-through-the-holder API and
+`writelock.ts` all stop being necessary.
 
 **The permission circularity — closed by §7.2.** The rule that says which events
 count was itself written by events. This was the question threatening to add a
@@ -121,43 +139,34 @@ when the winner is not the party you would have chosen.
 
 ---
 
-## A build order this suggests
+## What the dependencies imply
 
-Not a plan, but the ordering the dependencies imply. The principle is to build
-the certain parts first and buy information about the uncertain ones as cheaply
-as possible.
+Not an order — PLAN.md has that — but the reasoning it came from, kept because
+the *why* outlives any particular sequence.
 
-1. **The substrate** (§2), single-writer, unencrypted. It is Proven, everything
-   sits on it, and it is the part least likely to be rebuilt. Single-writer is
-   the simplest case of §7 rather than an evasion of it: the writer set has one
-   member and the root rule (§7.2.1) is already satisfied, so multi-writer is
-   later additive work rather than a change of shape. Two things must be right
-   from the first line, because both are expensive to retrofit: the space key
-   belongs in the signed preimage (§2.1), and blob addressing should be shaped
-   for ciphertext even before a cipher exists (§2.4).
-2. **The canonical-form specification** (§3.6) *before* any merge rule is coded,
-   including per-rule serialisation. It is much harder to retrofit than to write.
-3. **The fold with the register and flag rules only**, plus a filesystem end to
-   end. This proves the tiering without betting on the hard rules.
-4. **A chat**, which needs no new rule at all — a folder whose children are
-   messages. The cheapest test of whether the shape holds for something that is
-   not a filesystem, and it should happen early while abandoning the universal
-   fold would still be affordable.
-5. **Resolution and the mesh** (§5.3), once there is something worth reaching.
-6. **Encryption** (§6), which unlocks always-on peers. Self-contained only if
-   step 1 left blob addressing ciphertext-shaped.
-7. **Fast-start snapshots** (§9.1) when folding a log becomes slow enough to
-   notice — not before, and without discarding events.
+**Build the certain parts first and buy information about the uncertain ones as
+cheaply as possible.** The substrate (§2) is Proven, everything sits on it, and
+it is the part least likely to be rebuilt. Two things had to be right from the
+first line because both are expensive to retrofit: the space key in the signed
+preimage (§2.1), and blob addressing shaped for ciphertext before any cipher
+exists (§2.4).
+
+**Canonical form before any merge rule is coded** (§3.6), per-rule serialisation
+included. Much harder to retrofit than to write.
+
+**A chat before anything hard**, because it needs no new rule — a folder whose
+children are messages — and is the cheapest test of whether the shape holds for
+something that is not a filesystem. Worth doing while abandoning the universal
+fold would still be affordable.
+
+**Multi-writer is ordinary additive work.** §7.2 settled the shape: a membership
+list on the root, a permission check in phase 2, no envelope change. It can be
+built whenever it is wanted. What it requires is §7.3's constraint being
+enforced where it can be and stated plainly where it cannot — and
+`APPEND-POINTS.md` changes what "where it can be" means.
 
 **Deferred until forced:** compaction and views-as-code, each either unresolved
 above or much cheaper once the questions ahead of it have answers.
-
-**Multi-writer is not in that category.** With §7.2 settled it is ordinary
-additive work — a membership list on the root, a permission check in phase 2 of
-the fold, and no envelope change — so it can be built whenever it is wanted
-rather than waiting on a resolution. What it does still require is §7.3's
-constraint being enforced where it can be (an exclusive lock per space on one
-device) and stated plainly where it cannot.
 
 ---
 
@@ -188,43 +197,34 @@ looks like as a directory, how a body rule other than blob is presented, what
 happens to attributes with no filesystem analogue. Noted because the design
 happens to be shaped for it.
 
-**One client, two transports.** Proposed in `CLIENTS.md`. `web/client.ts` and
-`node/peer.ts` converged independently on the same structure, and only five of
-`client.ts`'s 566 lines touch a browser global — all transport construction. A
-shared client belongs in `packages/engine`, which is already on the platform-free
-side of the boundary `boundary.test.ts` enforces. Reachability becomes a
-capability (`listen` supplied or not) rather than what separates two classes,
-which is what makes a browser and a headless server the same kind of thing.
-
-Blocked on nothing; steps 1-5 close a correctness bug (`thing put` races a
-running holder's appends with no lock) and delete a duplicated implementation.
-
-**Three ways to run a peer.** `thing` holds spaces and draws itself in one
-process; `thing serve` is the same holder headless; `thing attach` draws over a
-holder running elsewhere and is the only mode needing a wire. The TUI is a
-renderer over a holder, not a client of one.
+*(Two entries that were here — "one client, two transports" and "three ways to
+run a peer" — have moved into PLAN.md as stages 7.5 and 7.7. The first is
+built.)*
 
 ---
 
 ## Next
 
-In order, and the first two are the ones that get more expensive with delay:
+PLAN.md's stage order is the answer; what follows is what is most expensive to
+delay, which is not always the same thing.
 
-1. **The version-vector extension** (§2.3). The last outstanding substrate
-   change, and three separate problems want it: detecting and repairing forked
-   chains, expressing "held but not applicable", and marking compacted ranges.
-   Designing it once now is much cheaper than three times later, and the tip
-   hash — enough to make divergence *detectable* — is settled enough to build
-   today.
-2. **Canonical serialisation per rule** (§3.6). Cheap now, brutal later. The
-   prototype has real representation freedom in the sequence rule — run
-   splitting, tombstone encoding — and nothing pins it, so two correct
-   implementations of that rule would not agree byte for byte.
-3. **Incremental folding.** `proto/` re-folds everything on every call. Slicing
-   makes the incremental version mostly straightforward, with one exception worth
-   knowing in advance: cycle-breaking reads the whole parent graph, so the tree
-   is one unit even though every other slice is independent.
-4. **The substrate**, per the build order above.
+1. **Append points** (`APPEND-POINTS.md`, stage 7.6). Changes the event
+   envelope, so it gets more expensive with every log that exists and every
+   design decision taken on the old shape. Nothing is deployed today. That
+   window closes.
+2. **The version-vector extension** (§2.3) — question 2 above. Still the last
+   outstanding *substrate* change, and three problems want it. Append points
+   touch the same structure, so the two should at least be designed with each
+   other in view.
+3. **Canonical serialisation per rule** (§3.6). Cheap now, brutal later. The
+   sequence rule has real representation freedom — run splitting, tombstone
+   encoding — and nothing pins it, so two correct implementations would not
+   agree byte for byte.
+
+**Since the last revision of this list:** incremental folding is built
+(`core/incremental.ts`), the tip hash is in the handshake, and the substrate,
+fold, store, net, node and web stages are all done. The list above is what
+remains of it.
 
 **The bet is not fully settled.** One sequence rule fits the contract. Whether a
 block-structured document needs a rule large enough that "merge rule" means

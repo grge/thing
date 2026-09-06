@@ -14,6 +14,9 @@ code in `src/` currently does — see *Status* below.
 | [docs/PLAN.md](docs/PLAN.md) | **The implementation plan** — stages, what each answers, what moves to archive |
 | [docs/OPEN.md](docs/OPEN.md) | Open questions. Mutable — changes as questions close |
 | [docs/LEARNINGS.md](docs/LEARNINGS.md) | What building this taught, for whenever the design is rewritten again |
+| [docs/CLIENTS.md](docs/CLIENTS.md) | How the CLI, TUI and browser relate to a running peer — the engine's API as the only way in |
+| [docs/APPEND-POINTS.md](docs/APPEND-POINTS.md) | Splitting `writer` into an identity and a per-process append point: the trace, and the decisions |
+| [docs/EQUIVOCATION.md](docs/EQUIVOCATION.md) | Literature review — why per-writer sequence numbers force one writer per key |
 | [archive/](archive/) | The previous implementation, and the fold prototype. Not built |
 | [docs/v1/](docs/v1/) | Archived — the design that came before, and the reasoning behind it |
 | [docs/v0/](docs/v0/) | Archived — the original proof of concept |
@@ -38,9 +41,13 @@ read.**
 
 ## Status
 
-**Stage 0 of [docs/PLAN.md](docs/PLAN.md) is done**: the workspace is scaffolded
-and the previous implementation has moved to [archive/](archive/), which is kept
-readable but is not built, tested, or imported.
+**Stages 0–7.5 of [docs/PLAN.md](docs/PLAN.md) are done**: the substrate, the
+fold, storage, a space, the sync protocol, a headless peer, a browser client,
+and one shared implementation of being a peer. The previous implementation is in
+[archive/](archive/), kept readable but not built, tested, or imported.
+
+Next is stage 7.6, which changes the event envelope — see
+[docs/APPEND-POINTS.md](docs/APPEND-POINTS.md).
 
 ```
 packages/engine/  the peer, platform-agnostic

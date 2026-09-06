@@ -34,17 +34,28 @@ migrated in place, and no new code imports from it.
 ```
 archive/            what src/ is today — kept readable, not built, not tested
 packages/
-  core/             fold, rules, canonical encoding, signing        no I/O
-  net/              protocol, sync, blob transfer, resolution       no platform
-  store/            storage interfaces + browser and node backends
-  peer/             a peer: core + net + store, wired together
-  web/              the browser client — UI, WebRTC transport
-  node/             the headless peer — WebSocket transport, CLI
+  engine/           the peer, platform-agnostic — reaches for nothing
+    core/             events, canonical encoding, signing, the fold
+    store/            where events live — an interface, and its contract
+    net/              protocol, sync, blob transfer, the ephemeral channel
+    fs/               the filesystem model over the fold
+    client/           holding many spaces, and the connections between them
+  node/             disk, sockets, CLI — supplies what the engine needs
+  web/              IndexedDB, WebRTC, Svelte — likewise
 ```
 
-The split is not ceremony. `core` and `net` must be platform-free or the headless
-peer cannot exist, and making that a package boundary is what stops a
-`localStorage` call drifting in.
+**This started as six packages and is now three.** `core`, `net`, `store` and
+`peer` were separate until stage 7.5; nothing imported a subset of them, nothing
+was published, and the split cost more than it bought — `peer` looked like a real
+boundary, so nobody noticed it had stopped one level short of its own doc
+comment, and the multi-space client it described grew independently in `node`
+and `web` until it was the same 300 lines twice.
+
+What matters is the line between **platform-free and platform-bound**, not the
+lines between `core` and `net`. That one is still a package boundary and still
+enforced: `engine` compiles with `"types": []` and an ES2022-only `lib`, so a
+`localStorage` reference in it is a compile error. The layering inside `engine`
+is a reading order, and a directory expresses it fine.
 
 **What is worth borrowing**, having read it: `net/blobtransfer.ts` (its whole
 dependency is a two-method `Channel`), `net/protocol.ts`'s framing, `net/sync.ts`
@@ -62,6 +73,11 @@ reference implementation. Its tests carry into stage 2 nearly unchanged.
 
 ---
 
+**A note on stage names.** Stages 1–5 were built when `core`, `store`, `net` and
+`peer` were separate packages. They are now directories inside `engine`
+(stage 7.5), and the stage headings say `engine/core` and so on to match the
+tree as it is. What each stage built is unchanged.
+
 ## Stage 0 — Scaffold and archive
 
 Move `src/` and `proto/` to `archive/`. Set up the workspace, TypeScript project
@@ -70,16 +86,16 @@ helpers, because every later stage leans on them.
 
 **Done when:** `npm test` runs green over an empty-but-wired workspace, the
 archived tree is untouched and unbuilt, and **the platform boundary is enforced
-by the compiler** — `core`, `net`, `store` and `peer` build with `"types": []`
-and an ES2022-only `lib`, so a `localStorage` reference in any of them is a
-compile error.
+by the compiler** — the platform-free packages build with `"types": []` and an
+ES2022-only `lib`, so a `localStorage` reference in any of them is a compile
+error. (Four packages then, `engine` now; the boundary is the same line.)
 
 **Done.** The boundary is asserted by a test over the tsconfigs as well, since
 widening `types` to fix one import would otherwise silently lose the property.
 
 ---
 
-## Stage 1 — `core`: events, encoding, signing
+## Stage 1 — `engine/core`: events, encoding, signing
 
 The envelope (§2.1) and the two things that must be right before any log exists.
 
@@ -148,7 +164,7 @@ things worth recording, because each was decided by writing it:
 
 ---
 
-## Stage 2 — `core`: the fold
+## Stage 2 — `engine/core`: the fold
 
 §3, and `archive/proto/` is the reference — it is where the tiering was
 worked out and its tests carry over almost unchanged.
@@ -186,7 +202,7 @@ structure correctly.
 
 ---
 
-## Stage 3 — `store`: persistence
+## Stage 3 — `engine/store`: persistence
 
 The first genuinely new work, and the reason the packages split.
 
@@ -231,7 +247,7 @@ IndexedDB (browser). Three notes:
 
 ---
 
-## Stage 4 — `peer`: a space, folded and persisted
+## Stage 4 — `engine`: a space, folded and persisted
 
 The seam where a peer becomes a thing rather than a library.
 
@@ -263,7 +279,7 @@ a store and a folder together. Three notes:
 
 ---
 
-## Stage 5 — `net`: protocol and sync
+## Stage 5 — `engine/net`: protocol and sync
 
 Everything below the transport, and none of it platform-specific.
 
@@ -455,15 +471,17 @@ correctness bug: `thing put` appends to a served space's log with no lock and
 no way to tell the running holder, so a write is invisible until restart and
 two processes can fork a chain on one machine.
 
-The second is duplication that already exists. `web/client.ts` and
-`node/peer.ts` converged independently on the same structure — same `attach`,
-same `pushNew`, same comments — and the hub-convergence fix had to be
-understood twice. Only five of `client.ts`'s 566 lines touch a browser global,
-all of them transport construction.
+The second was duplication that already existed. `web/client.ts` and
+`node/peer.ts` had converged independently on the same structure — same
+`attach`, same `pushNew`, same comments — and the hub-convergence fix had to be
+understood twice. Only five of `client.ts`'s then-566 lines touched a browser
+global, all of them transport construction. (After the merge: 389 and 151.)
 
-Steps, each useful alone: the store lock; ~~name `Connection` in web~~; ~~move
-`Client` into `packages/engine`~~; ~~rebuild `Peer` on it~~; route the CLI
-through the holder.
+Steps, each useful alone: ~~the store lock~~ (superseded by 7.6 — append points
+remove the corruption rather than locking against it); ~~name `Connection` in
+web~~; ~~move `Client` into `packages/engine`~~; ~~rebuild `Peer` on it~~; route
+the CLI through the holder (superseded in mechanism: with its own append point
+the CLI writes and syncs like any peer).
 
 `engine/client/` now holds the one implementation. `Peer` is 151 lines of
 directory, address and callback shapes; the web client is IndexedDB, keys,
@@ -471,27 +489,26 @@ WebRTC and the view model. `listen` stayed out of the engine: a browser cannot
 accept connections, so accepting is not part of being a peer — whoever has an
 address feeds what it accepts to `Client.adopt`.
 
-What remains is the correctness half: the store lock, and routing the CLI
-through the holder.
+**What remains of this stage has been overtaken by 7.6.** The correctness half
+was the store lock and routing writes through the holder; both existed to work
+around two processes contending for one chain, and append points remove the
+contention. What is left of 7.5 is done.
 
-**Both are downstream of an open question about the core**, and
-`APPEND-POINTS.md` now traces what closing it would take: `writer` is doing two
-jobs — *who signed this* and *which chain does this extend* — and the code
-already separates them cleanly, with no file using it for both. Splitting them
-makes "same identity, two processes" ordinary, at which point the lock and the
-write API are both unnecessary rather than merely awkward.
+**How that happened, because the route matters more than the conclusion.** The
+lock existed because two processes sharing a writer key produce two validly
+signed events at one sequence number; the write API existed because the lock
+forbade the second process from writing. Each step was locally reasonable and
+the design kept getting more elaborate, which was the signal.
 
-That trace changes finished stages (1, 3, 4, 5, 7) as well as future ones, so it
-is recorded rather than started.
+`EQUIVOCATION.md` records what a literature review then found: the hazard is
+what Kleppmann calls *equivocation*, dense per-writer sequence numbers are what
+make it harmful, and the fold never used them. `APPEND-POINTS.md` traces the
+consequence — `writer` is doing two jobs, *who signed this* and *which chain
+does this extend*, and the code already separates them cleanly with no file
+using it for both.
 
-**Both are downstream of an open question about the core.** The lock exists
-because two processes sharing a writer key produce two validly signed events at
-one sequence number, and the control API exists because the lock forbids the
-second process from writing. `EQUIVOCATION.md` records what a literature review
-found: that hazard is what Kleppmann calls *equivocation*, dense per-writer
-sequence numbers are what make it harmful, and the fold never used them. Nothing
-is decided — but building the lock and the write API is building around a
-constraint that may not need to exist, so the question is worth closing first.
+That trace changes finished stages (1, 3, 4, 5, 7) as well as future ones, which
+is why it is stage 7.6 rather than an edit to stage 1.
 
 The shape of that routing is settled (`CLIENTS.md`): **the client's public API is
 the only way in**, and every mode — in-process, one-shot CLI, attached TUI, and
@@ -501,21 +518,93 @@ from the chain tip and only the process that owns the chain can allocate a
 position in it. The socket is local-only until there is an authentication story,
 since any caller on it can write to every space the holder holds.
 
-**Done when:** `thing put` against a running holder reaches connected peers
-without a restart, opening a held space from a second process fails with a
-clear error, and there is one implementation of `attach`.
+**Done when:** there is one implementation of `attach`. **Met.**
 
-## Stage 7.6 — The control socket and the TUI
+*(The original criterion also required `thing put` against a running holder to
+reach connected peers without a restart, and a second process opening a held
+space to fail with a clear error. The first moves to 7.6, where it is met by the
+CLI writing its own chain; the second is withdrawn — with append points a second
+process opening a held space is ordinary, not an error.)*
 
-Depends on 7.5's view model. `thing` holds spaces *and* draws itself — one
-process, no protocol between interface and peer, because `serve` already turns
-peer callbacks into rendered lines and a TUI draws them instead. `thing serve`
-omits the drawing; `thing attach` is the drawing over a holder elsewhere, and
-is the only mode needing a wire.
+## Stage 7.6 — Append points
 
-The control socket carries the view model (`SpaceStatus`, `PeerStatus`,
-`Activity`) and the admin verbs — not editing, which goes over the sync
-protocol like any client. See `CLIENTS.md`.
+**Decided, not started.** `APPEND-POINTS.md` has the trace and the two choices;
+this is where it lands in the order. It comes *before* the interfaces because
+it changes what they have to be.
+
+The event envelope gains `point`: an opaque 16 bytes, minted per process when a
+space is opened for writing. `writer` stays the identity; the chain is keyed by
+`(writer, point)`.
+
+- `encodeEventBody` gains the field, so **every signature changes and no
+  existing log is readable.** Acceptable now, and not later.
+- `checkLink`, `ChainSet` and the version vector key by `(writer, point)`.
+- `compareKeys` is untouched — still `(lamport, writer, id)` — so the fold, the
+  rules and the root check do not change at all.
+
+**Why it is worth doing before more of the design is built on the old shape:**
+it is *subtractive*. The store lock stops being a correctness requirement, the
+control API stops needing to carry writes, `writelock.ts` stops being needed for
+correctness, and the CLI becomes an ordinary peer again. Stage 7.5's remaining
+work and stage 7.7's shape both shrink.
+
+**Two things it does not do.** It does not address a *malicious* writer, who can
+still equivocate within one append point — §7.3's resolution stays for that
+(OPEN.md question 11). And it does not give the system attribution: `writer` is
+still a per-space key, and there is still no notion of a person
+(`LEARNINGS.md` §1).
+
+**Watch stage 10.** §6 derives the encryption nonce from `(writer, seq)`, unique
+only because one identity has one chain. It must become `(writer, point, seq)`
+or two of one identity's processes reuse a nonce under one key.
+
+**Done when:** two processes hold one space with one writing key, both write, and
+both sets of events fold — with no lock, and no fork reported.
+
+## Stage 7.7 — The interfaces: control socket, CLI, TUI
+
+**Shape settled, details open.** `CLIENTS.md` has the reasoning.
+
+The settled part: **the engine's client API is the only way in**, and every
+interface is a transport to it.
+
+```
+thing              holder + TUI in one process     the default
+thing serve        holder, no interface            headless
+thing attach       TUI over a holder elsewhere     needs a wire
+thing <verb>       one-shot, print and exit        scripts and SSH
+browser            the same, over a socket         later (§below)
+```
+
+`thing` is one process: the TUI is a renderer over a holder, not a client of
+one, so there is no protocol between interface and peer. Only `attach` and the
+browser need a wire, and both carry the same API rather than a vocabulary of
+their own.
+
+The control socket is a Unix socket in the data directory — **local only**, and
+that is a constraint rather than a default. Any caller on it can write to every
+space the holder holds, which is fine when the filesystem permissions that guard
+the socket also guard the key files, and not fine over TCP. No network transport
+until there is an authentication story.
+
+**What is not worked out:** the socket's encoding (it must carry method calls,
+async iterables, streamed bytes with backpressure, and a subscription for the
+view model — `net/protocol.ts` solves the last three for sync but sync frames
+are not method calls); whether the view model pushes or pulls, and how it
+coalesces so a busy sync does not spend its time redrawing; and how much the TUI
+shares with the web client beyond the view-model types.
+
+**The browser is the real test of the API.** The terminal modes can cheat —
+`thing` is in-process and `attach` is a local socket with the process's own
+trust. A browser can do neither. If the API survives a caller that is genuinely
+remote and cannot read the key files, it is the right API. That also forces one
+decision the terminal modes hide: the UI calls `list(space.state, …)` directly,
+so a remote browser either ships the fold or turns every navigation into a round
+trip. Ship the fold.
+
+**Note what 7.6 removes from this stage.** With append points, writes no longer
+have to go through the holder, so the socket carries administration and the view
+model because that is what is *left*, not because editing was excluded from it.
 
 ## Stage 8 — Resolution and the mesh
 
@@ -613,6 +702,9 @@ Not planned in detail, because each depends on what the stages above teach.
 | 3–4 | Does a space work as a persistent local thing? |
 | 5–6 | Is the protocol genuinely platform-free? |
 | 7 | Is it usable? |
+| 7.5 | Is there one implementation of being a peer, or two? |
+| 7.6 | Can one identity write from two processes at once? |
+| 7.7 | Is the engine's API good enough to be the only way in? |
 | 8 | Can a space be found and stay alive? |
 | 9 | Does multi-writer stay as cheap as §7.2 claims? |
 | 10 | Can infrastructure exist without custody? |

@@ -1,9 +1,20 @@
 # Clients, holders, and how the pieces fit
 
-**Status: partly built.** `engine/client/` exists and both consumers are built
-on it (steps 2–4 below); the lock, the socket and the TUI are not. It supersedes
-the earlier drafts of `ADMIN.md`, which framed the terminal as a client of a
-server and got the default backwards.
+**Status: partly built, and partly superseded.** `engine/client/` exists and
+both consumers are built on it (steps 2–4 below). The lock, the socket and the
+TUI are not.
+
+**Read §"What append points change" at the end first.** The decision recorded in
+`APPEND-POINTS.md` removes the reason for two of this document's conclusions —
+the store lock as a correctness requirement, and writes going through the
+holder. The reasoning that led here is kept because it is what surfaced the
+constraint; the conclusions it reached under that constraint are marked.
+
+**PLAN.md owns the build order.** The one at the end of this document is the
+original decomposition, kept for its reasoning.
+
+This document supersedes the earlier drafts of `ADMIN.md`, which framed the
+terminal as a client of a server and got the default backwards.
 
 Sections marked with what an earlier draft claimed are kept that way
 deliberately: three of the wrong answers here were arrived at honestly and
@@ -419,8 +430,9 @@ keeping, and the view model means the drawing code is small either way.
 Each step is useful on its own, which is the test that the decomposition is
 right.
 
-1. **The store lock.** Independent of everything else. Turns today's silent
-   corruption into an error. Conformance-suite covered.
+1. ~~**The store lock.**~~ **Superseded** — see the end of this document. It was
+   independent of everything else and turned silent corruption into an error;
+   append points remove the corruption instead.
 2. ~~**Name `Connection` in the web client.**~~ **Done.** The shape is now
    `engine/client/types.ts`'s `Connection`, and the web client builds one in
    `socketConnection`/`rtcConnection` instead of inline objects.
@@ -432,7 +444,9 @@ right.
    151 and now holds only a directory, an address, and the callback shapes the
    CLI wants. The duplicate `attach`/`pushNew` are gone, and the stale comment
    at `peer.ts:231` went with them.
-5. **Route the CLI through the holder.** `thing put` against a running peer
+5. **Route the CLI through the holder.** *Superseded in mechanism, not in goal:
+   with append points the CLI writes its own chain and syncs, rather than asking
+   the holder to write.* `thing put` against a running peer
    reaches connected clients without a restart. This is the bug that started all
    of it.
 6. **The control socket,** carrying the client's API. Local only.
@@ -517,3 +531,37 @@ belongs to the protocol rather than to this class.
    a socket that is a subscription, and a client that redraws on every event of
    a busy sync is a client that spends its time redrawing. Some coalescing
    belongs in the protocol.
+
+---
+
+## What append points change
+
+Written after the fact. `APPEND-POINTS.md` decides that the event envelope gains
+a per-process `point`, so two processes of one identity extend separate chains.
+Three of this document's conclusions do not survive that.
+
+**The store lock stops being a correctness requirement.** Step 1 exists because
+two processes sharing a writer key produce two validly signed events at one
+sequence number. With separate chains they do not, so nothing is corrupted by a
+second process writing. A lock may still be wanted — to stop two holders
+competing for one address, or as a "something is already running here" signal —
+but that is operational, not integrity.
+
+**Writes stop having to go through the holder.** The argument was that `seq` and
+`prev` come from the chain tip, so only the process owning the chain can allocate
+a position. With per-process points, a CLI owns its own chain and can write
+directly, then sync. The CLI becomes an ordinary peer again — which is what §5.6
+always claimed and what this document had to carve an exception to.
+
+**The socket's contents narrow, for a better reason.** It still carries the
+client's API. But editing is no longer *on* it because editing does not need to
+be: administration and the view model are what is left, rather than what was
+selected.
+
+**What survives, and is the part worth keeping:** the client's API is the only
+way in, every interface is a transport to it, the socket is local-only until
+authentication exists, and the browser is the real test of whether the API is
+right. Those did not depend on the constraint.
+
+`writelock.ts` also stops being needed for correctness — two tabs get two
+points — though it may survive as a UX choice about which tab is editing.
