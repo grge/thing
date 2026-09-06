@@ -647,6 +647,35 @@ dropped that guard.
 and can be dialled, but nothing announces or answers queries yet. That is stage
 8, and it needs measurement rather than argument.
 
+## Stage 7.10 — Rebuild `web` on the main-space model ✅
+
+**Done.** The old client and UI are in `archive/web/`, reference only — the UI
+especially, since its design tokens and component structure carried real
+decisions the rebuild should take rather than reinvent.
+
+- **`Client` holds tabs, not an inventory.** `open` writes nothing; `follow`
+  opens a tab carrying the link's name, which is what a petname was without a
+  separate store; `create` mints a space for a client that wants one. A client
+  that only views other people's spaces holds nothing at all.
+- **`writelock.ts` is gone**, not moved aside. It existed to stop two tabs
+  sharing a key writing at the same `seq`; per-process append points mean they
+  extend separate chains, so the hazard cannot occur. Stage 7.6 predicted this.
+- **A minimal UI**, deliberately: tabs, a tree, following a link into a new tab.
+  The previous App merged a space list, tree, preview and debug panel into 353
+  lines; only the parts the tab model changed were rebuilt, and the rest is
+  worth adding back deliberately.
+
+**Kept rather than rebuilt**, as capability implementations the model did not
+touch: `idbstore.ts`, `webrtc.ts`, `signalling.ts`, `local.ts`.
+
+Ten tests for the tab model, under `fake-indexeddb` and a `localStorage` shim.
+The load-bearing one — *following a link does not add it to your own space* —
+was verified to fail when browsing-acquires is reintroduced.
+
+**Not built:** the preview, share and debug panels; the ephemeral view of
+connections; and anything to do with editing a remote space, which needs the
+`:writers` bootstrap (`docs/MAIN-SPACE.md`).
+
 ## Stage 7.7 — The interfaces: control socket, CLI, TUI
 
 **Shape settled, details open.** `CLIENTS.md` has the reasoning.

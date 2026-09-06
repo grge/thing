@@ -1,0 +1,98 @@
+/*
+ * Design tokens. Derived from convivial_design COMMON-CORE.md, greyscale core.
+ *
+ * Departures from the core, and why (the core asks that these be documented):
+ *
+ * 1. --control-min is 1.5rem, not 2.25rem. This is a keyboard-first tool whose
+ *    primary control is a file tree; TUI-tight rows are the point. Drag targets
+ *    get padded hit areas rather than taller rows.
+ * 2. Interface text is --text--1 (13px) by default, not --text-0. Same reason.
+ *    Prose in the preview pane still uses --text-0.
+ * 3. Colour is greyscale except for link, focus, danger, and the space-mode
+ *    markers on tabs. No decorative hue anywhere.
+ */
+:root {
+  color-scheme: light dark;
+
+  /* ── Greyscale core ── */
+  --canvas: #f6f6f6;
+  --canvas-raised: #ebebeb;
+  --canvas-sunken: #e0e0e0;
+  --ink: #1a1a1a;
+  --ink-muted: #5c5c5c;
+  --ink-faint: #8a8a8a;
+  --rule: #d1d1d1;
+  --rule-strong: #b0b0b0;
+
+  /* ── The only permitted colour ── */
+  --link: #174ea6;
+  --action: #174ea6;
+  --focus: #c76b00;
+  --danger: #a22b2b;
+  /* Space mode markers (§8.6). Used only as a 2px tab edge + a text label. */
+  --mode-local: #5c5c5c;
+  --mode-writer: #1f6f3f;
+  --mode-reader: #6b4ea6;
+
+  --font-interface: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data: ui-monospace, "Cascadia Mono", "Segoe UI Mono", Menlo, monospace;
+  --font-prose: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+
+  --text--2: 0.6875rem;
+  --text--1: 0.8125rem;
+  --text-0: 1rem;
+  --text-1: 1.25rem;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+
+  /* TUI-tight: one tree row. */
+  --row: 1.5rem;
+  --indent: 0.875rem;
+  --measure: 68ch;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --canvas: #181818;
+  --canvas-raised: #212121;
+  --canvas-sunken: #101010;
+  --ink: #efefef;
+  --ink-muted: #aaaaaa;
+  --ink-faint: #767676;
+  --rule: #363636;
+  --rule-strong: #4a4a4a;
+
+  --link: #8cb4ff;
+  --action: #8cb4ff;
+  --focus: #ffb454;
+  --danger: #ff8b8b;
+  --mode-local: #aaaaaa;
+  --mode-writer: #6ecf9a;
+  --mode-reader: #b49aff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --canvas: #181818;
+    --canvas-raised: #212121;
+    --canvas-sunken: #101010;
+    --ink: #efefef;
+    --ink-muted: #aaaaaa;
+    --ink-faint: #767676;
+    --rule: #363636;
+    --rule-strong: #4a4a4a;
+
+    --link: #8cb4ff;
+    --action: #8cb4ff;
+    --focus: #ffb454;
+    --danger: #ff8b8b;
+    --mode-local: #aaaaaa;
+    --mode-writer: #6ecf9a;
+    --mode-reader: #b49aff;
+  }
+}

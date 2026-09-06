@@ -1,92 +1,87 @@
 /**
- * The browser client: spaces, connections, and what a view needs to draw.
+ * The browser client: tabs over spaces.
  *
- * **All of it lives here rather than in a component.** The previous
- * implementation kept twenty-odd pieces of reactive state in one 1000-line
- * component, and the cost was that no part of it could be reasoned about or
- * tested without a browser. Here the view subscribes and draws; nothing about
- * syncing, storage or connection lifecycle is a UI concern.
+ * **A client with an interface holds several spaces at once, as tabs**
+ * (`docs/MAIN-SPACE.md`). That is the whole difference from a server, and it
+ * comes from having a renderer: a server has nothing to draw into, so it serves
+ * one space; a client can show many, so it opens many.
  *
- * Holding spaces and syncing them is not here at all — that is `@thing/engine`'s
- * `Client`, the same code a headless peer runs. What remains is genuinely
- * browser-shaped: IndexedDB, `localStorage` keys, Web Locks, `WebSocket` and
- * WebRTC, and the view model a Svelte component reads. What differs from a
- * server is reachability — a browser cannot be dialled, so it dials or is
- * introduced (ARCHITECTURE.md §5.6) — which is why nothing here listens.
+ * Two things follow, and both were mistakes in the previous version:
+ *
+ * **Opening is not acquiring.** Following a link opens a tab and writes
+ * nothing. Keeping a space — deciding you want it — writes a link into a space
+ * of your own, and is a separate act. When browsing *was* acquiring, a log
+ * accumulated a permanent record of everything ever opened, since appends are
+ * forever (§2.1).
+ *
+ * **A client need not hold a space of its own at all.** One that only views
+ * other people's spaces needs a keyring and a list of open tabs. §6.1 already
+ * says storing and serving without a writing key is ordinary; this is a step
+ * further — participating without holding anything.
+ *
+ * Everything about *being a peer* is `@thing/engine`'s `Client`, which this
+ * extends. What is here is browser-shaped: IndexedDB, `localStorage` keys,
+ * WebSocket and WebRTC, and the view a component reads.
  */
 import {
   type Activity,
   Client as PeerClient,
-  codeFor,
   type Connection,
   type Divergence,
   hex,
   type KeyPair,
-  namesFor,
+  links,
   type PeerKind,
   type PeerStatus,
   type PublicKey,
-  type Space,
-  type SpaceNames,
+  type State,
 } from '@thing/engine';
 
 import { IdbStore } from './idbstore.js';
-import { browserLocalState, type LocalPetnames } from './local.js';
+import { browserLocalState } from './local.js';
 import { WebSocketSignalling } from './signalling.js';
 import { connectVia, type RtcConnection, type RtcOptions } from './webrtc.js';
-import { acquireWriteLock } from './writelock.js';
 
 export type { Activity, PeerKind, PeerStatus };
 
-/** What a view needs to know about one space, without folding anything itself. */
-export interface SpaceStatus {
+/** One open space, as a view sees it. */
+export interface Tab {
   readonly id: string;
-  readonly names: SpaceNames;
+  readonly key: PublicKey;
+  /** What this client calls it: the name of the link it was opened from. */
+  readonly name: string | null;
+  readonly state: State;
   readonly writable: boolean;
-  /**
-   * This browser has the key, but another tab is writing with it (§7.3).
-   *
-   * Distinct from a plain replica: the difference matters to a person, because
-   * one is "you cannot write here" and the other is "you cannot write here
-   * *yet*".
-   */
-  readonly openElsewhere: boolean;
-  readonly peers: number;
   /** Chains that have diverged (§2.3). Reported, never silently ignored. */
   readonly forks: readonly Divergence[];
+  /** How this tab's space is being reached, if at all. */
+  readonly peers: number;
 }
 
 export interface ClientOptions {
   readonly iceServers?: readonly RTCIceServer[];
-  /** Where to be introduced, for browser-to-browser connections. */
   readonly signallingUrl?: string;
   readonly rtc?: RtcOptions;
 }
 
 export class Client extends PeerClient {
   private readonly listeners = new Set<() => void>();
+  private readonly local = browserLocalState();
+  /** Open tabs, in the order they were opened. Interface state, in no log. */
+  private readonly tabs: { key: PublicKey; name: string | null }[] = [];
   private signalling: WebSocketSignalling | null = null;
-  /** Failed attempts per address, for backing off. */
+  /** Failed addresses, for backing off. */
   private readonly retries = new Map<string, number>();
 
-  private readonly local: ReturnType<typeof browserLocalState>;
-
-  constructor(
-    local: ReturnType<typeof browserLocalState> = browserLocalState(),
-    private readonly browser: ClientOptions = {},
-  ) {
+  constructor(private readonly browser: ClientOptions = {}) {
     super({
       store: new IdbStore(),
-      keys: { keyFor: (id) => local.keys.keyFor(id) },
-      lock: (id) => acquireWriteLock(id),
+      keys: { keyFor: (id) => this.local.keys.keyFor(id) },
+      // No lock. Two tabs sharing a key mint separate append points and extend
+      // separate chains (§2.1), so there is nothing to contend for — which is
+      // what `writelock.ts` existed to prevent and no longer can happen.
     });
-    this.local = local;
     this.observe({ onChange: () => this.changed() });
-  }
-
-  /** The petname store, typed so a view can ask id -> name. */
-  private petnamesOf(): LocalPetnames {
-    return this.local.petnames;
   }
 
   /** Subscribe to any change worth redrawing for. Returns an unsubscribe. */
@@ -99,80 +94,79 @@ export class Client extends PeerClient {
     for (const listener of this.listeners) listener();
   }
 
-  /* ── spaces ───────────────────────────────────────────────────────────── */
+  /* ── tabs ─────────────────────────────────────────────────────────────── */
 
-  /** Every space this browser holds, with everything a view needs. */
-  spaces(): SpaceStatus[] {
-    return this.holding()
-      .map((id) => {
-        const h = this.entry(id)!;
-        return {
-          id,
-          names: namesFor(h.key, { petname: this.petnamesOf().nameFor(id) }),
-          writable: h.space.writable,
-          // A key this browser holds, but another tab is writing with (§7.3).
-          openElsewhere: !h.space.writable && h.hasKey,
-          peers: h.connections.size,
-          forks: h.forks,
-        };
-      })
-      .sort((a, b) => (a.names.display < b.names.display ? -1 : 1));
-  }
-
-  /** Where a space was last reached, if this browser remembers (§5.3). */
-  lastLocator(id: string): string | null {
-    return this.local.locators.get(id);
-  }
-
-  override async hold(key: PublicKey, writer?: KeyPair): Promise<Space> {
-    const space = await super.hold(key, writer);
-    await this.local.inventory.remember(hex(key));
-    return space;
-  }
-
-  /** Open every space this browser has a record of. */
-  async restore(): Promise<void> {
-    for (const id of await this.local.inventory.all()) {
-      await this.hold(fromHex(id));
-    }
+  /**
+   * Open a space, without keeping it.
+   *
+   * Writes nothing. A tab is interface state: close it and no trace remains,
+   * which is what makes browsing free.
+   */
+  async open(key: PublicKey, name: string | null = null): Promise<Tab> {
+    const id = hex(key);
+    if (!this.tabs.some((t) => hex(t.key) === id)) this.tabs.push({ key, name });
+    await this.hold(key);
     this.changed();
-
-    // Reconnect where a space was last reached. Without this a reload leaves
-    // every space held but connected to nobody, so metadata is there and
-    // asking peers for a blob asks no one (§2.4).
-    //
-    // A cached locator is stale by default (§5.3): it is tried, and failing is
-    // ordinary rather than an error worth reporting.
-    for (const id of this.holding()) {
-      const url = this.local.locators.get(id);
-      if (url === null) continue;
-      try {
-        await this.connectTo(id, url);
-      } catch {
-        this.note('connection', id, `${url} did not answer; it may have moved`);
-      }
-    }
+    return this.tabOf(id)!;
   }
 
-  /** Mint a space. This browser holds the key, so it is the only writer. */
-  async create(name?: string): Promise<string> {
+  /** Close a tab. The space stays in storage if it was kept; otherwise it is just gone. */
+  async closeTab(id: string): Promise<void> {
+    const at = this.tabs.findIndex((t) => hex(t.key) === id);
+    if (at !== -1) this.tabs.splice(at, 1);
+    await this.release(id);
+    this.changed();
+  }
+
+  /** Every open tab, for a view. */
+  view(): Tab[] {
+    return this.tabs.map((t) => this.tabOf(hex(t.key))).filter((t): t is Tab => t !== null);
+  }
+
+  private tabOf(id: string): Tab | null {
+    const held = this.entry(id);
+    const tab = this.tabs.find((t) => hex(t.key) === id);
+    if (held === undefined || tab === undefined) return null;
+    return {
+      id,
+      key: tab.key,
+      name: tab.name,
+      state: held.space.state,
+      writable: held.space.writable,
+      forks: held.forks,
+      peers: held.connections.size,
+    };
+  }
+
+  /**
+   * Follow a link out of an open space.
+   *
+   * The link's name comes with it, so a tab is labelled by what the space it
+   * came from called it — which is what a petname was, without a separate store.
+   */
+  async follow(from: string, linkName: string): Promise<Tab | null> {
+    const held = this.entry(from);
+    if (held === undefined) return null;
+    const found = links(held.space.state).find((l) => l.entry.name === linkName);
+    if (found === undefined) return null;
+    return this.open(found.target, found.entry.name);
+  }
+
+  /* ── spaces of one's own ──────────────────────────────────────────────── */
+
+  /**
+   * Mint a space this client holds and can write to.
+   *
+   * A client that only views other people's spaces never needs this.
+   */
+  async create(name?: string): Promise<Tab> {
     const key = await this.local.keys.mint();
     const space = await this.hold(key.publicKey, key);
     if (name !== undefined && name !== '') {
       // The suggested name goes on the root, written by the space key (§3.5).
       await space.write(new Uint8Array(16), ':name', new TextEncoder().encode(name));
     }
-    this.changed();
-    return hex(key.publicKey);
-  }
-
-  /** Forget a space entirely: its log, its blobs, its key. */
-  override async forget(id: string): Promise<void> {
-    await super.forget(id);
-    await this.local.keys.forget(id);
-    await this.local.inventory.forget(id);
-    this.local.locators.forget(id);
-    this.changed();
+    return this.open(key.publicKey, name ?? null);
   }
 
   /* ── connections ──────────────────────────────────────────────────────── */
@@ -180,11 +174,10 @@ export class Client extends PeerClient {
   /**
    * Dial a peer at a known address.
    *
-   * The straightforward case: a peer with a stable address can be reached
-   * directly, and needs no introduction (§5.6).
+   * A browser cannot be dialled, so it dials or is introduced (§5.6).
    */
-  async connectTo(id: string, url: string): Promise<void> {
-    if (this.entry(id) === undefined) throw new Error('not holding that space');
+  async connect(id: string, url: string): Promise<void> {
+    if (this.entry(id) === undefined) throw new Error('that space is not open');
 
     const socket = new WebSocket(url);
     socket.binaryType = 'arraybuffer';
@@ -203,18 +196,15 @@ export class Client extends PeerClient {
       // delay rather than wherever the backoff had climbed to.
       () => this.retries.delete(url),
     );
-    if (session === null) throw new Error('not holding that space');
+    if (session === null) throw new Error('that space is not open');
 
     socket.addEventListener('close', () => {
       this.note('connection', id, `${url} closed`);
-      // A peer that restarted, a laptop that slept, a network that moved.
-      // None of these should mean a space silently stops syncing until
-      // someone notices and reconnects by hand.
+      // A peer that restarted, a laptop that slept, a network that moved. None
+      // of these should mean a space silently stops syncing.
       this.scheduleRetry(id, url);
     });
 
-    // Remembered so a reload reconnects rather than needing the address again.
-    this.local.locators.set(id, url);
     this.note('connection', id, `dialled ${url}`);
     await session.start();
     this.changed();
@@ -228,7 +218,7 @@ export class Client extends PeerClient {
    * meeting about (§5.7).
    */
   async meetAt(id: string, token: string): Promise<void> {
-    if (this.entry(id) === undefined) throw new Error('not holding that space');
+    if (this.entry(id) === undefined) throw new Error('that space is not open');
 
     const url = this.browser.signallingUrl;
     if (url === undefined) throw new Error('no signalling server configured');
@@ -249,9 +239,8 @@ export class Client extends PeerClient {
           await this.join(id, rtcConnection(conn), 'introduced');
           this.note('connection', id, `data channel open to ${conn.peer}`);
         } catch (err) {
-          // A peer that could not be reached is ordinary — it may have gone,
-          // or be behind something ICE could not traverse. Worth saying so
-          // rather than failing silently.
+          // A peer that could not be reached is ordinary — it may have gone, or
+          // be behind something ICE could not traverse.
           this.note(
             'connection',
             id,
@@ -268,19 +257,14 @@ export class Client extends PeerClient {
   /**
    * Reconnect after a drop, backing off.
    *
-   * Doubling from a second to a minute: quick enough that a peer restarting is
-   * barely noticed, slow enough that a peer that is genuinely gone is not
-   * hammered. Cleared only once a connection has *delivered* something —
-   * clearing on open would reset the backoff for a peer that accepts the socket
-   * and then refuses the space, turning a retry into a hot loop.
+   * Cleared only once a connection has *delivered* something — clearing on open
+   * would reset the backoff for a peer that accepts the socket and then refuses
+   * the space, turning a retry into a hot loop.
    */
   private scheduleRetry(id: string, url: string): void {
     if (this.closed) return;
     const attempt = (this.retries.get(url) ?? 0) + 1;
     this.retries.set(url, attempt);
-    // Give up after a while rather than retrying forever: a peer that has
-    // refused a dozen times is not coming back on its own, and the connect
-    // control is there for when it does.
     if (attempt > 8) {
       this.note('connection', id, `giving up on ${url} after ${attempt - 1} attempts`);
       return;
@@ -292,39 +276,20 @@ export class Client extends PeerClient {
       if (this.closed || entry === undefined) return;
       // Someone may have reconnected by hand in the meantime.
       if (entry.connections.size > 0) return;
-      void this.connectTo(id, url).catch(() => {
+      void this.connect(id, url).catch(() => {
         this.note('connection', id, `${url} still unreachable`);
       });
     }, delay);
   }
 
-  /* ── sharing ──────────────────────────────────────────────────────────── */
-
-  /**
-   * A link that introduces someone to a space (§5.4).
-   *
-   * The key goes in the **fragment**, so it never reaches a server. `t` is the
-   * rendezvous token, and `l` an optional address — a link that names a
-   * reachable peer works without any signalling at all.
-   */
-  shareLink(id: string, options: { locator?: string } = {}): string {
-    const entry = this.entry(id);
-    if (entry === undefined) throw new Error('not holding that space');
-
-    const name = entry.space.state.root.get(':name')?.value;
-    const params = new URLSearchParams();
-    params.set('k', id);
-    if (typeof name === 'string' && name !== '') params.set('n', name);
-    params.set('t', codeFor(entry.key));
-    if (options.locator !== undefined) params.set('l', options.locator);
-
-    const base = `${location.origin}${location.pathname}`;
-    return `${base}#${params.toString()}`;
-  }
-
   override async close(): Promise<void> {
     await super.close();
     this.signalling?.close();
+  }
+
+  /** A key this browser can write with, for showing whether a tab is editable. */
+  async keyFor(id: string): Promise<KeyPair | null> {
+    return this.local.keys.keyFor(id);
   }
 }
 
@@ -370,8 +335,9 @@ function rtcConnection(conn: RtcConnection): Connection {
 /**
  * What a share link says (§5.4).
  *
- * Parsed from the fragment, which never reaches a server. A link carries full
- * verification because it names the key; a typed code carries only a hint.
+ * The key is in the **fragment**, so it never reaches a server. A link carries
+ * full verification because it names the key; the `l=` hint is the one locator
+ * source that works before you know anybody (`docs/LOCATORS.md`).
  */
 export interface ShareLink {
   readonly key: string;
@@ -390,10 +356,4 @@ export function parseShareLink(fragment: string): ShareLink | null {
     token: params.get('t'),
     locator: params.get('l'),
   };
-}
-
-function fromHex(s: string): Uint8Array {
-  const out = new Uint8Array(s.length / 2);
-  for (let i = 0; i < out.length; i++) out[i] = Number.parseInt(s.slice(i * 2, i * 2 + 2), 16);
-  return out;
 }
