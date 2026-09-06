@@ -13,6 +13,7 @@ import { compareKeys, greater, type Key, type MaybeKey } from './chain.js';
 import { sequence } from './sequence.js';
 import { hex } from './bytes.js';
 import { HASH_LEN } from './hash.js';
+import { PUBLIC_KEY_LEN } from './sign.js';
 import { type Acc, type AnyRule, type Entry, erase, type Rule } from './rule.js';
 
 /* ── codecs ─────────────────────────────────────────────────────────────── */
@@ -143,6 +144,19 @@ export const blob: Rule<Uint8Array, RegisterAcc<Uint8Array>, Uint8Array | null> 
   merge: registerMerge<Uint8Array>(),
 };
 
+/** A public key, rejecting any other width rather than accepting a truncation. */
+const keyCodec = {
+  decode: (b: Uint8Array): Uint8Array | null => (b.length === PUBLIC_KEY_LEN ? b : null),
+  encode: (v: Uint8Array): Uint8Array => v,
+};
+
+/** A link's body: the space it points at (`docs/MAIN-SPACE.md`). */
+export const spaceRegister: Rule<Uint8Array, RegisterAcc<Uint8Array>, Uint8Array | null> = {
+  id: 'link',
+  codec: keyCodec,
+  merge: registerMerge<Uint8Array>(),
+};
+
 /**
  * The fixed attribute rules (§3.2).
  *
@@ -195,6 +209,11 @@ export const BODY_RULES: Readonly<Record<string, AnyRule>> = {
   // log access, a clock, state outside the accumulator — the vocabulary claim
   // would have failed. See `sequence.ts` and `docs/SEQUENCE.md`.
   sequence: erase(sequence),
+  // A reference to another space: a register over its public key
+  // (`docs/MAIN-SPACE.md`). Structurally the blob rule with a different width —
+  // a key rather than a hash — and it is the body rather than an attribute
+  // because a link *is* its target, the way a file is its bytes (§4.2).
+  link: erase(spaceRegister),
 };
 
 /** Resolve a `:kind` to a body rule, or null if this client lacks it. */

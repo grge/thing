@@ -1,19 +1,12 @@
 /**
- * @thing/node — a peer outside the browser.
+ * The headless peer: disk, sockets, and a command line.
  *
- * A WebSocket transport in both directions, disk storage, and a CLI. Not a
- * privileged role: it speaks the same protocol as a browser tab and differs
- * only in reachability (ARCHITECTURE.md §5.6).
+ * Supplies what `@thing/engine` is handed — a `Store` over files, a WebSocket
+ * transport, a keyring — and wires them into a peer that holds one space and
+ * serves it (`docs/MAIN-SPACE.md`).
  */
-
 export { FileStore } from './filestore.js';
-export { Peer, type PeerOptions } from './peer.js';
+export { FileInventory, FileKeyring, FileLocators, fileLocalState } from './local.js';
 export { FilePetnames } from './petnames.js';
-export { SignalServer, type SignalServerOptions } from './signalserver.js';
-export {
-  channelFor,
-  type Connection,
-  dial,
-  PeerServer,
-  type ServerOptions,
-} from './transport.js';
+export { createSpace, Server, type ServerOptions } from './server.js';
+export { channelFor, type Connection, dial, PeerServer } from './transport.js';

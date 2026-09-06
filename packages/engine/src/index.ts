@@ -34,6 +34,7 @@ export * from './store/index.js';
 export * from './net/index.js';
 export * from './fs/files.js';
 export { isTextual, kindForName } from './fs/mime.js';
+export { isLink, LINK_KIND, links, makeLink, targetOf } from './fs/links.js';
 export { type ChangeListener, Space, type SpaceOptions } from './space.js';
 export {
   addModerator,

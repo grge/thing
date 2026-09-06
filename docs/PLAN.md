@@ -615,6 +615,38 @@ Four notes:
 **Cost, measured:** 229 bytes per event on disk, up from 206. Sync unchanged
 against the pre-`deps` baseline, checked by rebuilding both.
 
+## Stage 7.9 — Rebuild `node` on the main-space model ✅
+
+**Done.** The old server is in `archive/node/`, reference only: the shape
+changed enough (`docs/MAIN-SPACE.md`) that adapting it would have carried
+assumptions that no longer hold — a peer holding many spaces, a petname index,
+a CLI resolving names against a local directory listing.
+
+What replaced it:
+
+- **`Server`** — one space, held whether or not this peer can write to it
+  (§6.1), listening only if given an address (§5.6). No lock: per-process
+  append points mean two processes writing one space extend separate chains
+  (§2.1), so locking would prevent something that is no longer a hazard.
+- **A CLI whose commands name a space**, since a peer holds one and reaches
+  others by following links. `init`, `key`, `serve`, `ls`, `put`, `get`,
+  `link`, `unlink`, `links`.
+- **`fs/links.ts` in the engine** — `:kind: 'link'` with the target key in the
+  body, plus a `link` body rule that is a register over a public key. A client
+  that has never heard of links still folds the tree and shows the object
+  (§3.1); it just cannot follow it.
+
+**Kept rather than rebuilt**, because they are capability implementations that
+the model did not change: `filestore.ts`, `transport.ts`, `local.ts`,
+`petnames.ts` — and `boundary.test.ts`, which is not server code at all. It
+guards the *engine's* platform split and lives in `node` only because it reads
+files, which the package it checks cannot do; archiving it would have silently
+dropped that guard.
+
+**Not built here:** resolution (§5.3 and `docs/LOCATORS.md`) — a peer serves
+and can be dialled, but nothing announces or answers queries yet. That is stage
+8, and it needs measurement rather than argument.
+
 ## Stage 7.7 — The interfaces: control socket, CLI, TUI
 
 **Shape settled, details open.** `CLIENTS.md` has the reasoning.
