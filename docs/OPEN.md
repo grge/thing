@@ -30,9 +30,16 @@ Roughly in order of how much would change if the answer went the other way.
 | 6 | How does the connection lifecycle behave — concurrent syncs, mid-transfer drops, duplicate connections? | §5.6 |
 | 7 | Is membership a whole-list register or a set of add/remove operations? | §7.4 |
 | 8 | Does a peer keep replicating the losing branch of a resolved chain fork? Now a bandwidth question rather than a correctness one — resolution is deterministic, so a peer that drops the loser and one that keeps it fold the same state. | §7.3 |
-| 9 | How is a blob reference expressed, and is `:kind` doing two jobs? | §3.9, §4.2 |
+| 9 | How is a blob reference expressed, and is `:kind` doing two jobs? **A space link is now a third kind of reference** ([MAIN-SPACE.md](MAIN-SPACE.md)), which strengthens §3.9's argument for a value encoding — and means the three should be settled together. | §3.9, §4.2 |
 | 10 | Do dense per-writer sequence numbers stay at all, given that the literature calls them unsafe against a *malicious* writer? See [EQUIVOCATION.md](EQUIVOCATION.md). Append points do not answer this. | §2.1, §2.3, §7.3 |
 | 11 | Does signing ever have to carry *attribution* rather than only authority — and does this system want a notion of a person at all? See [LEARNINGS.md](LEARNINGS.md) §1. | §5.1, §7.2.1 |
+
+**An OR-set is now wanted concretely.** §3.2's rule table names one and nothing
+implements it. [MAIN-SPACE.md](MAIN-SPACE.md)'s `:at` — the locators a link
+knows — is the first real demand: a register would silently drop a locator
+learned on one device when another writes, and the failure mode is a space that
+becomes unreachable because the address that worked was overwritten by one that
+does not.
 
 **Question 10 is what append points leave behind.** Stage 7.6 fixes the *honest*
 case — your own two processes — by giving each its own chain. A malicious writer

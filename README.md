@@ -16,6 +16,7 @@ code in `src/` currently does — see *Status* below.
 | [docs/LEARNINGS.md](docs/LEARNINGS.md) | What building this taught, for whenever the design is rewritten again — plus ideas worth not losing |
 | [docs/CLIENTS.md](docs/CLIENTS.md) | How the CLI, TUI and browser relate to a running peer — the engine's API as the only way in |
 | [docs/APPEND-POINTS.md](docs/APPEND-POINTS.md) | Splitting `writer` into an identity and a per-process append point: the trace, and the decisions |
+| [docs/MAIN-SPACE.md](docs/MAIN-SPACE.md) | Proposed: a peer holds one space, and everything else is a link inside it |
 | [docs/SEQUENCE.md](docs/SEQUENCE.md) | The sequence rule's canonical form, pinned before it was coded |
 | [docs/DEPS.md](docs/DEPS.md) | Proposed: naming the heads a writer had seen, so "was this allowed when written" is answerable |
 | [docs/EQUIVOCATION.md](docs/EQUIVOCATION.md) | Literature review — why per-writer sequence numbers force one writer per key |
