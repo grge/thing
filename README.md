@@ -16,6 +16,7 @@ code in `src/` currently does — see *Status* below.
 | [docs/LEARNINGS.md](docs/LEARNINGS.md) | What building this taught, for whenever the design is rewritten again |
 | [docs/CLIENTS.md](docs/CLIENTS.md) | How the CLI, TUI and browser relate to a running peer — the engine's API as the only way in |
 | [docs/APPEND-POINTS.md](docs/APPEND-POINTS.md) | Splitting `writer` into an identity and a per-process append point: the trace, and the decisions |
+| [docs/DEPS.md](docs/DEPS.md) | Proposed: naming the heads a writer had seen, so "was this allowed when written" is answerable |
 | [docs/EQUIVOCATION.md](docs/EQUIVOCATION.md) | Literature review — why per-writer sequence numbers force one writer per key |
 | [archive/](archive/) | The previous implementation, and the fold prototype. Not built |
 | [docs/v1/](docs/v1/) | Archived — the design that came before, and the reasoning behind it |

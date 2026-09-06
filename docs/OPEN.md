@@ -29,7 +29,7 @@ Roughly in order of how much would change if the answer went the other way.
 | 6 | How does the connection lifecycle behave — concurrent syncs, mid-transfer drops, duplicate connections? | §5.6 |
 | 7 | Is membership a whole-list register or a set of add/remove operations? | §7.4 |
 | 8 | Does a peer keep replicating the losing branch of a resolved chain fork? | §7.3 |
-| 8a | **How does the fold apply a writer set that changed over time?** The full fold filters by the *final* set, so removing a writer unwrites their past events (violating §7.2.3); the incremental fold keeps whatever it already applied, so the result depends on arrival order (violating §3.6). Found building stage 9; pinned as a failing test in `members.test.ts`. | §7.2.3, §3.6 |
+| 8a | **How does the fold apply a writer set that changed over time?** The full fold filters by the *final* set, so removing a writer unwrites their past events (violating §7.2.3); the incremental fold keeps whatever it already applied, so the result depends on arrival order (violating §3.6). Found building stage 9; pinned as a failing test in `members.test.ts`. **A proposal with the check prototyped: [DEPS.md](DEPS.md).** | §7.2.3, §3.6 |
 | 9 | How is a blob reference expressed, and is `:kind` doing two jobs? | §3.9, §4.2 |
 | 10 | Do dense per-writer sequence numbers stay at all, given that the literature calls them unsafe against a *malicious* writer? See [EQUIVOCATION.md](EQUIVOCATION.md). Append points do not answer this. | §2.1, §2.3, §7.3 |
 | 11 | Does signing ever have to carry *attribution* rather than only authority — and does this system want a notion of a person at all? See [LEARNINGS.md](LEARNINGS.md) §1. | §5.1, §7.2.1 |
@@ -63,12 +63,17 @@ before encryption ships, and the nonce-uniqueness problem is the kind that loses
 everything at once when it is got wrong.
 
 **Question 8a is a live contradiction, not a design choice.** Two folds over one
-log disagree, so it is a correctness bug with a design question inside it: to
-honour "valid when written", the fold has to know *when* each event was written
-relative to each membership change — which means either replaying the root in
-order and carrying the set forward, or putting causal context in the envelope.
-The first looks tractable and is where I would start; the second is what §7.2
-spent its effort avoiding.
+log disagree, so it is a correctness bug. To honour "valid when written" the
+fold has to know *when* each event was written relative to each membership
+change.
+
+The first idea — replay the root in order, carrying the writer set forward —
+does not survive scrutiny: "in order" would mean Lamport order, and a Lamport
+stamp is a number its author chooses. `DEPS.md` proposes the other route,
+narrowed to be additive: one field naming the heads a writer had actually seen.
+The permission check is prototyped and deterministic over 200 orderings in five
+scenarios. It does not close backdating, which the literature says causality
+alone cannot.
 
 **Questions 5 to 9 are implementation-shaped.** They will be answered better
 with code in front of you than in advance, and nothing depends on settling them

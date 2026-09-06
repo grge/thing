@@ -121,6 +121,22 @@ Split first: the key wants backup and recovery, the inventory is derivable from
 storage, the petname store already has its contract, and the locator cache wants
 to be forgettable.
 
+## 3a. The wire format costs 2.1x what it needs to
+
+Measured while sizing something else. A real event is **206 bytes on disk** and
+**435 on the wire**, because `wire.ts` encodes every binary field as hex inside
+JSON — a 32-byte hash becomes 64 characters, and there are three of them per
+event plus a 64-byte signature.
+
+Base64 would bring it to roughly 1.4x; a binary framing to about 1.05x. That is
+a larger saving than most things being weighed against it, with no design risk:
+`wire.ts` is explicitly the one of the three encodings that is *free to change*,
+since it is neither signed nor stored.
+
+Not done now — it is a rewrite-shaped change and nothing is deployed that needs
+it — but recorded so that "is X too many bytes per write" has a reference point.
+The answer for most X is: smaller than what the encoding is already wasting.
+
 ## 4. Dense sequence numbers were chosen for sync and paid for everywhere else
 
 `seq` exists so a version vector can say "I hold 0–47 contiguous". That is a
