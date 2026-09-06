@@ -9,24 +9,44 @@ is a link inside it.**
 
 ## The model
 
-A peer is pointed at a single **main space**. That space contains ordinary
-objects — files, folders — and among them **links** to other spaces. A link's
-`:name` is what this peer calls that space; a link's attributes carry where it
-was last reached.
+A space contains ordinary objects — files, folders — and among them **links** to
+other spaces. A link's `:name` is what the holder calls that space; a link's
+attributes carry where it was last reached.
 
-Nothing else is per-peer state. There is no inventory, no petname store, no
-locator cache: those were three ways of saying *this peer knows about that
+That one idea replaces three: there is no inventory, no petname store, no
+locator cache. Those were three ways of saying *this peer knows about that
 space, calls it X, and last found it at Y*, which is one object with three
 attributes.
 
-A **hub** is the same thing with different contents: a curated main space whose
-links point at spaces other people want. Not a class of peer (§5.6 stays
-intact) — a peer whose space happens to be interesting.
+A **main space** is the space a peer *holds and serves* — its own. A **hub** is
+the same thing with different contents: a curated main space whose links point
+at spaces other people want. Not a class of peer (§5.6 stays intact), just a
+peer whose space happens to be interesting.
 
-Browsing is editing. Opening a remote space writes a link; closing it removes
-one. A UI presenting *"one big filesystem, remote spaces as subfolders"* is
-rendering the main space's tree, and the tree is the truth rather than a view
-over some other structure.
+### Holding a space is not the same as looking at one
+
+**A server holds exactly one main space, because it has no interface to hold
+anything else.** It is a store, a set of connections, and nothing to render
+into. One space is what it can offer, so one is what it has.
+
+**A client with an interface has tabs.** Several spaces open at once,
+independent, each rendering its own tree. Following a link **opens a tab**; it
+does not write anything. Acquiring a space — deciding you want to keep it —
+writes a link into a space of your own, and that is a separate, deliberate act.
+
+Those two actions were conflated in an earlier draft, and separating them
+removes a real problem. If browsing wrote links, a main space's log would
+accumulate a permanent record of everything ever opened: appends are forever
+(§2.1), `:deleted` hides a link without removing the event, and the growth would
+be unlike anything else in the design — a file you make is content, a link you
+opened once is not. It was also a privacy shape nobody chose, since that history
+would sync anywhere the space syncs. With tabs the problem does not arise; the
+open set is interface state and touches no log.
+
+**So a client may have no main space at all.** A browser that only views other
+people's spaces needs a keyring and a tab list. One that keeps its own files
+needs somewhere to keep them, and that is a main space. *Every peer that holds
+content has one; a pure viewer does not.*
 
 ## What a link is
 
@@ -123,58 +143,77 @@ are false elsewhere.
 Not zero, and the residue is the interesting part:
 
 - **The keyring.** Secrets, never replicated, §5.1.1's unresolved risk.
-- **The main space's id.** One value. It cannot live in a space — that is
-  circular — so it is configuration: a flag, an env var, a line in a file.
+- **Which space to hold**, for a peer that holds one. A single id, and it cannot
+  live in a space — that would be circular — so it is configuration: a flag, an
+  env var, a line in a file.
+- **Which spaces are open**, for a client with an interface. A list of keys,
+  and interface state rather than anything the engine knows about.
 
-Four interfaces become one interface and one string. That is the shape the
-Keystore split was reaching for, arrived at from the other direction.
+Four interfaces become one interface and two lists of keys, one of which is
+secret. That is the shape the Keystore split was reaching for, arrived at from
+the other direction.
+
+Whether the open-tab list survives a reload is a UI question and deliberately
+not a design one. Losing it costs reopening a tab.
 
 ## What each program is
 
-All four are the same three parts — a keyring and a main-space id, an engine
-`Client`, and a renderer. What differs is where the store lives, which
-transports exist, and how the renderer draws. If a scenario needs a *fourth*
-part, that is a signal the model is short.
+All four are the same three parts — a keyring, an engine `Client`, and a
+renderer. What differs is where the store lives, how many spaces are open, and
+how the renderer draws. If a scenario needs a *fourth* part, that is a signal
+the model is short.
 
-| | store | main space | renderer |
+| | store | spaces open | renderer |
 | --- | --- | --- | --- |
-| **CLI** | files | on disk | prints and exits |
-| **TUI** | files | on disk, or a socket | a screen |
-| **web** | IndexedDB | its own, or a socket | a browser |
-| **server** | files | on disk | none |
+| **CLI** | files | one, named per command | prints and exits |
+| **TUI** | files | several, as tabs | a screen |
+| **web** | IndexedDB | several, as tabs | a browser |
+| **server** | files | **exactly one** | none |
 
-There is no *hub* program. A hub is a server whose main space someone curated.
+**The server is the odd one, and the reason is that it has no interface.** It is
+a store, a set of connections, and nothing to render into — so one space is what
+it can offer and one is what it has. Everything else opens as many as its
+interface can show. That asymmetry is not a special case bolted on; it falls out
+of what a renderer is for.
+
+There is no *hub* program. A hub is a server whose one space someone curated.
 
 Two consequences worth stating, because `CLIENTS.md` spent most of its length on
 them:
 
-**`thing` and `thing attach` stop being modes.** One program; the main space is
-local or remote. That was three modes and a control protocol; it is now a
-configuration value.
+**`thing` and `thing attach` stop being modes.** One program; a tab's space is
+local or remote, and a client can hold both kinds at once. That was three modes
+and a control protocol; it is now where a tab's events come from.
 
 **"Configure the server" and "edit a space" are the same act** for the common
 case. Adding a link to a server's main space tells it to hold another space, and
 it does — because that link is in the space it is already serving. No admin
 verb, no new protocol, and it works from any client that can write there.
 
-## The three cases, in more detail
+## The cases, in more detail
 
-**A terminal client** points at a local main space, holds it on disk, and edits
-it directly. Today's CLI with links added.
+**A terminal client** names a space per command, holds it on disk, and edits it
+directly. Today's CLI with links added: `thing ls notes` finds the link named
+`notes` and follows it, which is what a petname lookup used to be.
 
-**A browser with its own storage** points at its own main space in IndexedDB.
-Ordinary peer. Works offline. Its main space syncs with its owner's other
-devices if they hold the same key, which is how a person's inventory follows
-them.
+**A client keeping its own files** holds a space of its own — in IndexedDB for a
+browser, on disk for a TUI — and that space syncs with its owner's other devices
+if they hold the same key. That is how a person's own collection follows them.
 
-**A browser viewing a server** connects to the server's main space *by ordinary
-replication* — it is a space, so this needs nothing new. The browser holds a
-replica, folds it, renders the tree. With the space's writing key it can edit;
-without, it reads. Live connection status arrives over the ephemeral channel,
-not the log.
+**A client that only views** holds no space of its own at all. A keyring and a
+list of open tabs is the whole of it. Nothing about this is degraded; §6.1
+already says storing and serving without a writing key is an ordinary way to
+participate, and this is a step further — participating without holding
+anything.
 
-That third case is the one the whole design is for, and it works because the
-thing the UI needs most — the list of spaces and what they are called — is
+**A client viewing a server** opens the server's space in a tab and replicates
+it *by ordinary peer replication* — it is a space, so this needs nothing new.
+Fold it, render the tree, follow its links into further tabs. With a writing key
+for that space it can edit, which is how a hub gets curated; without one it
+reads.
+
+That last case is the one the whole design is for, and it works because the
+thing a UI needs most — what spaces there are and what they are called — is
 exactly what a space replicates well.
 
 ## Administration: the CLI only
@@ -241,6 +280,27 @@ shut down, restart
 Local socket, and per the section above that is the authorisation model rather
 than a temporary constraint.
 
+## What tabs fixed
+
+Recorded because the fix was better than the workaround it replaced, and the
+mistake is one worth not repeating.
+
+An earlier draft had browsing *be* editing: following a link wrote one, closing
+it removed one. That made a main space's log a permanent record of everything
+ever opened — appends are forever (§2.1), and `:deleted` hides a link without
+removing the event. A growth shape unlike anything else in the design, and a
+privacy shape nobody chose, since the history would sync wherever the space did.
+
+The answer proposed at the time was compaction (§9.2, unbuilt) — narrowing the
+window rather than closing it, which `LEARNINGS.md` §5 warns about in another
+context.
+
+Separating *open* from *keep* removes the problem instead of deferring it.
+Nothing is written unless someone decides to keep it, and the open set is
+interface state that touches no log. It also disposes of a second thing the
+draft had flagged as unresolved: a "peek" needing an open-but-unlinked notion of
+a space. That notion is the tab list.
+
 ## What this does not solve
 
 **A remote client cannot tell whether a peer is healthy.** Covered above: it is
@@ -249,20 +309,6 @@ connection counts opens a terminal. The model gives a remote UI *content* for
 free and *operations* not at all, and that split is clean — but it is a split,
 and the earlier claim that the control API is "much smaller than `CLIENTS.md`
 proposed" was true about writes and wrong about observability.
-
-**Link churn is permanent.** Browsing creates and destroys links, and appends
-are forever (§2.1). Your main space's log becomes a record of everything you
-opened. `:deleted` hides a link; it does not remove the event.
-
-That is a growth shape nothing else in the design has — a *file* you make is
-content, a link you opened once is not — and it is a privacy shape nobody chose:
-if your main space ever syncs anywhere, so does that history. §9.2's compaction
-is where it belongs, and compaction is unbuilt.
-
-**A short-lived "peek" therefore should probably not write a link at all.**
-Which means the UI needs a notion of an open-but-unlinked space, and that is
-in-memory state the model does not currently have. Worth deciding deliberately
-rather than discovering.
 
 **Curating a shared hub needs multi-writer, and multi-writer has no
 attribution.** Editing a hub's main space means holding a writing key for it.
@@ -299,9 +345,13 @@ Cheap, in the engine, before any UI:
    concurrent link additions — the OR-set case that a register would fail.
 3. **Resolution answers from links.** A peer holding a link to K reports its
    `:at` values; one that does not, does not.
-4. **A cycle between two main spaces terminates** when something walks the tree.
-5. **A browser-shaped client replicates a server's main space** over a socket
-   and renders it, with no code that is not already peer replication.
+4. **A cycle between two spaces terminates** when something walks the tree.
+   With tabs this is less pressing than it looked — following a link is a
+   deliberate act, so a cycle is a person clicking in circles rather than a
+   renderer looping — but anything that walks links automatically still needs a
+   bound.
+5. **A client replicates a server's space** over a socket and renders it, with
+   no code that is not already peer replication.
 
 The second and fifth are the load-bearing ones. Two would prove the OR-set is
 needed; five would prove the whole claim.
