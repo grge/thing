@@ -1,8 +1,8 @@
 # `deps`: deciding what was allowed when it was written
 
-**Status: proposed, with the permission check prototyped.** Not built. The
-prototype is `proto/deps-permission-check.mjs` — standalone, runs under `node`,
-no engine imports.
+**Status: built** (PLAN.md stage 7.8). The prototypes under `proto/` are kept
+because they are how the design was checked before the envelope moved, and two
+of the three bugs found in this work were found there.
 
 It answers OPEN.md question 8a: the full fold and the incremental fold disagree
 about a writer who was removed, and neither is right.

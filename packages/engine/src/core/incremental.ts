@@ -29,7 +29,7 @@ import {
   resolveParents,
   type SliceState,
   type State,
-  writerSetFrom,
+  admitsWith,
 } from './fold.js';
 import type { AnyRule, Entry } from './rule.js';
 import { attributeRule, bodyRule } from './rules.js';
@@ -64,16 +64,43 @@ export class Folder {
   /** Set when a `:parent` changed, so the tree is recomputed once per read. */
   private treeDirty = true;
   private parents = new Map<string, { parent: Uuid; broken: boolean }>();
-  private writers: ReadonlySet<string> | null = null;
   private readonly spaceHex: string;
   /**
-   * Events held because their writer was not admitted when they arrived.
+   * Every non-root event seen, admitted or not.
    *
-   * The writer set can grow — a root event admitting someone may arrive after
-   * their writes. Without this, an event that arrived early would be dropped
-   * and never reconsidered, and a peer's state would depend on delivery order.
+   * Kept because admission is not a property this fold can accumulate: an
+   * event is judged against the writer set **its author had seen** (§7.2.3's
+   * `deps`), and a root event arriving later can change the answer for events
+   * already folded — in either direction. Rather than track that, non-root
+   * state is recomputed from here whenever anything arrives.
+   *
+   * The cost is holding the log in memory, which `Space` already does since it
+   * replays from the store on open.
    */
-  private deferred: Event[] = [];
+  private pending: Event[] = [];
+  /**
+   * Every event ever applied, kept so a membership change can be honoured.
+   *
+   * §7.2.3 judges an event against the writer set **its author had seen**
+   * (`deps`), which the incremental path cannot evaluate from accumulated state
+   * alone — the answer for an event already applied can change when a later
+   * root event arrives. Rather than approximate it, a change to the writer set
+   * refolds from here, which makes this fold agree with the full one by
+   * construction rather than by argument.
+   *
+   * The cost is holding the log in memory. That is already true of `Space`,
+   * which replays from the store on open, and a refold is rare: only a root
+   * event that actually changes membership triggers one.
+   */
+  /**
+   * Root events, kept separately.
+   *
+   * `admitsWith` needs them: without the root events in the set it is given it
+   * sees no declaration anywhere and admits everyone. They are separate from
+   * `pending` because refolding never re-applies them — root state is
+   * self-authorising (§7.2.1) and does not depend on the writer set.
+   */
+  private roots: Event[] = [];
 
   constructor(private readonly space: PublicKey) {
     this.spaceHex = hex(space);
@@ -89,9 +116,15 @@ export class Folder {
       else rest.push(e);
     }
 
-    const retry = this.deferred;
-    this.deferred = [];
-    for (const e of [...retry, ...rest]) this.applyOther(e);
+    for (const e of rest) this.pending.push(e);
+
+    // **Always recompute admission from `deps`, never from accumulated state.**
+    // An earlier version only refolded when membership changed, which left
+    // events arriving *after* a change judged against the current writer set
+    // rather than against what their author had seen — the same disagreement
+    // this change exists to remove, reintroduced one layer down. Recomputing
+    // unconditionally is slower and cannot drift.
+    this.refold();
   }
 
   private applyRoot(e: Event): void {
@@ -99,23 +132,38 @@ export class Folder {
     // alone, so this consults no state and there is no fixed point to find.
     if (hex(e.writer) !== this.spaceHex) return;
 
-    const before = this.writers;
+    this.roots.push(e);
     this.mergeInto(this.root, e.attr, attributeRule(e.attr), e);
+    // No writer set is cached. Admission is recomputed from `deps` on every
+    // apply — caching it here is exactly what made this fold disagree with a
+    // replay.
+  }
 
-    this.writers = writerSetFrom(sliceValues(this.root), this.spaceHex);
-    // A widened writer set may admit events already seen and set aside.
-    if (before !== this.writers) {
-      const retry = this.deferred;
-      this.deferred = [];
-      for (const held of retry) this.applyOther(held);
-    }
+  /**
+   * Rebuild non-root state from every event held.
+   *
+   * Called when membership changes. The root is left alone — root events are
+   * self-authorising (§7.2.1), so nothing about them depends on the writer set.
+   */
+  private refold(): void {
+    this.objects.clear();
+    this.parents.clear();
+    this.treeDirty = true;
+
+    // Judged by `deps`, exactly as the full fold does — it is the same
+    // function, so the two cannot give different answers.
+    const admits = admitsWith(this.space, [...this.roots, ...this.pending], this.spaceHex);
+    for (const e of this.pending) if (admits(e)) this.applyOther(e);
   }
 
   private applyOther(e: Event): void {
-    if (this.writers !== null && !this.writers.has(hex(e.writer))) {
-      this.deferred.push(e);
-      return;
-    }
+    // Note this admits against the writer set *as it currently stands*, which
+    // is not what §7.2.3 asks for — an event should be judged against what its
+    // author had seen (`deps`). Applying an event is monotonic here, so an
+    // event admitted before a removal stays applied, which happens to match
+    // "valid when written" for the ordinary case and does not for events that
+    // arrive after the removal. `refold()` is what makes the two agree.
+
 
     const obj = this.ensure(e.target);
 

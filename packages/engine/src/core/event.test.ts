@@ -31,6 +31,7 @@ function body(over: Partial<EventBody> = {}): EventBody {
     point: point(),
     seq: 0,
     prev: null,
+    deps: [],
     lamport: 1,
     target: ROOT,
     attr: ':name',
@@ -55,6 +56,8 @@ describe('canonical encoding', () => {
     w.bytes(e.writer);
     w.bytes(e.point);
     w.u32(e.seq);
+    w.u32(e.deps.length);
+    for (const d of e.deps) w.bytes(d);
     w.u8(1);
     w.bytes(e.prev!);
     w.u64(e.lamport);

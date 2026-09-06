@@ -15,7 +15,8 @@
  *
  * ```
  * [u32 length]
- * [writer 32][point 16][sig 64][u32 seq][u8 hasPrev][prev 32?][u64 lamport]
+ * [writer 32][point 16][sig 64][u32 seq][u8 hasPrev][prev 32?]
+ * [u32 depCount][dep 32]*[u64 lamport]
  * [target 16][u32 attrLen][attr][u32 valueLen][value][u64 wall]
  * ```
  *
@@ -53,6 +54,8 @@ export function encodeEvent(e: Event): Uint8Array {
     body.u8(1);
     body.fixed(e.prev, HASH_LEN, 'prev');
   }
+  body.u32(e.deps.length);
+  for (const d of e.deps) body.fixed(d, HASH_LEN, 'dep');
   body.u64(e.lamport);
   body.fixed(e.target, UUID_LEN, 'target');
   body.lenPrefixed(attr);
@@ -96,6 +99,10 @@ export function decodeEvent(buf: Uint8Array, at: number): { event: Event; next: 
     const hasPrev = buf[p] === 1;
     p += 1;
     const prev = hasPrev ? take(HASH_LEN) : null;
+    const depCount = view.getUint32(p, false);
+    p += 4;
+    const deps: Uint8Array[] = [];
+    for (let i = 0; i < depCount; i++) deps.push(new Uint8Array(take(HASH_LEN)));
     const lamport = Number(view.getBigUint64(p, false));
     p += 8;
     const target = take(UUID_LEN);
@@ -116,6 +123,7 @@ export function decodeEvent(buf: Uint8Array, at: number): { event: Event; next: 
         point: new Uint8Array(point),
         seq,
         prev: prev === null ? null : new Uint8Array(prev),
+        deps,
         lamport,
         target: new Uint8Array(target),
         attr,

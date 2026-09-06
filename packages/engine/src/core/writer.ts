@@ -14,8 +14,9 @@
  * and their enforcement cannot drift apart.
  */
 import { chainOf } from './chain.js';
-import { type Event, type EventBody, eventId, newPoint, type Point, signEvent, type Uuid } from './event.js';
+import { type Event, type EventBody, eventId, newDeps, newPoint, type Point, signEvent, type Uuid } from './event.js';
 import type { Hash } from './hash.js';
+import { hex } from './bytes.js';
 import type { KeyPair, PublicKey } from './sign.js';
 
 export interface WriterState {
@@ -24,6 +25,14 @@ export interface WriterState {
   readonly seq: number;
   readonly prev: Hash | null;
   readonly lamport: number;
+  /**
+   * The heads this writer has seen: events nothing else it holds descends from.
+   *
+   * Written into each event's `deps`, and then collapsed — a write consumes the
+   * heads it names and becomes the only head, which is why this stays small
+   * (bounded by concurrent writers, not by log length).
+   */
+  readonly heads: readonly Hash[];
 }
 
 /**
@@ -42,7 +51,9 @@ export interface WriterState {
 export function resumeFrom(_space: PublicKey, own: readonly Event[]): WriterState {
   let lamport = 0;
   for (const e of own) if (e.lamport > lamport) lamport = e.lamport;
-  return { point: newPoint(), seq: 0, prev: null, lamport };
+  // Heads come from `observe` over the whole log, not from this writer's own
+  // events — what matters is everything seen, not everything written.
+  return { point: newPoint(), seq: 0, prev: null, lamport, heads: [] };
 }
 
 export class Writer {
@@ -50,16 +61,19 @@ export class Writer {
   private seq: number;
   private prev: Hash | null;
   private lamport: number;
+  /** Heads seen, keyed by hex so membership is cheap. */
+  private heads = new Map<string, Hash>();
 
   constructor(
     private readonly space: PublicKey,
     private readonly key: KeyPair,
-    state: WriterState = { point: newPoint(), seq: 0, prev: null, lamport: 0 },
+    state: WriterState = { point: newPoint(), seq: 0, prev: null, lamport: 0, heads: [] },
   ) {
     this.point = state.point;
     this.seq = state.seq;
     this.prev = state.prev;
     this.lamport = state.lamport;
+    for (const h of state.heads) this.heads.set(hex(h), h);
   }
 
   /** This writer's chain id, for asking a store about its own events. */
@@ -68,7 +82,13 @@ export class Writer {
   }
 
   get state(): WriterState {
-    return { point: this.point, seq: this.seq, prev: this.prev, lamport: this.lamport };
+    return {
+      point: this.point,
+      seq: this.seq,
+      prev: this.prev,
+      lamport: this.lamport,
+      heads: [...this.heads.values()],
+    };
   }
 
   /**
@@ -81,6 +101,13 @@ export class Writer {
   observe(events: Iterable<EventBody>): void {
     for (const e of events) {
       if (e.lamport > this.lamport) this.lamport = e.lamport;
+
+      // Track heads: an event supersedes whatever it named, and becomes a head
+      // itself. Doing this incrementally keeps the set to the current frontier
+      // rather than the whole log.
+      for (const d of e.deps) this.heads.delete(hex(d));
+      if (e.prev !== null) this.heads.delete(hex(e.prev));
+      this.heads.set(hex(eventId(this.space, e)), eventId(this.space, e));
     }
   }
 
@@ -98,6 +125,7 @@ export class Writer {
       point: this.point,
       seq: this.seq,
       prev: this.prev,
+      deps: newDeps(this.heads.values()),
       lamport: this.lamport,
       target,
       attr,
@@ -107,7 +135,12 @@ export class Writer {
 
     const event = await signEvent(this.space, body, this.key);
     this.seq += 1;
-    this.prev = eventId(this.space, body);
+    const id = eventId(this.space, body);
+    this.prev = id;
+    // This write consumed every head it named and is now the only one. That
+    // collapse is what bounds `deps` — see docs/DEPS.md.
+    this.heads.clear();
+    this.heads.set(hex(id), id);
     return event;
   }
 }

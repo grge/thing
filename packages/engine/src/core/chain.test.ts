@@ -20,6 +20,7 @@ function body(over: Partial<EventBody> = {}): EventBody {
     point: point(),
     seq: 0,
     prev: null,
+    deps: [],
     lamport: 1,
     target: ROOT,
     attr: ':name',

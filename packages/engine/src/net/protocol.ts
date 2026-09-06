@@ -179,6 +179,8 @@ export interface WireEvent {
   readonly pt: string;
   readonly s: number;
   readonly p: string | null;
+  /** Dependencies: what this writer had seen (§2.1's `deps`). */
+  readonly d: readonly string[];
   readonly l: number;
   readonly t: string;
   readonly a: string;

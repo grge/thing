@@ -18,6 +18,7 @@ export function toWire(e: Event): WireEvent {
     pt: hex(e.point),
     s: e.seq,
     p: e.prev === null ? null : hex(e.prev),
+    d: e.deps.map(hex),
     l: e.lamport,
     t: hex(e.target),
     a: e.attr,
@@ -49,7 +50,9 @@ export function fromWire(w: unknown): Event | null {
     typeof e.v !== 'string' ||
     typeof e.wall !== 'number' ||
     typeof e.sig !== 'string' ||
-    (e.p !== null && typeof e.p !== 'string')
+    (e.p !== null && typeof e.p !== 'string') ||
+    !Array.isArray(e.d) ||
+    !e.d.every((h) => typeof h === 'string')
   ) {
     return null;
   }
@@ -60,6 +63,7 @@ export function fromWire(w: unknown): Event | null {
       point: fromHex(e.pt),
       seq: e.s,
       prev: e.p === null ? null : fromHex(e.p),
+      deps: e.d.map(fromHex),
       lamport: e.l,
       target: fromHex(e.t),
       attr: e.a,

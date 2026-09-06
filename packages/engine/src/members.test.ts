@@ -119,18 +119,15 @@ describe('membership', () => {
     // the failing test below.
   });
 
-  it.fails('a removed writer\'s past events survive a replay (§7.2.3)', async () => {
-    // **A known bug, marked failing rather than deleted.** See OPEN.md.
+  it('a removed writer\'s past events survive a replay (§7.2.3)', async () => {
+    // Was a known bug (OPEN.md 8a), now fixed by `deps`. §7.2.3 picks *valid
+    // when written* over *valid now*: removing a writer stops their future
+    // writes and must not unwrite their past ones.
     //
-    // §7.2.3 picks *valid when written* over *valid now*: removing a writer
-    // stops their future writes and must not unwrite their past ones. The
-    // incremental fold does that. A full replay does not — `admits` in
-    // `fold.ts` filters by the *final* writer set, so a removed writer looks as
-    // though they were never admitted.
-    //
-    // Two peers therefore compute different state from the same log depending
-    // on whether they replayed or folded incrementally, which is the fork §7.2.3
-    // exists to prevent and a violation of §3.6's determinism.
+    // Before `deps` the full fold filtered by the *final* writer set, so a
+    // removed writer looked as though they had never been admitted — and the
+    // incremental fold kept whatever it had already applied, so the two
+    // disagreed and the answer depended on arrival order.
     const key = await spaceKey();
     const alice = await generateKeyPair();
     const store = new MemoryStore();

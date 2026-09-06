@@ -145,6 +145,7 @@ describe('event signing', () => {
       point: point(),
       seq: 0,
       prev: null,
+      deps: [],
       lamport: 1,
       target: ROOT,
       attr: ':name',

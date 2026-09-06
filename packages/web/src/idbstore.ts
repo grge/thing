@@ -61,6 +61,7 @@ interface StoredEvent {
   sig: Uint8Array;
   writerBytes: Uint8Array;
   pointBytes: Uint8Array;
+  deps: Uint8Array[];
 }
 
 function toStored(e: Event): StoredEvent {
@@ -76,6 +77,7 @@ function toStored(e: Event): StoredEvent {
     sig: e.sig,
     writerBytes: e.writer,
     pointBytes: e.point,
+    deps: [...e.deps],
   };
 }
 
@@ -83,6 +85,7 @@ function fromStored(s: StoredEvent): Event {
   return {
     writer: s.writerBytes,
     point: s.pointBytes,
+    deps: s.deps,
     seq: s.seq,
     prev: s.prev,
     lamport: s.lamport,

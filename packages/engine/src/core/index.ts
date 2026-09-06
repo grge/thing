@@ -38,6 +38,7 @@ export {
   type Event,
   type EventBody,
   eventId,
+  newDeps,
   newPoint,
   type Point,
   POINT_LEN,

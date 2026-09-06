@@ -583,6 +583,38 @@ both sets of events fold — with no lock, and no fork reported.
   noticing — it serves what it loaded at startup. That is a notification gap and
   belongs to 7.7, not a correctness one.
 
+## Stage 7.8 — `deps`: permission as of what was seen ✅
+
+**Done.** `docs/DEPS.md` has the design and the measurements; this is what it
+cost to build.
+
+The envelope gains `deps`: the ids of the events a writer had seen when signing,
+sorted and deduplicated so the encoding stays canonical. The fold judges an
+event against the writer set **its author had seen** rather than the set as it
+finally stands, which is §7.2.3's *valid when written* becoming computable and
+§3.6's determinism restored (OPEN.md 8a, closed).
+
+Four notes:
+
+- **`Folder` no longer caches a writer set.** It kept one and admitted against
+  it, which is precisely what made it disagree with a replay. It now recomputes
+  admission from `deps` on every apply, using the *same function* as the full
+  fold — so the two cannot drift. Slower and correct; `deps.test.ts` asserts the
+  agreement directly.
+- **Seeing no declaration is not the same as no declaration existing.** `deps`
+  is self-reported and an empty set is free to claim, so an event whose past
+  holds no membership event is judged against the *earliest* declaration rather
+  than admitted. Without that, naming an empty past bypasses membership
+  entirely. One existing test asserted the opposite and was rewritten.
+- **The topological walk had to be made order-independent.** Seeding it from
+  input order made the full fold's answer depend on arrival order — the bug it
+  exists to fix, one layer down. Ties break on event id.
+- **Freeing consumed state needs a reader count.** Several events can name one
+  dep, and freeing on the first left a later sibling with an empty past.
+
+**Cost, measured:** 229 bytes per event on disk, up from 206. Sync unchanged
+against the pre-`deps` baseline, checked by rebuilding both.
+
 ## Stage 7.7 — The interfaces: control socket, CLI, TUI
 
 **Shape settled, details open.** `CLIENTS.md` has the reasoning.
@@ -727,6 +759,7 @@ Not planned in detail, because each depends on what the stages above teach.
 | 7.5 | Is there one implementation of being a peer, or two? |
 | 7.6 | Can one identity write from two processes at once? |
 | 7.7 | Is the engine's API good enough to be the only way in? |
+| 7.8 | Can the fold say what was allowed *when it was written*? |
 | 8 | Can a space be found and stay alive? |
 | 9 | Does multi-writer stay as cheap as §7.2 claims? |
 | 10 | Can infrastructure exist without custody? |

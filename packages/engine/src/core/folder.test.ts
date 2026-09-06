@@ -221,7 +221,39 @@ describe('Folder: the tricky paths', () => {
     folder.apply([restrict, write]);
     expect(folder.state.objects.has(hex(uuid('doc')))).toBe(false);
 
+    // **Still not admitted**, and this changed with `deps` (§7.2.3). The
+    // stranger wrote having seen nothing — their event's `deps` are empty — so
+    // they are judged against the writer set as it stood at the earliest
+    // declaration, which excludes them. Being admitted *later* does not
+    // retroactively authorise what they wrote before.
+    //
+    // The alternative would let anyone bypass membership entirely by claiming
+    // to have seen no declaration, since naming an empty past costs nothing.
     folder.apply([admit]);
+    expect(folder.state.objects.has(hex(uuid('doc')))).toBe(false);
+  });
+
+  it('admits a writer who saw their own admission', async () => {
+    // The other half of the rule above: a writer who *did* see the event
+    // admitting them folds normally, which is the ordinary case.
+    const key = await keyPairFromSeed(labelled('space', SEED_LEN));
+    const other = await generateKeyPair();
+
+    const owner = new Writer(key.publicKey, key);
+    const restrict = await owner.write(ROOT, ':writers', UTF8.encode(hex(key.publicKey)), 0);
+    const admit = await owner.write(
+      ROOT,
+      ':writers',
+      UTF8.encode(`${hex(key.publicKey)},${hex(other.publicKey)}`),
+      1,
+    );
+
+    const newcomer = new Writer(key.publicKey, other);
+    newcomer.observe([restrict, admit]);
+    const write = await newcomer.write(uuid('doc'), ':name', UTF8.encode('mine'), 2);
+
+    const folder = new Folder(key.publicKey);
+    folder.apply([restrict, admit, write]);
     expect(folder.state.objects.get(hex(uuid('doc')))!.attrs.get(':name')?.value).toBe('mine');
   });
 

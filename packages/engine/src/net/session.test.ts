@@ -55,7 +55,7 @@ async function makePeer(space: KeyPair, writerKey: KeyPair, point?: Uint8Array):
     writer: new EventWriter(
       space.publicKey,
       writerKey,
-      ...(point === undefined ? [] : [{ point, seq: 0, prev: null, lamport: 0 }] as const),
+      ...(point === undefined ? [] : [{ point, seq: 0, prev: null, lamport: 0, heads: [] }] as const),
     ),
     events: [],
     forks: [],
