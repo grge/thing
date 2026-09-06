@@ -1161,7 +1161,13 @@ authenticated cipher; what follows is what a construction has to get right.
   coordination. Random nonces invite a birthday collision; a counter needs
   agreement nobody can reach. The envelope already carries a unique pair —
   `(writer, seq)` — which is unique by construction under §7.3's constraint and
-  is the natural nonce input.
+  is the natural nonce input. **That dependency is load-bearing and easy to
+  miss:** the pair is unique *because* one key has one chain. Any change that
+  lets one identity hold two chains — per-process append points, say, which
+  `APPEND-POINTS.md` traces — makes two writers produce the same nonce for
+  different plaintexts under one key, which an authenticated cipher does not
+  survive. The nonce input must gain whatever component distinguishes the
+  chains, and this bullet must be revisited *before* §6 is built.
 - **Encryption must be deterministic where deduplication is wanted.** §2.4 says
   identical content deduplicates; under a randomised scheme two writers adding
   the same file produce different ciphertexts and it does not, even within one

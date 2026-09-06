@@ -26,9 +26,16 @@ Roughly in order of how much would change if the answer went the other way.
 | 7 | Is membership a whole-list register or a set of add/remove operations? | §7.4 |
 | 8 | Does a peer keep replicating the losing branch of a resolved chain fork? | §7.3 |
 | 9 | How is a blob reference expressed, and is `:kind` doing two jobs? | §3.9, §4.2 |
-| 10 | Do dense per-writer sequence numbers stay, given that they are what forces one-key-one-writer and are what the literature calls unsafe? See [EQUIVOCATION.md](EQUIVOCATION.md). | §2.1, §2.3, §7.3 |
+| 10 | Can one identity write from two processes at once? Traced in [APPEND-POINTS.md](APPEND-POINTS.md): split `writer` into identity + append point. Subtractive — removes the lock, the write API and the tab lock. | §2.1, §2.3, §7.3 |
+| 11 | Do dense per-writer sequence numbers stay at all, given that the literature calls them unsafe against a *malicious* writer? See [EQUIVOCATION.md](EQUIVOCATION.md). Question 10 does not answer this. | §2.1, §2.3, §7.3 |
 
-**Question 10 is the deepest.** It is the only one that would change the event
+**Questions 10 and 11 are one problem seen twice.** 10 is the honest case — your
+own two processes — and is a small, subtractive change. 11 is the Byzantine case
+and is a much larger one. 10 does not solve 11, and saying so is the point of
+splitting them: it would be easy to build 10, feel the relief, and forget that a
+malicious writer can still equivocate within a single append point.
+
+**Question 10 is the deepest of the original set.** It is the only one that would change the event
 format, and it arrived from the opposite direction to the rest: not from asking
 what the design should be, but from two sessions of admin tooling growing
 steadily more elaborate around a constraint nobody had questioned. The finding

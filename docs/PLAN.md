@@ -474,6 +474,16 @@ address feeds what it accepts to `Client.adopt`.
 What remains is the correctness half: the store lock, and routing the CLI
 through the holder.
 
+**Both are downstream of an open question about the core**, and
+`APPEND-POINTS.md` now traces what closing it would take: `writer` is doing two
+jobs — *who signed this* and *which chain does this extend* — and the code
+already separates them cleanly, with no file using it for both. Splitting them
+makes "same identity, two processes" ordinary, at which point the lock and the
+write API are both unnecessary rather than merely awkward.
+
+That trace changes finished stages (1, 3, 4, 5, 7) as well as future ones, so it
+is recorded rather than started.
+
 **Both are downstream of an open question about the core.** The lock exists
 because two processes sharing a writer key produce two validly signed events at
 one sequence number, and the control API exists because the lock forbids the
@@ -534,7 +544,8 @@ Additive, because §7.2 settled the shape.
 - Phase 2 filters by the set.
 - Moderators as ordinary writers with an attribute (§7.2.2).
 - Fork resolution: longest branch, ties on event hash (§7.3.1), with detection
-  surfaced rather than silent.
+  surfaced rather than silent. If append points land first, this stops being the
+  *expected* path for two devices and becomes the malicious-writer case only.
 
 **Decide here:** membership as whole-list register or add/remove operations
 (§7.4), and whether a peer keeps replicating a losing branch.
@@ -551,7 +562,11 @@ every peer.
 
 - Reading key in the link fragment.
 - Authenticated cipher over event values and blobs, **nonce derived from
-  `(writer, seq)`** (§6).
+  `(writer, seq)`** (§6). **That pair is unique only because one identity has
+  one chain.** If per-process append points land first (`APPEND-POINTS.md`), the
+  nonce input must gain the point or two of one identity's processes reuse a
+  nonce under one key — which an authenticated cipher does not survive. Check
+  this before building, whichever way the core question goes.
 - Derived subkeys for values and blobs.
 - A peer without the key: stores, serves, verifies, folds structure, folds no
   bodies (§6.1).
