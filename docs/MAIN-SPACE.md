@@ -280,6 +280,42 @@ shut down, restart
 Local socket, and per the section above that is the authorisation model rather
 than a temporary constraint.
 
+## Cycles, and why neither case needs a bound
+
+Two hubs linking each other, or a link back to a space you already hold, are
+certain rather than hypothetical. §3.4's cycle-breaking works on `:parent`
+within one fold and does not reach across a link, so this needs its own answer —
+and it turns out to need two, because fetching and drawing are different
+problems.
+
+**Fetching a link's space: a visited set.** Spaces are held by key, so *do I
+have this one* is a lookup. Arriving at a space already held is not an error to
+recover from; there is simply nothing to do. Idempotence does the work, which is
+the same argument §5.6 makes for hub convergence — *"two peers that cannot reach
+each other converge through this one, and there is no relay code"*. A cycle
+costs one lookup.
+
+**Drawing the tree: expansion is manual.** A renderer draws one level and stops.
+Expanding a link is something a person clicks, so nothing recurses and **there
+is no loop to bound** — no depth limit to choose, and no truncation someone hits
+legitimately. Infinite depth is fine in the way infinite scroll is fine: you can
+always go further, and nothing is computed until you ask.
+
+That is the same principle as tabs, one level down. Tabs make *opening*
+deliberate; manual expansion makes *descending* deliberate. Both replace an
+automatic traversal with a user action, which makes the unbounded case
+unreachable rather than merely survivable.
+
+It also answers a laziness question the model had left open: a hub with a
+hundred links does not make a client fetch a hundred spaces. It draws a hundred
+rows and fetches what is expanded.
+
+**One consequence for whoever designs the interface:** a collapsed link cannot
+show what is inside it. No child count, no preview, no "3 files" — knowing that
+means fetching the space. That is arguably the right affordance, since a link to
+someone else's space should not look like a folder in your own, but it is a real
+difference from a filesystem tree where expanding is free.
+
 ## What tabs fixed
 
 Recorded because the fix was better than the workaround it replaced, and the
@@ -345,11 +381,8 @@ Cheap, in the engine, before any UI:
    concurrent link additions — the OR-set case that a register would fail.
 3. **Resolution answers from links.** A peer holding a link to K reports its
    `:at` values; one that does not, does not.
-4. **A cycle between two spaces terminates** when something walks the tree.
-   With tabs this is less pressing than it looked — following a link is a
-   deliberate act, so a cycle is a person clicking in circles rather than a
-   renderer looping — but anything that walks links automatically still needs a
-   bound.
+4. **A cycle between two spaces terminates.** See below; the answer differs for
+   fetching and for drawing, and neither needs a depth limit.
 5. **A client replicates a server's space** over a socket and renders it, with
    no code that is not already peer replication.
 
