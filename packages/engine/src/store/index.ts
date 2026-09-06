@@ -27,6 +27,7 @@ export {
 export type {
   AppendRejection,
   AppendResult,
+  ChainId,
   SeqRange,
   SpaceId,
   SpaceStore,

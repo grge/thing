@@ -5,7 +5,7 @@
  * previous one, so a gap or a fork is detectable (ARCHITECTURE.md §2.2).
  * Between writers there is no order and none is needed.
  */
-import { compareBytes } from './bytes.js';
+import { compareBytes, hex } from './bytes.js';
 import { type Event, type EventBody, eventId } from './event.js';
 import type { Hash } from './hash.js';
 import type { PublicKey } from './sign.js';
@@ -62,9 +62,11 @@ export type ChainFault =
   | { readonly kind: 'lamport-not-increasing'; readonly previous: number; readonly got: number };
 
 /**
- * Check that `event` extends `previous` in the same writer's chain.
+ * Check that `event` extends `previous` in the same chain.
  *
- * `previous` is null when `event` should be that writer's first. Returns null
+ * A chain is `(writer, point)` — one process's run of writes under one
+ * identity — so `previous` is the last event of *that* chain, not of that
+ * writer. `previous` is null when `event` should be the chain's first. Returns null
  * when the link is sound, or the fault when it is not — a return value rather
  * than an exception, because the caller decides what a bad link means: a peer
  * drops the event, a store refuses the append, a diagnostic reports it.
@@ -74,6 +76,23 @@ export type ChainFault =
  * that. A writer that reused a stamp would degrade every resolution to the
  * event-id tiebreak while still appearing to work.
  */
+/**
+ * Which chain an event belongs to: `writer/point`, both hex.
+ *
+ * **One string, because a chain is one thing.** The version vector is keyed by
+ * it, the store looks one up by it, and `WANT` names one — splitting the pair
+ * at each of those and rejoining it at the next is how the two halves drift.
+ */
+export function chainOf(e: { writer: PublicKey; point: Uint8Array }): string {
+  return `${hex(e.writer)}/${hex(e.point)}`;
+}
+
+/** The writer half of a chain id, for asking who wrote something. */
+export function writerOfChain(chain: string): string {
+  const at = chain.indexOf('/');
+  return at === -1 ? chain : chain.slice(0, at);
+}
+
 export function checkLink(
   space: PublicKey,
   previous: Event | null,

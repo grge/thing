@@ -7,7 +7,7 @@
  * fresh `Folder`, and it must agree with the incremental fold that built the
  * original.
  */
-import { contentHash, hex, keyPairFromSeed, list, makeFile, makeFolder, read, remove, rename, ROOT, SEED_LEN, Space } from '@thing/engine';
+import { contentHash, hex, keyPairFromSeed, list, makeFile, makeFolder, read, remove, rename, ROOT, SEED_LEN, Space, type VersionVector } from '@thing/engine';
 
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -84,7 +84,15 @@ describe('a space on disk', () => {
     await rename(first.space, docs, 'documents');
 
     const before = summarise(first.space);
-    const eventCount = (await first.space.versionVector()).get(hex(key.publicKey))!.frontier;
+    // Total across every chain, not one chain's frontier: a restart opens a new
+    // append point (§2.1), so "how much is in the log" is the sum rather than
+    // the length of any one chain.
+    const held = (vv: VersionVector): number => {
+      let n = 0;
+      for (const f of vv.values()) n += f.frontier + 1;
+      return n;
+    };
+    const eventCount = held(await first.space.versionVector());
     await first.space.close();
     await first.store.close();
 
@@ -93,9 +101,10 @@ describe('a space on disk', () => {
     const second = await openAt(dir, key);
     expect(summarise(second.space)).toBe(before);
     expect(hex((await read(second.space, readme))!)).toBe(hex(UTF8.encode('# a real file\n')));
-    expect((await second.space.versionVector()).get(hex(key.publicKey))!.frontier).toBe(eventCount);
+    expect(held(await second.space.versionVector())).toBe(eventCount);
 
-    // And it is still writable, continuing the same chain.
+    // And it is still writable — on a new chain, which folds together with the
+    // old one into the same tree.
     await makeFolder(second.space, 'added-later');
     expect(list(second.space.state).map((e) => e.name).sort()).toEqual([
       'added-later',

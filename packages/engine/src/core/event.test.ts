@@ -19,7 +19,7 @@ import {
 } from './event.js';
 import { HASH_LEN } from './hash.js';
 import { PUBLIC_KEY_LEN } from './sign.js';
-import { labelled } from './testkit.js';
+import { labelled, point } from './testkit.js';
 
 const SPACE = labelled('space', PUBLIC_KEY_LEN);
 const ALICE = labelled('alice', PUBLIC_KEY_LEN);
@@ -28,6 +28,7 @@ const BOB = labelled('bob', PUBLIC_KEY_LEN);
 function body(over: Partial<EventBody> = {}): EventBody {
   return {
     writer: ALICE,
+    point: point(),
     seq: 0,
     prev: null,
     lamport: 1,
@@ -52,6 +53,7 @@ describe('canonical encoding', () => {
     const w = new ByteWriter();
     w.bytes(SPACE);
     w.bytes(e.writer);
+    w.bytes(e.point);
     w.u32(e.seq);
     w.u8(1);
     w.bytes(e.prev!);

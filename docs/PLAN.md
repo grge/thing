@@ -526,7 +526,7 @@ space to fail with a clear error. The first moves to 7.6, where it is met by the
 CLI writing its own chain; the second is withdrawn — with append points a second
 process opening a held space is ordinary, not an error.)*
 
-## Stage 7.6 — Append points
+## Stage 7.6 — Append points ✅
 
 **Decided, not started.** `APPEND-POINTS.md` has the trace and the two choices;
 this is where it lands in the order. It comes *before* the interfaces because
@@ -560,6 +560,28 @@ or two of one identity's processes reuse a nonce under one key.
 
 **Done when:** two processes hold one space with one writing key, both write, and
 both sets of events fold — with no lock, and no fork reported.
+
+**Done.** Four notes:
+
+- **The version vector is keyed by chain, not writer**, and that rename runs
+  through `SeqRange`, `WANT`, `FORKED`, `Divergence`, both real stores and the
+  debug UI. `chainOf(e)` in `core` is the single definition of `writer/point`,
+  so the pair is never split and rejoined.
+- **`resumeFrom` was inverted, deliberately.** It used to continue the last
+  chain; it now starts a new one and carries only the Lamport clock forward.
+  The test asserting the old behaviour was rewritten to assert the new, because
+  continuing a chain is only safe if its previous owner has stopped — and being
+  wrong about that is exactly the fork this removes.
+- **A fork now has to be staged.** `session.test.ts` built one by having two
+  peers share a key, which no longer collides; it passes an explicit shared
+  point instead. That the test needed changing *is* the result: honest software
+  cannot produce a fork any more, so a fork means equivocation or a rolled-back
+  store.
+- **Two processes writing one held space is now ordinary**, verified with two
+  concurrent `thing put` calls and with a `put` against a running `serve`: both
+  files present, zero forks. What that does *not* fix is the running holder
+  noticing — it serves what it loaded at startup. That is a notification gap and
+  belongs to 7.7, not a correctness one.
 
 ## Stage 7.7 — The interfaces: control socket, CLI, TUI
 

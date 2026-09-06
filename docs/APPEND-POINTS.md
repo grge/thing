@@ -1,7 +1,7 @@
 # Per-process append points: what would change
 
-**Status: traced, and the two open choices are now decided** (§7). Not yet
-built.
+**Status: built** (PLAN.md stage 7.6). The trace below is what it was before,
+kept because the reasoning is what justified the shape.
 
 It answers one question — if `writer` stays the *identity* and the chain is
 keyed by something else, what breaks? — by reading the code rather than

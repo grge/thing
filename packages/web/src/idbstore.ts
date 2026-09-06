@@ -3,7 +3,7 @@
  *
  * ```
  * database  thing:<space-id>
- *   events   key [writer, seq]     the log
+ *   events   key [chain, seq]      the log
  *   blobs    key hash              content, by its own hash
  * ```
  *
@@ -20,7 +20,7 @@
  * interface and the shared chain logic stay platform-free; each backend lives
  * with the runtime it needs.
  */
-import { type AppendRejection, type AppendResult, ChainSet, type Event, type Hash, hashLarge, hex, inChainOrder, type PublicKey, type SeqRange, type SpaceId, type SpaceStore, type Store, type VersionVector } from '@thing/engine';
+import { type AppendRejection, type AppendResult, ChainSet, chainOf, type Event, type Hash, hashLarge, hex, inChainOrder, type PublicKey, type SeqRange, type SpaceId, type SpaceStore, type Store, type VersionVector } from '@thing/engine';
 
 const EVENTS = 'events';
 const BLOBS = 'blobs';
@@ -50,7 +50,7 @@ function committed(tx: IDBTransaction): Promise<void> {
  * and no second encoding that could drift from the signed one.
  */
 interface StoredEvent {
-  writer: string;
+  chain: string;
   seq: number;
   prev: Uint8Array | null;
   lamport: number;
@@ -60,11 +60,12 @@ interface StoredEvent {
   wall: number;
   sig: Uint8Array;
   writerBytes: Uint8Array;
+  pointBytes: Uint8Array;
 }
 
 function toStored(e: Event): StoredEvent {
   return {
-    writer: hex(e.writer),
+    chain: chainOf(e),
     seq: e.seq,
     prev: e.prev,
     lamport: e.lamport,
@@ -74,12 +75,14 @@ function toStored(e: Event): StoredEvent {
     wall: e.wall,
     sig: e.sig,
     writerBytes: e.writer,
+    pointBytes: e.point,
   };
 }
 
 function fromStored(s: StoredEvent): Event {
   return {
     writer: s.writerBytes,
+    point: s.pointBytes,
     seq: s.seq,
     prev: s.prev,
     lamport: s.lamport,
@@ -110,7 +113,7 @@ class IdbSpaceStore implements SpaceStore {
       req.onupgradeneeded = () => {
         const d = req.result;
         if (!d.objectStoreNames.contains(EVENTS)) {
-          d.createObjectStore(EVENTS, { keyPath: ['writer', 'seq'] });
+          d.createObjectStore(EVENTS, { keyPath: ['chain', 'seq'] });
         }
         if (!d.objectStoreNames.contains(BLOBS)) d.createObjectStore(BLOBS);
       };
@@ -168,9 +171,9 @@ class IdbSpaceStore implements SpaceStore {
   async *readRange(range: SeqRange): AsyncIterable<Event> {
     const tx = this.db.transaction(EVENTS, 'readonly');
     const to = range.to ?? Number.MAX_SAFE_INTEGER;
-    // The compound key is [writer, seq], so a range over it is exactly one
-    // writer's chain in order — no scan and no sort.
-    const bound = IDBKeyRange.bound([range.writer, range.from], [range.writer, to], false, true);
+    // The compound key is [chain, seq], so a range over it is exactly one
+    // chain in order — no scan and no sort.
+    const bound = IDBKeyRange.bound([range.chain, range.from], [range.chain, to], false, true);
     const stored = (await request(tx.objectStore(EVENTS).getAll(bound))) as StoredEvent[];
 
     let expect = range.from;

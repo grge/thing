@@ -84,14 +84,23 @@
     return rows;
   });
 
-  const vv = $state<{ writer: string; frontier: number; tip: string }[]>([]);
+  const vv = $state<{ chain: string; writer: string; point: string; frontier: number; tip: string }[]>([]);
   $effect(() => {
     void epoch;
     if (open === null) return;
     void open.versionVector().then((map) => {
       vv.length = 0;
-      for (const [writer, f] of map) {
-        vv.push({ writer: writer.slice(0, 8), frontier: f.frontier, tip: hex(f.tip).slice(0, 8) });
+      for (const [chain, f] of map) {
+        // `writer/point` — shown apart, because one writer may hold several
+        // chains and truncating the pair would collapse them into one row.
+        const [writer = chain, point = ''] = chain.split('/');
+        vv.push({
+          chain,
+          writer: writer.slice(0, 8),
+          point: point.slice(0, 8),
+          frontier: f.frontier,
+          tip: hex(f.tip).slice(0, 8),
+        });
       }
     });
   });
@@ -175,12 +184,13 @@
       {:else}
         <table class="debug-table">
           <thead>
-            <tr><th>writer</th><th>frontier</th><th>tip</th></tr>
+            <tr><th>writer</th><th>point</th><th>frontier</th><th>tip</th></tr>
           </thead>
           <tbody>
-            {#each vv as row (row.writer)}
+            {#each vv as row (row.chain)}
               <tr>
                 <td class="mono">{row.writer}</td>
+                <td class="mono muted">{row.point}</td>
                 <td class="num">{row.frontier}</td>
                 <td class="mono muted">{row.tip}</td>
               </tr>
@@ -199,9 +209,9 @@
       {:else}
         <table class="debug-table">
           <tbody>
-            {#each space.forks as f (f.writer + f.frontier)}
+            {#each space.forks as f (f.chain + f.frontier)}
               <tr>
-                <td class="mono">{f.writer.slice(0, 8)}</td>
+                <td class="mono">{f.chain.slice(0, 8)}</td>
                 <td class="num">{f.frontier}</td>
                 <td class="mono muted">{f.mine.slice(0, 8)} ≠ {f.theirs.slice(0, 8)}</td>
               </tr>

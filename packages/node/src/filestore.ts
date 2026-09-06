@@ -22,7 +22,7 @@
  * boundary test caught exactly that. The interface and the shared chain logic
  * stay platform-free; each backend lives with the runtime it needs.
  */
-import { type AppendRejection, type AppendResult, ChainSet, decodeEvent, encodeEvent, type Event, FRAME_HEADER, type Hash, hashLarge, hex, inChainOrder, type PublicKey, type SeqRange, type SpaceId, type SpaceStore, type Store, type VersionVector } from '@thing/engine';
+import { type AppendRejection, type AppendResult, ChainSet, chainOf, decodeEvent, encodeEvent, type Event, FRAME_HEADER, type Hash, hashLarge, hex, inChainOrder, type PublicKey, type SeqRange, type SpaceId, type SpaceStore, type Store, type VersionVector } from '@thing/engine';
 import { appendFile, mkdir, open as openFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -123,10 +123,10 @@ class FileSpaceStore implements SpaceStore {
 
   async *readRange(range: SeqRange): AsyncIterable<Event> {
     // A scan, since the log is not indexed. Collected and sorted because the
-    // file is in append order, which is not seq order across writers.
+    // file is in append order, which is not seq order across chains.
     const wanted: Event[] = [];
     for await (const e of this.readAll()) {
-      if (hex(e.writer) !== range.writer) continue;
+      if (chainOf(e) !== range.chain) continue;
       if (e.seq < range.from) continue;
       if (range.to !== undefined && e.seq >= range.to) continue;
       wanted.push(e);

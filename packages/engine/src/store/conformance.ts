@@ -179,9 +179,7 @@ export function conformanceTests(
           await s.append([await writer.write(ROOT, ':name', UTF8.encode(`v${i}`), i)]);
         }
 
-        const range = await collect(
-          s.readRange({ writer: hex(key.publicKey), from: 2, to: 5 }),
-        );
+        const range = await collect(s.readRange({ chain: writer.chain, from: 2, to: 5 }));
         expect(range.map((e) => e.seq)).toEqual([2, 3, 4]);
       });
     });
@@ -197,7 +195,7 @@ export function conformanceTests(
         }
 
         const vv = await s.versionVector();
-        const entry = vv.get(hex(key.publicKey));
+        const entry = vv.get(writer.chain);
         expect(entry?.frontier).toBe(2);
         expect(entry?.tip).toHaveLength(32);
       });
@@ -215,7 +213,7 @@ export function conformanceTests(
         await s.append([events[0]!, events[1]!, events[3]!]);
 
         const vv = await s.versionVector();
-        expect(vv.get(hex(key.publicKey))?.frontier).toBe(1);
+        expect(vv.get(writer.chain)?.frontier).toBe(1);
       });
     });
 
@@ -391,7 +389,7 @@ export function conformanceTests(
       expect(hex((await again.getBlob(hash))!)).toBe(hex(UTF8.encode('durable bytes')));
 
       const vv = await again.versionVector();
-      expect(vv.get(hex(key.publicKey))?.frontier).toBe(3);
+      expect(vv.get(writer.chain)?.frontier).toBe(3);
 
       await store.close();
       if (cleanup !== undefined) await cleanup(store);

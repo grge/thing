@@ -8,6 +8,8 @@
  */
 import fc from 'fast-check';
 
+import { POINT_LEN } from './event.js';
+
 /**
  * An arbitrary permutation of `[0, n)`.
  *
@@ -39,4 +41,14 @@ export function hex(bytes: Uint8Array): string {
   let s = '';
   for (const b of bytes) s += b.toString(16).padStart(2, '0');
   return s;
+}
+
+/**
+ * A deterministic append point, so a fixture's events land on one chain.
+ *
+ * Real points are random (`newPoint`), which is right for processes and wrong
+ * for tests: a fixture that wants two events on the same chain must name it.
+ */
+export function point(label = 'point'): Uint8Array {
+  return labelled(label, POINT_LEN);
 }

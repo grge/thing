@@ -8,7 +8,7 @@ import { hex } from './bytes.js';
 import { type Event, type EventBody, eventId, ROOT } from './event.js';
 import { HASH_LEN } from './hash.js';
 import { generateKeyPair, type KeyPair, keyPairFromSeed, PUBLIC_KEY_LEN, SEED_LEN, SIGNATURE_LEN } from './sign.js';
-import { labelled } from './testkit.js';
+import { labelled, point } from './testkit.js';
 import { resumeFrom, Writer } from './writer.js';
 
 const SPACE = labelled('space', PUBLIC_KEY_LEN);
@@ -17,6 +17,7 @@ const UNSIGNED = new Uint8Array(SIGNATURE_LEN);
 function body(over: Partial<EventBody> = {}): EventBody {
   return {
     writer: labelled('alice', PUBLIC_KEY_LEN),
+    point: point(),
     seq: 0,
     prev: null,
     lamport: 1,
@@ -144,7 +145,7 @@ describe('chain links', () => {
 });
 
 describe('whole chains', () => {
-  async function chainOf(n: number): Promise<{ key: KeyPair; events: Event[] }> {
+  async function chain(n: number): Promise<{ key: KeyPair; events: Event[] }> {
     const key = await keyPairFromSeed(labelled('writer', SEED_LEN));
     const w = new Writer(SPACE, key);
     const events: Event[] = [];
@@ -153,12 +154,12 @@ describe('whole chains', () => {
   }
 
   it('accepts a chain a Writer produced', async () => {
-    const { events } = await chainOf(5);
+    const { events } = await chain(5);
     expect(checkChain(SPACE, events)).toBeNull();
   });
 
   it('reports where a chain breaks', async () => {
-    const { events } = await chainOf(5);
+    const { events } = await chain(5);
     const broken = [...events];
     broken[3] = { ...broken[3]!, prev: labelled('fake', HASH_LEN) };
     const fault = checkChain(SPACE, broken);
@@ -166,11 +167,33 @@ describe('whole chains', () => {
     expect(fault?.fault.kind).toBe('prev-mismatch');
   });
 
-  it('a Writer resumes where it left off', async () => {
-    const { key, events } = await chainOf(3);
+  it('a resuming Writer starts a new chain rather than extending one', async () => {
+    // The old behaviour was to continue the last chain, which is only safe if
+    // whoever wrote it has stopped — and being wrong about that produces two
+    // events at one seq, both validly signed (§2.1's `Point`). A fresh chain
+    // costs one version-vector entry and cannot be wrong.
+    const { key, events } = await chain(3);
     const resumed = new Writer(SPACE, key, resumeFrom(SPACE, events));
     const next = await resumed.write(ROOT, ':name', Uint8Array.of(99), 99);
-    expect(checkChain(SPACE, [...events, next])).toBeNull();
+
+    expect(hex(next.point)).not.toBe(hex(events[0]!.point));
+    expect(next.seq).toBe(0);
+    expect(next.prev).toBeNull();
+
+    // Both chains are individually sound; they are simply separate.
+    expect(checkChain(SPACE, events)).toBeNull();
+    expect(checkChain(SPACE, [next])).toBeNull();
+  });
+
+  it('a resuming Writer carries the clock forward', async () => {
+    // §2.2: a later write must not lose to an earlier one this identity has
+    // already made, so the Lamport clock crosses chains even though seq does
+    // not.
+    const { key, events } = await chain(3);
+    const resumed = new Writer(SPACE, key, resumeFrom(SPACE, events));
+    const next = await resumed.write(ROOT, ':name', Uint8Array.of(99), 99);
+    const highest = Math.max(...events.map((e) => e.lamport));
+    expect(next.lamport).toBeGreaterThan(highest);
   });
 
   it('a Writer raises its clock on observing others', async () => {

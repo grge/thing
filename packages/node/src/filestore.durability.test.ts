@@ -56,7 +56,7 @@ describe('files: on disk', () => {
     const again = await second.open(space, key.publicKey);
     expect(await again.count()).toBe(5);
     expect(hex((await again.getBlob(hash))!)).toBe(hex(UTF8.encode('bytes on disk')));
-    expect((await again.versionVector()).get(hex(key.publicKey))?.frontier).toBe(4);
+    expect((await again.versionVector()).get(writer.chain)?.frontier).toBe(4);
     await second.close();
   });
 
@@ -104,7 +104,7 @@ describe('files: on disk', () => {
     const again = await second.open(space, key.publicKey);
     expect(await again.count()).toBe(1);
     // And the store is still usable: the surviving chain accepts what follows.
-    expect((await again.versionVector()).get(hex(key.publicKey))?.frontier).toBe(0);
+    expect((await again.versionVector()).get(writer.chain)?.frontier).toBe(0);
     await second.close();
   });
 

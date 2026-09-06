@@ -22,7 +22,16 @@ export type SpaceId = string;
 export type WriterId = string;
 
 /**
- * What a peer knows of one writer's chain (§2.3).
+ * One chain: `writer/point`, both hex.
+ *
+ * A writer may have several chains at once — one per process writing under that
+ * identity (§2.1's `Point`) — so everything that tracks *position* is keyed by
+ * this, and everything that asks *who* uses `WriterId`.
+ */
+export type ChainId = string;
+
+/**
+ * What a peer knows of one chain (§2.3).
  *
  * `frontier` is the highest **contiguous** sequence number held. "Contiguous" is
  * load-bearing: a peer holding 0–47 and also 49 reports 47, because reporting 49
@@ -37,17 +46,17 @@ export interface WriterFrontier {
   readonly tip: Hash;
 }
 
-/** A peer's knowledge of a space, per writer (§2.3). */
-export type VersionVector = ReadonlyMap<WriterId, WriterFrontier>;
+/** A peer's knowledge of a space, per chain (§2.3). */
+export type VersionVector = ReadonlyMap<ChainId, WriterFrontier>;
 
 /**
- * A range of one writer's chain to read.
+ * A range of one chain to read.
  *
  * `from` is inclusive, `to` exclusive. Both are sequence numbers, so a caller
  * asks for what it lacks rather than for a byte offset.
  */
 export interface SeqRange {
-  readonly writer: WriterId;
+  readonly chain: ChainId;
   readonly from: number;
   readonly to?: number;
 }
@@ -61,13 +70,13 @@ export interface SeqRange {
  */
 export type AppendRejection =
   /** Already held. Appending twice is a no-op, not an error (§1.1). */
-  | { readonly kind: 'duplicate'; readonly writer: WriterId; readonly seq: number }
+  | { readonly kind: 'duplicate'; readonly chain: ChainId; readonly seq: number }
   /** `seq` skips ahead of what is held: the caller has a gap to fill first. */
-  | { readonly kind: 'gap'; readonly writer: WriterId; readonly expected: number; readonly got: number }
+  | { readonly kind: 'gap'; readonly chain: ChainId; readonly expected: number; readonly got: number }
   /** `prev` does not match the event it claims to follow — a fork or a graft. */
-  | { readonly kind: 'fork'; readonly writer: WriterId; readonly seq: number }
+  | { readonly kind: 'fork'; readonly chain: ChainId; readonly seq: number }
   /** The signature does not verify for the claimed writer, in this space. */
-  | { readonly kind: 'unverified'; readonly writer: WriterId; readonly seq: number };
+  | { readonly kind: 'unverified'; readonly chain: ChainId; readonly seq: number };
 
 export interface AppendResult {
   /** Events actually written, in chain order. */
@@ -102,10 +111,10 @@ export interface SpaceStore {
   /** Every event held, in no guaranteed order. */
   readAll(): AsyncIterable<Event>;
 
-  /** One writer's chain, ascending by `seq`. */
+  /** One chain, ascending by `seq`. */
   readRange(range: SeqRange): AsyncIterable<Event>;
 
-  /** What this peer knows, per writer (§2.3). */
+  /** What this peer knows, per chain (§2.3). */
   versionVector(): Promise<VersionVector>;
 
   /** How many events are held. */

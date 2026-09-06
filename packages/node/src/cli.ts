@@ -176,7 +176,7 @@ function activityLog(enabled: boolean): {
   onRefused?: (peer: string, space: string) => void;
   onEvents?: (space: string, events: readonly unknown[]) => void;
   onBlob?: (space: string, hash: string, bytes: number) => void;
-  onFork?: (space: string, fork: { writer: string; frontier: number }) => void;
+  onFork?: (space: string, fork: { chain: string; frontier: number }) => void;
 } {
   if (!enabled) return {};
   const at = (): string => new Date().toISOString().slice(11, 19);
@@ -204,7 +204,9 @@ function activityLog(enabled: boolean): {
     onBlob: (space, hash, bytes) => say(`${short(space)} blob ${short(hash)} ${bytes} bytes`),
     onFork: (space, fork) =>
       // §2.3: a fork is reported loudly and does not stall the rest.
-      say(`${short(space)} FORK: writer ${short(fork.writer)} diverged at ${fork.frontier}`),
+      // A chain, not a writer: one identity may hold several (§2.1), and a
+      // fork now means equivocation rather than someone opening a second tab.
+      say(`${short(space)} FORK: chain ${short(fork.chain)} diverged at ${fork.frontier}`),
   };
 }
 

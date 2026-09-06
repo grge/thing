@@ -304,9 +304,9 @@ export class Client {
       peer: conn.peer,
       onFork: (fork) => {
         // §2.3: reported, never silently ignored, and never fatal — a fork is
-        // confined to one writer's chain.
+        // confined to one chain.
         held.forks = [...held.forks, fork];
-        this.note('log', id, `FORK: writer ${fork.writer.slice(0, 8)} diverged at ${fork.frontier}`);
+        this.note('log', id, `FORK: chain ${fork.chain.slice(0, 8)} diverged at ${fork.frontier}`);
         for (const o of this.observers) o.onFork?.(id, fork);
       },
       onEvents: (events) => {

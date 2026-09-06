@@ -11,7 +11,7 @@
  * peer cannot be trusted to have checked, and there is exactly one place where
  * that could be forgotten.
  */
-import { type Event, hex } from '../core/index.js';
+import { chainOf, type Event, hex } from '../core/index.js';
 import type { AppendResult, SpaceStore } from '../store/index.js';
 import { BlobReceiver, type Channel, sendBlob } from './blobs.js';
 import { EphemeralState, haveMessage } from './ephemeral.js';
@@ -149,7 +149,7 @@ export class Session {
       }
 
       case 'WANT': {
-        await this.sendRange(msg.writer, msg.from, msg.to);
+        await this.sendRange(msg.chain, msg.from, msg.to);
         return;
       }
 
@@ -157,7 +157,7 @@ export class Session {
         // The peer noticed a divergence we may not have. Report it; repair is
         // deliberately not in this protocol (§2.3).
         this.reportFork(
-          { writer: msg.writer, frontier: msg.frontier, mine: msg.theirs, theirs: msg.mine },
+          { chain: msg.chain, frontier: msg.frontier, mine: msg.theirs, theirs: msg.mine },
           false,
         );
         return;
@@ -193,7 +193,7 @@ export class Session {
     const accepted: Event[] = [...result.appended];
 
     for (const { event, why } of result.rejected) {
-      if (why.kind === 'gap') this.pending.hold(hex(event.writer), event.seq, event);
+      if (why.kind === 'gap') this.pending.hold(chainOf(event), event.seq, event);
       // A duplicate is expected and ignored; a fork or a bad signature is the
       // peer's problem, not something to retry.
     }
@@ -203,8 +203,8 @@ export class Session {
     while (this.pending.size > 0) {
       const vv = await this.store.versionVector();
       let progressed = false;
-      for (const [writer, f] of vv) {
-        const ready = this.pending.drain(writer, f.frontier);
+      for (const [chain, f] of vv) {
+        const ready = this.pending.drain(chain, f.frontier);
         if (ready.length === 0) continue;
         result = await this.store.append(ready);
         accepted.push(...result.appended);
@@ -224,7 +224,7 @@ export class Session {
     // Ask for whatever is still missing.
     const vv = await this.store.versionVector();
     for (const gap of this.pending.gaps(frontiersOf(vvToWire(vv)))) {
-      this.send({ type: 'WANT', writer: gap.writer, from: gap.from });
+      this.send({ type: 'WANT', chain: gap.chain, from: gap.from });
     }
   }
 
@@ -234,25 +234,25 @@ export class Session {
     const plan = reconcile(mine, this.theirs);
 
     // Reported rather than repaired, and deliberately not fatal: a fork is
-    // confined to one writer's chain and the rest of the space still syncs.
+    // confined to one chain and the rest of the space still syncs.
     for (const fork of plan.forked) this.reportFork(fork, true);
 
     for (const range of plan.want) {
-      this.send({ type: 'WANT', writer: range.writer, from: range.from });
+      this.send({ type: 'WANT', chain: range.chain, from: range.from });
     }
     for (const range of plan.send) {
-      await this.sendRange(range.writer, range.from);
+      await this.sendRange(range.chain, range.from);
     }
   }
 
   /**
    * Surface a fork once, and optionally tell the peer.
    *
-   * Keyed by writer and the two tips, so a genuinely new divergence on the
+   * Keyed by chain and the two tips, so a genuinely new divergence on the
    * same chain is still reported while a repeat of the same one is not.
    */
   private reportFork(fork: Divergence, tell: boolean): void {
-    const key = `${fork.writer}:${fork.mine}:${fork.theirs}`;
+    const key = `${fork.chain}:${fork.mine}:${fork.theirs}`;
     if (this.reportedForks.has(key)) return;
     this.reportedForks.add(key);
 
@@ -260,7 +260,7 @@ export class Session {
     if (tell) {
       this.send({
         type: 'FORKED',
-        writer: fork.writer,
+        chain: fork.chain,
         frontier: fork.frontier,
         mine: fork.mine,
         theirs: fork.theirs,
@@ -268,10 +268,10 @@ export class Session {
     }
   }
 
-  private async sendRange(writer: string, from: number, to?: number): Promise<void> {
+  private async sendRange(chain: string, from: number, to?: number): Promise<void> {
     const batch: Event[] = [];
     for await (const e of this.store.readRange(
-      to === undefined ? { writer, from } : { writer, from, to },
+      to === undefined ? { chain, from } : { chain, from, to },
     )) {
       batch.push(e);
       if (batch.length >= BATCH) {

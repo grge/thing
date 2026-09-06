@@ -15,6 +15,7 @@ import {
   SEED_LEN,
   Writer as EventWriter,
 } from '../core/index.js';
+import { point } from '../core/testkit.js';
 import { MemoryStore, type SpaceStore } from '../store/index.js';
 import { describe, expect, it } from 'vitest';
 import type { Channel } from './blobs.js';
@@ -73,11 +74,23 @@ interface Peer {
   forks: Divergence[];
 }
 
-async function makePeer(space: KeyPair, writerKey: KeyPair): Promise<Peer> {
+/**
+ * A peer with its own store and writer.
+ *
+ * `point` is normally left alone, so each peer mints its own append point and
+ * two peers sharing a key simply write separate chains. Passing one explicitly
+ * puts two peers on the *same* chain, which is how a genuine fork is staged —
+ * honest software no longer produces one.
+ */
+async function makePeer(space: KeyPair, writerKey: KeyPair, point?: Uint8Array): Promise<Peer> {
   const store = await new MemoryStore().open(hex(space.publicKey), space.publicKey);
   return {
     store,
-    writer: new EventWriter(space.publicKey, writerKey),
+    writer: new EventWriter(
+      space.publicKey,
+      writerKey,
+      ...(point === undefined ? [] : [{ point, seq: 0, prev: null, lamport: 0 }] as const),
+    ),
     events: [],
     forks: [],
   };
@@ -227,10 +240,14 @@ describe('forks', () => {
     // Two peers at the same frontier on different histories — the case the tip
     // hash exists for (§2.3). Without it they would look identical.
     const space = await keyPairFromSeed(labelled('space', SEED_LEN));
-    const a = await makePeer(space, space);
-    const b = await makePeer(space, space);
+    // **Forced onto one chain.** Two processes sharing a key no longer collide
+    // on their own — each mints its own append point (§2.1) — so a fork now
+    // has to be staged. It means equivocation or a rolled-back store rather
+    // than someone opening a second tab, which is the point of the change.
+    const shared = point('shared');
+    const a = await makePeer(space, space, shared);
+    const b = await makePeer(space, space, shared);
 
-    // Same key, two "devices": each writes its own seq 0 (§7.3).
     await write(a, ':name', 'from-a', 1);
     await write(b, ':name', 'from-b', 2);
 
@@ -249,8 +266,10 @@ describe('forks', () => {
     const space = await keyPairFromSeed(labelled('space', SEED_LEN));
     const other = await keyPairFromSeed(labelled('other', SEED_LEN));
 
-    const a = await makePeer(space, space);
-    const b = await makePeer(space, space);
+    // Staged onto one chain, as above — honest peers no longer collide.
+    const shared = point('shared');
+    const a = await makePeer(space, space, shared);
+    const b = await makePeer(space, space, shared);
 
     await write(a, ':name', 'a-fork', 1);
     await write(b, ':name', 'b-fork', 2);
@@ -269,7 +288,7 @@ describe('forks', () => {
 
     expect(a.forks.length).toBeGreaterThan(0);
     const vvB = await b.store.versionVector();
-    expect(vvB.get(hex(other.publicKey))?.frontier).toBe(2);
+    expect(vvB.get(third.chain)?.frontier).toBe(2);
   });
 });
 

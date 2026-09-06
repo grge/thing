@@ -7,15 +7,25 @@
  */
 import type { WireFrontier, WireVersionVector } from './protocol.js';
 
-/** One writer's chain needs events sent, from `from` inclusive. */
+/** One chain needs events sent, from `from` inclusive. */
 export interface SendRange {
-  readonly writer: string;
+  /** `writer/point` — see `chainOf`. */
+  readonly chain: string;
   readonly from: number;
 }
 
-/** One writer's chain has diverged (§2.3). */
+/**
+ * One chain has diverged (§2.3).
+ *
+ * With per-process append points this is no longer what two of your own
+ * processes do — they write separate chains. A divergence now means one chain
+ * has two histories, which honest software does not produce: either a key is
+ * being used to equivocate deliberately, or a store has been corrupted or
+ * rolled back. §7.3 still resolves it deterministically.
+ */
 export interface Divergence {
-  readonly writer: string;
+  /** `writer/point` — see `chainOf`. */
+  readonly chain: string;
   readonly frontier: number;
   readonly mine: string;
   readonly theirs: string;
@@ -39,7 +49,7 @@ export interface Reconciliation {
 /**
  * Compare what I hold against what a peer reported.
  *
- * The three outcomes per writer:
+ * The three outcomes per chain:
  *
  * - **They are behind me.** Send them what follows their frontier.
  * - **I am behind them.** Ask for what follows mine.
@@ -56,26 +66,26 @@ export function reconcile(mine: WireVersionVector, theirs: WireVersionVector): R
   const want: SendRange[] = [];
   const forked: Divergence[] = [];
 
-  const writers = new Set([...Object.keys(mine), ...Object.keys(theirs)]);
+  const chains = new Set([...Object.keys(mine), ...Object.keys(theirs)]);
 
-  for (const writer of writers) {
-    const a = mine[writer];
-    const b = theirs[writer];
+  for (const chain of chains) {
+    const a = mine[chain];
+    const b = theirs[chain];
 
     if (a === undefined) {
-      // They have a writer I have never seen. Ask from the beginning.
-      if (b !== undefined) want.push({ writer, from: 0 });
+      // They have a chain I have never seen. Ask from the beginning.
+      if (b !== undefined) want.push({ chain, from: 0 });
       continue;
     }
     if (b === undefined) {
-      send.push({ writer, from: 0 });
+      send.push({ chain, from: 0 });
       continue;
     }
 
     if (a.frontier === b.frontier) {
       // Same distance along. Same history, or a fork.
       if (a.tip !== b.tip) {
-        forked.push({ writer, frontier: a.frontier, mine: a.tip, theirs: b.tip });
+        forked.push({ chain, frontier: a.frontier, mine: a.tip, theirs: b.tip });
       }
       continue;
     }
@@ -84,19 +94,19 @@ export function reconcile(mine: WireVersionVector, theirs: WireVersionVector): R
     // vectors alone — the shorter peer's tip is at a position the longer one
     // does not report — so the events themselves settle it: the store rejects
     // a mismatched `prev`, and that surfaces as a rejection rather than here.
-    if (a.frontier > b.frontier) send.push({ writer, from: b.frontier + 1 });
-    else want.push({ writer, from: a.frontier + 1 });
+    if (a.frontier > b.frontier) send.push({ chain, from: b.frontier + 1 });
+    else want.push({ chain, from: a.frontier + 1 });
   }
 
-  return { send: sorted(send), want: sorted(want), forked: [...forked].sort(byWriter) };
+  return { send: sorted(send), want: sorted(want), forked: [...forked].sort(byChain) };
 }
 
 function sorted(ranges: SendRange[]): SendRange[] {
-  return [...ranges].sort(byWriter);
+  return [...ranges].sort(byChain);
 }
 
-function byWriter<T extends { writer: string }>(a: T, b: T): number {
-  return a.writer < b.writer ? -1 : a.writer > b.writer ? 1 : 0;
+function byChain<T extends { chain: string }>(a: T, b: T): number {
+  return a.chain < b.chain ? -1 : a.chain > b.chain ? 1 : 0;
 }
 
 /** True if the two peers hold the same thing and nothing needs to move. */
@@ -108,7 +118,7 @@ export function inSync(r: Reconciliation): boolean {
  * Holds events whose predecessor has not arrived.
  *
  * §2.5: events after a gap are held aside, never applied, so the fold never
- * sees a writer's history with a hole in it. This is where that buffering
+ * sees a chain's history with a hole in it. This is where that buffering
  * lives — storage refuses a gap outright, because deciding *what to do* about
  * one is a network concern.
  */
@@ -118,27 +128,27 @@ export class PendingEvents<T> {
   /**
    * Hold an event that cannot yet be applied.
    *
-   * `writer` is passed separately rather than read off the event, because an
-   * event's writer is bytes and this indexes by their hex form — keeping the
-   * conversion at the caller means it happens once rather than per lookup.
+   * `chain` is passed separately rather than derived from the event, because
+   * it is bytes on the event and a string here — keeping the conversion at the
+   * caller means it happens once rather than per lookup.
    */
-  hold(writer: string, seq: number, event: T): void {
-    let byseq = this.held.get(writer);
+  hold(chain: string, seq: number, event: T): void {
+    let byseq = this.held.get(chain);
     if (byseq === undefined) {
       byseq = new Map();
-      this.held.set(writer, byseq);
+      this.held.set(chain, byseq);
     }
     byseq.set(seq, event);
   }
 
   /**
-   * Take everything now applicable for a writer, given its frontier.
+   * Take everything now applicable for a chain, given its frontier.
    *
    * Returns a contiguous run starting at `frontier + 1`, so the caller can
    * append it in one go, and removes what it returns.
    */
-  drain(writer: string, frontier: number): T[] {
-    const byseq = this.held.get(writer);
+  drain(chain: string, frontier: number): T[] {
+    const byseq = this.held.get(chain);
     if (byseq === undefined) return [];
 
     const out: T[] = [];
@@ -150,21 +160,21 @@ export class PendingEvents<T> {
       byseq.delete(next);
       next += 1;
     }
-    if (byseq.size === 0) this.held.delete(writer);
+    if (byseq.size === 0) this.held.delete(chain);
     return out;
   }
 
   /**
-   * What to ask for: the span between a writer's frontier and its lowest held
+   * What to ask for: the span between a chain's frontier and its lowest held
    * event. Exactly the gap, so a request names no more than it needs.
    */
   gaps(frontiers: ReadonlyMap<string, number>): SendRange[] {
     const out: SendRange[] = [];
-    for (const [writer, byseq] of this.held) {
-      const have = frontiers.get(writer) ?? -1;
+    for (const [chain, byseq] of this.held) {
+      const have = frontiers.get(chain) ?? -1;
       let lowest = Number.MAX_SAFE_INTEGER;
       for (const seq of byseq.keys()) if (seq < lowest) lowest = seq;
-      if (lowest > have + 1) out.push({ writer, from: have + 1 });
+      if (lowest > have + 1) out.push({ chain, from: have + 1 });
     }
     return sorted(out);
   }
@@ -179,7 +189,7 @@ export class PendingEvents<T> {
 /** Frontiers as a plain map, for `gaps`. */
 export function frontiersOf(vv: WireVersionVector): Map<string, number> {
   const out = new Map<string, number>();
-  for (const [writer, f] of Object.entries(vv)) out.set(writer, f.frontier);
+  for (const [chain, f] of Object.entries(vv)) out.set(chain, f.frontier);
   return out;
 }
 

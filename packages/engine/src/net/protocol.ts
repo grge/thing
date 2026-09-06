@@ -49,7 +49,12 @@ export interface WireFrontier {
   readonly tip: string;
 }
 
-/** writer (hex) -> frontier. */
+/**
+ * chain -> frontier, where a chain is `writer/point` in hex.
+ *
+ * Keyed by chain rather than by writer because one identity may write from
+ * several processes at once, each extending its own chain (§2.1's `Point`).
+ */
 export type WireVersionVector = Record<string, WireFrontier>;
 
 /* ── control messages ───────────────────────────────────────────────────── */
@@ -68,27 +73,31 @@ export interface Hello {
   readonly vv: WireVersionVector;
 }
 
-/** Events, in chain order per writer. */
+/** Events, in chain order. */
 export interface Events {
   readonly type: 'EVENTS';
   readonly events: readonly WireEvent[];
 }
 
 /**
- * Ask for a range of one writer's chain.
+ * Ask for a range of one chain.
  *
  * Used to fill a gap: a peer holding 0–47 and 49 asks for 48. `to` is
  * exclusive, and absent means "as far as you have".
+ *
+ * A chain is `(writer, point)`, so both are named. `chain` carries the pair as
+ * one string because that is how the version vector is keyed and how a store
+ * looks one up — splitting it here would mean rejoining it everywhere.
  */
 export interface Want {
   readonly type: 'WANT';
-  readonly writer: string;
+  readonly chain: string;
   readonly from: number;
   readonly to?: number;
 }
 
 /**
- * This writer's chain has forked (§2.3).
+ * This chain has forked (§2.3).
  *
  * Sent when two peers report the same frontier under different tips. It is a
  * report, not a repair: fetching the competing branch needs a request this
@@ -98,7 +107,8 @@ export interface Want {
  */
 export interface Forked {
   readonly type: 'FORKED';
-  readonly writer: string;
+  /** `writer/point` — see `chainOf`. */
+  readonly chain: string;
   readonly frontier: number;
   /** The tip this peer holds at that frontier. */
   readonly mine: string;
@@ -165,6 +175,8 @@ export type EphemeralMessage = Have | Presence;
  */
 export interface WireEvent {
   readonly w: string;
+  /** The append point: which of this writer's chains (§2.1). */
+  readonly pt: string;
   readonly s: number;
   readonly p: string | null;
   readonly l: number;

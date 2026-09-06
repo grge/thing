@@ -6,7 +6,7 @@
  * replays the log — and if the incremental and full folds ever disagreed, this
  * is where it would show.
  */
-import { generateKeyPair, hex, type KeyPair, keyPairFromSeed, ROOT, SEED_LEN } from './core/index.js';
+import { chainOf, type Event, generateKeyPair, hex, type KeyPair, keyPairFromSeed, ROOT, SEED_LEN } from './core/index.js';
 import { MemoryStore, type Store } from './store/index.js';
 import { describe, expect, it } from 'vitest';
 import {
@@ -137,7 +137,7 @@ describe('a space', () => {
 
     // The event is in the log, not only in the fold.
     const vv = await space.versionVector();
-    expect(vv.get(hex(key.publicKey))?.frontier).toBe(e.seq);
+    expect(vv.get(chainOf(e))?.frontier).toBe(e.seq);
   });
 
   it('rejects a tampered event from a peer', async () => {
@@ -196,23 +196,69 @@ describe('reopening', () => {
     expect(hex((await read(again, id))!)).toBe(hex(UTF8.encode('# hello')));
   });
 
-  it('continues the writer chain rather than forking it', async () => {
-    // §7.3: a restart that began a second chain at seq 0 would be a fork of
-    // this writer's own history, indistinguishable from a key on two devices.
+  it('reopening starts a new chain, and both fold together', async () => {
+    // This used to assert the opposite — that a reopen *continued* the chain,
+    // because starting a second one at seq 0 would have been a fork of this
+    // writer's own history. With append points it is not: the two chains are
+    // separate positions under one identity, and nothing has to guess whether
+    // the previous process is still running (§2.1's `Point`).
     const key = await spaceKey();
     const store = new MemoryStore();
 
     const first = await openSpace(store, key);
     await makeFolder(first, 'a');
-    const frontierBefore = (await first.versionVector()).get(hex(key.publicKey))!.frontier;
+    const before = await first.versionVector();
     await first.close();
 
     const again = await openSpace(store, key);
     await makeFolder(again, 'b');
-    const after = (await again.versionVector()).get(hex(key.publicKey))!;
+    const after = await again.versionVector();
 
-    expect(after.frontier).toBeGreaterThan(frontierBefore);
+    // A second chain, not a longer one.
+    expect(after.size).toBe(before.size + 1);
+    for (const [chain, f] of before) {
+      // The first chain is untouched: same frontier, same tip, no fork.
+      expect(after.get(chain)).toEqual(f);
+    }
+
+    // And what matters to a person: both writes are there, in order.
     expect(list(again.state).map((e) => e.name)).toEqual(['a', 'b']);
+  });
+
+  it('two processes with one key write concurrently and both survive', async () => {
+    // The guarantee stage 7.6 exists for. Before append points these two would
+    // both have written seq 0 with the same prev, producing two validly signed
+    // events at one position — a fork §7.3 resolves by *dropping one branch*.
+    // Now they are separate chains and both writes are simply kept.
+    const key = await spaceKey();
+    const storeA = new MemoryStore();
+    const storeB = new MemoryStore();
+
+    const a = await openSpace(storeA, key);
+    const b = await openSpace(storeB, key);
+    await makeFolder(a, 'from-a');
+    await makeFolder(b, 'from-b');
+
+    // Exchange logs, as syncing would.
+    const eventsOfA: Event[] = [];
+    for await (const e of (await storeA.open(hex(key.publicKey), key.publicKey)).readAll()) {
+      eventsOfA.push(e);
+    }
+    const eventsOfB: Event[] = [];
+    for await (const e of (await storeB.open(hex(key.publicKey), key.publicKey)).readAll()) {
+      eventsOfB.push(e);
+    }
+
+    const intoB = await b.receive(eventsOfA);
+    const intoA = await a.receive(eventsOfB);
+
+    // Nothing refused: no duplicate seq, no fork, no rejection at all.
+    expect(intoB.rejected).toEqual([]);
+    expect(intoA.rejected).toEqual([]);
+
+    // And both converge on both writes.
+    expect(list(a.state).map((e) => e.name).sort()).toEqual(['from-a', 'from-b']);
+    expect(list(b.state).map((e) => e.name).sort()).toEqual(['from-a', 'from-b']);
   });
 
   it('a read-only replica sees what a writer wrote', async () => {

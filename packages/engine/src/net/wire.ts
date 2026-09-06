@@ -15,6 +15,7 @@ import type { VersionVector } from '../store/index.js';
 export function toWire(e: Event): WireEvent {
   return {
     w: hex(e.writer),
+    pt: hex(e.point),
     s: e.seq,
     p: e.prev === null ? null : hex(e.prev),
     l: e.lamport,
@@ -40,6 +41,7 @@ export function fromWire(w: unknown): Event | null {
 
   if (
     typeof e.w !== 'string' ||
+    typeof e.pt !== 'string' ||
     typeof e.s !== 'number' ||
     typeof e.l !== 'number' ||
     typeof e.t !== 'string' ||
@@ -55,6 +57,7 @@ export function fromWire(w: unknown): Event | null {
   try {
     return {
       writer: fromHex(e.w),
+      point: fromHex(e.pt),
       seq: e.s,
       prev: e.p === null ? null : fromHex(e.p),
       lamport: e.l,

@@ -14,8 +14,8 @@ const B = 'bbbb';
 
 function vv(entries: Record<string, [number, string]>): WireVersionVector {
   const out: WireVersionVector = {};
-  for (const [writer, [frontier, tip]] of Object.entries(entries)) {
-    out[writer] = { frontier, tip };
+  for (const [chain, [frontier, tip]] of Object.entries(entries)) {
+    out[chain] = { frontier, tip };
   }
   return out;
 }
@@ -34,24 +34,24 @@ describe('reconcile', () => {
 
   it('sends what a peer behind me lacks', () => {
     const plan = reconcile(vv({ [A]: [7, 'x'] }), vv({ [A]: [3, 'y'] }));
-    expect(plan.send).toEqual([{ writer: A, from: 4 }]);
+    expect(plan.send).toEqual([{ chain: A, from: 4 }]);
     expect(plan.want).toHaveLength(0);
   });
 
   it('asks for what I lack', () => {
     const plan = reconcile(vv({ [A]: [3, 'y'] }), vv({ [A]: [7, 'x'] }));
-    expect(plan.want).toEqual([{ writer: A, from: 4 }]);
+    expect(plan.want).toEqual([{ chain: A, from: 4 }]);
     expect(plan.send).toHaveLength(0);
   });
 
-  it('asks from zero for a writer I have never seen', () => {
+  it('asks from zero for a chain I have never seen', () => {
     const plan = reconcile({}, vv({ [B]: [2, 'z'] }));
-    expect(plan.want).toEqual([{ writer: B, from: 0 }]);
+    expect(plan.want).toEqual([{ chain: B, from: 0 }]);
   });
 
-  it('offers from zero a writer the peer has never seen', () => {
+  it('offers from zero a chain the peer has never seen', () => {
     const plan = reconcile(vv({ [B]: [2, 'z'] }), {});
-    expect(plan.send).toEqual([{ writer: B, from: 0 }]);
+    expect(plan.send).toEqual([{ chain: B, from: 0 }]);
   });
 
   it('detects a fork: same frontier, different history', () => {
@@ -60,12 +60,12 @@ describe('reconcile', () => {
     const plan = reconcile(vv({ [A]: [40, 'mine'] }), vv({ [A]: [40, 'theirs'] }));
 
     expect(plan.forked).toEqual([
-      { writer: A, frontier: 40, mine: 'mine', theirs: 'theirs' },
+      { chain: A, frontier: 40, mine: 'mine', theirs: 'theirs' },
     ]);
     expect(inSync(plan)).toBe(true); // nothing to exchange, and that is the problem
   });
 
-  it('a fork on one writer does not stop the others', () => {
+  it('a fork on one chain does not stop the others', () => {
     // §2.3: a fork is confined to one chain. Everything else must still sync,
     // or one bad chain would take a whole space down.
     const plan = reconcile(
@@ -73,8 +73,8 @@ describe('reconcile', () => {
       vv({ [A]: [40, 'theirs'], [B]: [4, 'shared'] }),
     );
 
-    expect(plan.forked.map((f) => f.writer)).toEqual([A]);
-    expect(plan.send).toEqual([{ writer: B, from: 5 }]);
+    expect(plan.forked.map((f) => f.chain)).toEqual([A]);
+    expect(plan.send).toEqual([{ chain: B, from: 5 }]);
   });
 
   it('does not call differing frontiers a fork', () => {
@@ -83,7 +83,7 @@ describe('reconcile', () => {
     // events settle it: the store rejects a mismatched `prev`.
     const plan = reconcile(vv({ [A]: [40, 'mine'] }), vv({ [A]: [30, 'other'] }));
     expect(plan.forked).toHaveLength(0);
-    expect(plan.send).toEqual([{ writer: A, from: 31 }]);
+    expect(plan.send).toEqual([{ chain: A, from: 31 }]);
   });
 
   it('is symmetric: what I send is what they want', () => {
@@ -122,13 +122,13 @@ describe('PendingEvents', () => {
   it('names exactly the gap it needs', () => {
     const p = held<string>();
     p.hold(A, 9, 'nine');
-    expect(p.gaps(new Map([[A, 4]]))).toEqual([{ writer: A, from: 5 }]);
+    expect(p.gaps(new Map([[A, 4]]))).toEqual([{ chain: A, from: 5 }]);
   });
 
-  it('asks from zero for a writer with no frontier', () => {
+  it('asks from zero for a chain with no frontier', () => {
     const p = held<string>();
     p.hold(B, 2, 'two');
-    expect(p.gaps(new Map())).toEqual([{ writer: B, from: 0 }]);
+    expect(p.gaps(new Map())).toEqual([{ chain: B, from: 0 }]);
   });
 
   it('reports no gap once the held events are contiguous', () => {
@@ -137,7 +137,7 @@ describe('PendingEvents', () => {
     expect(p.gaps(new Map([[A, 2]]))).toEqual([]);
   });
 
-  it('keeps writers independent', () => {
+  it('keeps chains independent', () => {
     const p = held<string>();
     p.hold(A, 1, 'a1');
     p.hold(B, 1, 'b1');

@@ -7,21 +7,21 @@
  * design, so a conformance failure here is a failure of the shared rules rather
  * than of persistence.
  */
-import { type Event, type Hash, hashLarge, hex, type PublicKey } from '../core/index.js';
+import { chainOf, type Event, type Hash, hashLarge, hex, type PublicKey } from '../core/index.js';
 import { ChainSet, inChainOrder } from './chainstate.js';
 import type {
   AppendResult,
   SeqRange,
+  ChainId,
   SpaceId,
   SpaceStore,
   Store,
   VersionVector,
-  WriterId,
 } from './types.js';
 
 class MemorySpaceStore implements SpaceStore {
-  /** writer -> seq -> event. Append-only; nothing is ever removed. */
-  private readonly events = new Map<WriterId, Map<number, Event>>();
+  /** chain -> seq -> event. Append-only; nothing is ever removed. */
+  private readonly events = new Map<ChainId, Map<number, Event>>();
   private readonly blobs = new Map<string, Uint8Array>();
   private readonly chains: ChainSet;
 
@@ -42,7 +42,7 @@ class MemorySpaceStore implements SpaceStore {
         rejected.push({ event: e, why });
         continue;
       }
-      const w = hex(e.writer);
+      const w = chainOf(e);
       let byseq = this.events.get(w);
       if (byseq === undefined) {
         byseq = new Map();
@@ -63,7 +63,7 @@ class MemorySpaceStore implements SpaceStore {
   }
 
   async *readRange(range: SeqRange): AsyncIterable<Event> {
-    const byseq = this.events.get(range.writer);
+    const byseq = this.events.get(range.chain);
     if (byseq === undefined) return;
     const to = range.to ?? Number.MAX_SAFE_INTEGER;
     for (let seq = range.from; seq < to; seq++) {

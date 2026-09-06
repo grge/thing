@@ -8,18 +8,20 @@
  * persistence rather than re-checking logic.
  */
 import {
+  chainOf,
   checkLink,
   type Event,
   eventId,
   type Hash,
-  hex,
   type PublicKey,
   verifyEvent,
 } from '../core/index.js';
-import type { AppendRejection, VersionVector, WriterFrontier, WriterId } from './types.js';
+import type { AppendRejection, ChainId, VersionVector, WriterFrontier } from './types.js';
 
 /**
- * One writer's chain, as the store tracks it.
+ * One chain, as the store tracks it.
+ *
+ * A chain is `(writer, point)`: one process's run of writes under one identity.
  *
  * Only the contiguous prefix is tracked. An event beyond a gap is not held here
  * at all — the store refuses it and the caller fills the gap (§2.5). Buffering
@@ -46,26 +48,26 @@ export function emptyChain(): ChainState {
  * writers has three entries here.
  */
 export class ChainSet {
-  private readonly chains = new Map<WriterId, ChainState>();
+  private readonly chains = new Map<ChainId, ChainState>();
 
   constructor(private readonly space: PublicKey) {}
 
   /** Rebuild from a log, in any order. Used when opening an existing space. */
   async load(events: AsyncIterable<Event> | Iterable<Event>): Promise<void> {
-    // Group by writer, then walk each chain in seq order, because a stored log
-    // has no guaranteed order and a chain must be validated as a sequence.
-    const byWriter = new Map<WriterId, Event[]>();
+    // Group by chain, then walk each in seq order, because a stored log has no
+    // guaranteed order and a chain must be validated as a sequence.
+    const byChain = new Map<ChainId, Event[]>();
     for await (const e of events as AsyncIterable<Event>) {
-      const w = hex(e.writer);
-      let list = byWriter.get(w);
+      const w = chainOf(e);
+      let list = byChain.get(w);
       if (list === undefined) {
         list = [];
-        byWriter.set(w, list);
+        byChain.set(w, list);
       }
       list.push(e);
     }
 
-    for (const [w, list] of byWriter) {
+    for (const [w, list] of byChain) {
       list.sort((a, b) => a.seq - b.seq);
       const chain = emptyChain();
       for (const e of list) {
@@ -78,11 +80,11 @@ export class ChainSet {
     }
   }
 
-  chain(writer: WriterId): ChainState {
-    let c = this.chains.get(writer);
+  chain(id: ChainId): ChainState {
+    let c = this.chains.get(id);
     if (c === undefined) {
       c = emptyChain();
-      this.chains.set(writer, c);
+      this.chains.set(id, c);
     }
     return c;
   }
@@ -95,24 +97,24 @@ export class ChainSet {
    * verification.
    */
   async admit(e: Event): Promise<AppendRejection | null> {
-    const w = hex(e.writer);
+    const w = chainOf(e);
     const chain = this.chain(w);
 
-    if (e.seq <= chain.frontier) return { kind: 'duplicate', writer: w, seq: e.seq };
+    if (e.seq <= chain.frontier) return { kind: 'duplicate', chain: w, seq: e.seq };
     if (e.seq > chain.frontier + 1) {
-      return { kind: 'gap', writer: w, expected: chain.frontier + 1, got: e.seq };
+      return { kind: 'gap', chain: w, expected: chain.frontier + 1, got: e.seq };
     }
 
     // A `prev` that does not match is either a fork or a graft; both are the
     // same refusal here, and §7.3 decides between branches at a higher layer.
     if (checkLink(this.space, chain.last, e) !== null) {
-      return { kind: 'fork', writer: w, seq: e.seq };
+      return { kind: 'fork', chain: w, seq: e.seq };
     }
 
     // Last, because it is the expensive one. Nothing enters a store unverified
     // (§2.3): a peer cannot be trusted to have checked.
     if (!(await verifyEvent(this.space, e))) {
-      return { kind: 'unverified', writer: w, seq: e.seq };
+      return { kind: 'unverified', chain: w, seq: e.seq };
     }
 
     return null;
@@ -120,15 +122,15 @@ export class ChainSet {
 
   /** Record that an event has been written. */
   advance(e: Event): void {
-    const chain = this.chain(hex(e.writer));
+    const chain = this.chain(chainOf(e));
     chain.frontier = e.seq;
     chain.tip = eventId(this.space, e);
     chain.last = e;
   }
 
-  /** The version vector (§2.3): frontier and tip per writer. */
+  /** The version vector (§2.3): frontier and tip per chain. */
   versionVector(): VersionVector {
-    const vv = new Map<WriterId, WriterFrontier>();
+    const vv = new Map<ChainId, WriterFrontier>();
     for (const [w, c] of this.chains) {
       if (c.frontier >= 0 && c.tip !== null) vv.set(w, { frontier: c.frontier, tip: c.tip });
     }
@@ -137,17 +139,17 @@ export class ChainSet {
 }
 
 /**
- * Sort events so each writer's chain is in order.
+ * Sort events so each chain is in order.
  *
- * An append may arrive with a writer's events shuffled, and every one after the
- * first would then be refused as a gap. Sorting by `(writer, seq)` means a
+ * An append may arrive with a chain's events shuffled, and every one after the
+ * first would then be refused as a gap. Sorting by `(chain, seq)` means a
  * caller can hand over a batch in any order and have it applied.
  */
 export function inChainOrder(events: readonly Event[]): Event[] {
   return [...events].sort((a, b) => {
-    const aw = hex(a.writer);
-    const bw = hex(b.writer);
-    if (aw !== bw) return aw < bw ? -1 : 1;
+    const ac = chainOf(a);
+    const bc = chainOf(b);
+    if (ac !== bc) return ac < bc ? -1 : 1;
     return a.seq - b.seq;
   });
 }

@@ -15,7 +15,7 @@
  *
  * ```
  * [u32 length]
- * [writer 32][sig 64][u32 seq][u8 hasPrev][prev 32?][u64 lamport]
+ * [writer 32][point 16][sig 64][u32 seq][u8 hasPrev][prev 32?][u64 lamport]
  * [target 16][u32 attrLen][attr][u32 valueLen][value][u64 wall]
  * ```
  *
@@ -27,6 +27,7 @@ import {
   ByteWriter,
   type Event,
   HASH_LEN,
+  POINT_LEN,
   PUBLIC_KEY_LEN,
   SIGNATURE_LEN,
   UUID_LEN,
@@ -43,6 +44,7 @@ export function encodeEvent(e: Event): Uint8Array {
   const body = new ByteWriter();
 
   body.fixed(e.writer, PUBLIC_KEY_LEN, 'writer');
+  body.fixed(e.point, POINT_LEN, 'point');
   body.fixed(e.sig, SIGNATURE_LEN, 'signature');
   body.u32(e.seq);
   if (e.prev === null) {
@@ -87,6 +89,7 @@ export function decodeEvent(buf: Uint8Array, at: number): { event: Event; next: 
 
   try {
     const writer = take(PUBLIC_KEY_LEN);
+    const point = take(POINT_LEN);
     const sig = take(SIGNATURE_LEN);
     const seq = view.getUint32(p, false);
     p += 4;
@@ -110,6 +113,7 @@ export function decodeEvent(buf: Uint8Array, at: number): { event: Event; next: 
     return {
       event: {
         writer: new Uint8Array(writer),
+        point: new Uint8Array(point),
         seq,
         prev: prev === null ? null : new Uint8Array(prev),
         lamport,

@@ -23,7 +23,7 @@ import {
   SIGNATURE_LEN,
   verify,
 } from './sign.js';
-import { labelled } from './testkit.js';
+import { labelled, point } from './testkit.js';
 
 afterEach(() => _setWebCryptoEd25519(null));
 
@@ -142,6 +142,7 @@ describe('event signing', () => {
   function body(over: Partial<EventBody> = {}): EventBody {
     return {
       writer: labelled('alice', PUBLIC_KEY_LEN),
+      point: point(),
       seq: 0,
       prev: null,
       lamport: 1,

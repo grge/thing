@@ -19,6 +19,7 @@ export { CODE_ALPHABET, CODE_LENGTH, codeFor, isCode } from './code.js';
 
 export {
   type ChainFault,
+  chainOf,
   checkChain,
   checkLink,
   compareKeys,
@@ -27,6 +28,7 @@ export {
   keyOf,
   type MaybeKey,
   maxKey,
+  writerOfChain,
 } from './chain.js';
 
 export { Domain } from './domain.js';
@@ -36,6 +38,9 @@ export {
   type Event,
   type EventBody,
   eventId,
+  newPoint,
+  type Point,
+  POINT_LEN,
   ROOT,
   signEvent,
   sliceKey,

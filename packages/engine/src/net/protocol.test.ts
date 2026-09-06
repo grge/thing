@@ -32,14 +32,14 @@ function labelled(label: string, len: number): Uint8Array {
 
 describe('framing', () => {
   it('round-trips a control message', () => {
-    const frame = encodeControl({ type: 'WANT', writer: 'aa', from: 3 });
+    const frame = encodeControl({ type: 'WANT', chain: 'aa', from: 3 });
     expect(frame[0]).toBe(TAG_CONTROL);
 
     const decoded = decodeFrame(frame);
     expect(decoded?.kind).toBe('control');
     expect(decoded?.kind === 'control' && decoded.msg).toEqual({
       type: 'WANT',
-      writer: 'aa',
+      chain: 'aa',
       from: 3,
     });
   });
