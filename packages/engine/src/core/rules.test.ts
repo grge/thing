@@ -259,7 +259,9 @@ describe('rule lookup', () => {
   });
 
   it('returns null for a body rule this client does not have', () => {
-    expect(bodyRule('sequence')).toBeNull();
+    // `sequence` used to stand in for an unknown rule here; it is now
+    // implemented (§3.8), so the example moved to one that is not.
+    expect(bodyRule('canvas')).toBeNull();
     expect(bodyRule(null)).toBeNull();
   });
 });

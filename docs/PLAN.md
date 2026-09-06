@@ -764,7 +764,7 @@ browser with the key reads it through that peer.
 
 ---
 
-## Stage 11 — The sequence rule
+## Stage 11 — The sequence rule ✅
 
 The bet (§3.8), and deliberately late: everything above it works without it, and
 by now there is a real system to try it in rather than a harness.
@@ -777,6 +777,38 @@ by now there is a real system to try it in rather than a harness.
 
 **Done when:** two browsers edit one document concurrently and converge, and the
 canonical form is stable across a deliberately different internal representation.
+
+**Done in the engine; the browser half waits for 7.7.** What is answered is the
+bet itself — §3.8 asks whether "merge rule" stays a small vocabulary or becomes
+"arbitrary code with private state", and **the sequence rule fits the ordinary
+`Rule` contract with no escape hatch**: no log access, no clock, no state
+outside the accumulator, and no special case anywhere in the kernel. The fold
+dispatches it by `:kind` exactly like `blob` or `register`.
+
+What is *not* answered is whether the merge results are acceptable to a person.
+Two writers converge; whether they converge to something someone would accept is
+a judgement made by looking. Tests are written as transcripts so the expected
+values are legible enough to disagree with, and the concurrent-typing case shows
+each writer's run staying contiguous rather than interleaving character by
+character — which is the property that makes it readable. But legible is not
+tried.
+
+Three notes:
+
+- **The prototype's element id was broken by append points.** It derived from
+  `(writer, seq)`, which stopped being unique when one writer gained several
+  chains — two of your own processes would mint the same id for different
+  elements, and every anchor would be ambiguous. Silent, too: the result is a
+  plausible list in the wrong order. Ids now name the creating event by hash.
+- **Canonical form was specified before the rule was coded**, per §3.6, and the
+  specification survived the implementation unchanged except for that id.
+- **Two existing tests used `sequence` as their example of an unknown body
+  rule.** They now use `canvas`. That they broke is the point.
+
+**Left for the interface:** whether the merge *reads* well, and what `body`
+should be — a character, a run, a block reference. It stays opaque bytes here,
+because deciding it in the rule would make the rule less general, and that
+choice is itself part of the bet.
 
 ---
 

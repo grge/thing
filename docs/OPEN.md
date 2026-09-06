@@ -21,7 +21,7 @@ Roughly in order of how much would change if the answer went the other way.
 
 | | Question | Where |
 |---|---|---|
-| 1 | Does the vocabulary of body rules stay small, or does "merge rule" become "arbitrary code with private state"? | §3.8 |
+| 1 | ~~Does the vocabulary of body rules stay small?~~ **The rule fits the contract** — see stage 11. What remains of this question is whether a *block-structured document* needs more than a sequence does, which is untested. | §3.8 |
 | 2 | What request-and-repair vocabulary extends the version vector — fork repair, held-but-not-applicable, and compacted ranges all need it? Deliberately deferred until compaction wants the same extension. | §2.3, §9.2 |
 | 3 | What cipher, nonce derivation and key derivation does encryption use? | §6 |
 | 4 | What exactly does the write-proposal channel between a view and its host look like? | §8.2 |

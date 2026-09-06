@@ -10,6 +10,7 @@
  * the claim.
  */
 import { compareKeys, greater, type Key, type MaybeKey } from './chain.js';
+import { sequence } from './sequence.js';
 import { hex } from './bytes.js';
 import { HASH_LEN } from './hash.js';
 import { type Acc, type AnyRule, type Entry, erase, type Rule } from './rule.js';
@@ -189,6 +190,11 @@ export const BODY_RULES: Readonly<Record<string, AnyRule>> = {
   blob: erase(blob),
   register: erase(bytesRegister),
   'register:string': erase(stringRegister),
+  // §3.8's bet: an ordered list two writers can edit at once, fitting the same
+  // contract as the register above it. If this had needed an escape hatch —
+  // log access, a clock, state outside the accumulator — the vocabulary claim
+  // would have failed. See `sequence.ts` and `docs/SEQUENCE.md`.
+  sequence: erase(sequence),
 };
 
 /** Resolve a `:kind` to a body rule, or null if this client lacks it. */

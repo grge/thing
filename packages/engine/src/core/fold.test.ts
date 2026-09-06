@@ -97,12 +97,12 @@ describe('phase 2: structure', () => {
     const w = new Writer(key.publicKey, key);
     const events = [
       await w.write(uuid('doc'), ':name', text('spec.md'), 0),
-      await w.write(uuid('doc'), ':kind', text('sequence'), 0),
+      await w.write(uuid('doc'), ':kind', text('canvas'), 0),
       await w.write(uuid('doc'), BODY_ATTR, text('some op'), 0),
     ];
     const o = foldWith(key, events).objects.get(hex(uuid('doc')))!;
     expect(attr(o, ':name')).toBe('spec.md');
-    expect(o.bodyRuleMissing).toBe('sequence');
+    expect(o.bodyRuleMissing).toBe('canvas');
     expect(o.body).toBeUndefined();
   });
 
