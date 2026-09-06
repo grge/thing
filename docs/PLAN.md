@@ -672,8 +672,16 @@ Ten tests for the tab model, under `fake-indexeddb` and a `localStorage` shim.
 The load-bearing one — *following a link does not add it to your own space* —
 was verified to fail when browsing-acquires is reintroduced.
 
-**Not built:** the preview, share and debug panels; the ephemeral view of
-connections; and anything to do with editing a remote space, which needs the
+**Since added:** files, folders and a content preview — without them the tree
+and the renderer could not be exercised at all. Drop anywhere, or `+ file`;
+`+ folder`; selecting a file previews it. The preview carries over two things
+the previous version had worked out and that are easy to get wrong: a blob may
+not be held yet (§2.4), so it asks connected peers and retries when one
+appears; and `:kind` is advisory (§4.2), so bytes that decode as UTF-8 are shown
+as text whatever the label claims.
+
+**Not built:** the share panel and the debug view of version vectors; the
+ephemeral view of connections; and editing a remote space, which needs the
 `:writers` bootstrap (`docs/MAIN-SPACE.md`).
 
 ## Stage 7.7 — The interfaces: control socket, CLI, TUI

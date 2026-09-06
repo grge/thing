@@ -9,8 +9,19 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { hex, isLink, links, list, ROOT, type FileEntry, type Uuid } from '@thing/engine';
+  import {
+    hex,
+    isLink,
+    links,
+    list,
+    makeFile,
+    makeFolder,
+    ROOT,
+    type FileEntry,
+    type Uuid,
+  } from '@thing/engine';
   import { Client, parseShareLink, type Tab } from '../client.js';
+  import Preview from './Preview.svelte';
 
   const client = new Client({
     signallingUrl: import.meta.env['VITE_SIGNALLING'] ?? undefined,
@@ -20,6 +31,9 @@
   let activeId = $state<string | null>(null);
   let path = $state<Uuid[]>([]);
   let error = $state<string | null>(null);
+  let selected = $state<Uuid | null>(null);
+  let dragging = $state(false);
+  let fileInput = $state<HTMLInputElement | null>(null);
 
   const active = $derived(tabs.find((t) => t.id === activeId) ?? null);
   const here = $derived<Uuid>(path.length === 0 ? ROOT : path[path.length - 1]!);
@@ -83,10 +97,51 @@
   function enter(e: FileEntry): void {
     if (isLink(e)) void follow(e.name);
     else if (e.isFolder) path = [...path, e.id];
+    else selected = e.id;
   }
 
   function up(): void {
     path = path.slice(0, -1);
+    selected = null;
+  }
+
+  /**
+   * Add files to the space in the current folder.
+   *
+   * `kind` comes from the browser when it has one — it knows more than a
+   * filename does — and `makeFile` guesses from the name otherwise (§4.2).
+   */
+  async function addFiles(files: FileList | null): Promise<void> {
+    if (files === null || activeId === null) return;
+    const space = client.space(activeId);
+    if (space === null || !space.writable) {
+      error = 'this space is read-only here';
+      return;
+    }
+    error = null;
+    for (const file of files) {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      await makeFile(space, file.name, bytes, {
+        parent: here,
+        ...(file.type === '' ? {} : { kind: file.type }),
+      });
+    }
+  }
+
+  function onDrop(event: DragEvent): void {
+    event.preventDefault();
+    dragging = false;
+    void addFiles(event.dataTransfer?.files ?? null);
+  }
+
+  async function newFolder(): Promise<void> {
+    if (activeId === null) return;
+    const space = client.space(activeId);
+    if (space === null || !space.writable) {
+      error = 'this space is read-only here';
+      return;
+    }
+    await makeFolder(space, 'untitled', here);
   }
 
   function fromHex(s: string): Uint8Array {
@@ -96,7 +151,13 @@
   }
 </script>
 
-<main>
+<main
+  ondragover={(e) => { e.preventDefault(); dragging = true; }}
+  ondragleave={() => (dragging = false)}
+  ondrop={onDrop}
+  class:dragging
+  role="application"
+>
   <nav class="tabs">
     {#each tabs as tab (tab.id)}
       <button class="tab" class:active={tab.id === activeId} onclick={() => open(tab.id)}>
@@ -124,9 +185,22 @@
       {#if active.forks.length > 0}<span class="fork">{active.forks.length} fork(s)</span>{/if}
     </header>
 
-    {#if path.length > 0}
-      <button class="up" onclick={up}>← up</button>
-    {/if}
+    <div class="bar">
+      {#if path.length > 0}
+        <button class="up" onclick={up}>← up</button>
+      {/if}
+      {#if active.writable}
+        <button onclick={() => fileInput?.click()}>+ file</button>
+        <button onclick={newFolder}>+ folder</button>
+      {/if}
+    </div>
+    <input
+      type="file"
+      multiple
+      bind:this={fileInput}
+      onchange={(e) => void addFiles((e.currentTarget as HTMLInputElement).files)}
+      hidden
+    />
 
     <ul class="tree">
       {#each entries as e (hex(e.id))}
@@ -141,10 +215,24 @@
       {/each}
     </ul>
 
+    {#if selected !== null}
+      <Preview
+        {client}
+        space={client.space(active.id)!}
+        spaceId={active.id}
+        id={selected}
+        peers={active.peers}
+      />
+    {/if}
+
     {#if links(active.state).length > 0}
       <p class="note">
         {links(active.state).length} link(s) — following one opens a tab and changes nothing.
       </p>
+    {/if}
+
+    {#if active.writable}
+      <p class="note">Drop files anywhere to add them here.</p>
     {/if}
   {/if}
 </main>
@@ -172,5 +260,10 @@
   .inline { background: none; border: none; color: inherit; text-decoration: underline;
             cursor: pointer; font: inherit; padding: 0; }
   .up { background: none; border: none; color: inherit; cursor: pointer; font: inherit;
-        opacity: 0.7; padding: 0 0 0.5rem 0; }
+        opacity: 0.7; padding: 0; }
+  .bar { display: flex; gap: 0.75rem; align-items: center; padding-bottom: 0.5rem; }
+  .bar button { background: none; border: 1px solid var(--line, #444); color: inherit;
+                font: inherit; padding: 0.1rem 0.5rem; cursor: pointer; opacity: 0.8; }
+  .bar button:hover { opacity: 1; }
+  main.dragging { outline: 2px dashed var(--line, #666); outline-offset: -6px; }
 </style>

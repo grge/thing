@@ -11,7 +11,18 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { generateKeyPair, hex, links, list, makeFolder, makeLink } from '@thing/engine';
+import {
+  contentHash,
+  entry,
+  generateKeyPair,
+  hex,
+  links,
+  list,
+  makeFile,
+  makeFolder,
+  makeLink,
+  read,
+} from '@thing/engine';
 
 import { Client } from './client.js';
 
@@ -135,6 +146,58 @@ describe('tabs', () => {
 
     expect(client.view()[0]!.writable).toBe(true);
     expect(list(client.view()[0]!.state).map((e) => e.name)).toEqual(['docs']);
+    await client.close();
+  });
+
+  it('adds a file and reads its bytes back', async () => {
+    // What the UI does on a drop: write bytes, then read them to preview.
+    const client = new Client();
+    const tab = await client.create('mine');
+    const space = client.space(tab.id)!;
+
+    await makeFile(space, 'notes.txt', new TextEncoder().encode('hello'), {
+      kind: 'text/plain',
+    });
+
+    const found = list(space.state).find((e) => e.name === 'notes.txt')!;
+    expect(found.kind).toBe('text/plain');
+    expect(new TextDecoder().decode((await read(space, found.id))!)).toBe('hello');
+    await client.close();
+  });
+
+  it('puts a file in the folder it was dropped into', async () => {
+    const client = new Client();
+    const tab = await client.create('mine');
+    const space = client.space(tab.id)!;
+
+    const folder = await makeFolder(space, 'docs');
+    await makeFile(space, 'inside.txt', new TextEncoder().encode('x'), { parent: folder });
+
+    expect(list(space.state).map((e) => e.name)).toEqual(['docs']);
+    expect(list(space.state, folder).map((e) => e.name)).toEqual(['inside.txt']);
+    await client.close();
+  });
+
+  it('a file can be in the tree with its bytes elsewhere', async () => {
+    // §2.4: events replicate to everyone, blobs are pulled by whoever wants
+    // them. So a tab can show a file it cannot yet read — which is exactly the
+    // preview's "asking peers" state, and why it retries when one appears.
+    const client = new Client();
+    const tab = await client.create('mine');
+    const space = client.space(tab.id)!;
+
+    // A file the events describe but whose bytes this client does not hold:
+    // written by hand rather than through `makeFile`, which would store them.
+    const id = new Uint8Array(16).fill(7);
+    await space.write(id, ':name', new TextEncoder().encode('elsewhere.bin'));
+    await space.write(id, ':kind', new TextEncoder().encode('application/octet-stream'));
+    await space.write(id, ':body', new Uint8Array(32).fill(9));
+
+    const found = entry(space.state, id)!;
+    expect(found.name).toBe('elsewhere.bin');
+    expect(contentHash(space.state, id)).not.toBeNull();
+    expect(await read(space, id)).toBeNull();
+
     await client.close();
   });
 
