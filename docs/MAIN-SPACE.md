@@ -129,7 +129,35 @@ Not zero, and the residue is the interesting part:
 Four interfaces become one interface and one string. That is the shape the
 Keystore split was reaching for, arrived at from the other direction.
 
-## The three cases
+## What each program is
+
+All four are the same three parts — a keyring and a main-space id, an engine
+`Client`, and a renderer. What differs is where the store lives, which
+transports exist, and how the renderer draws. If a scenario needs a *fourth*
+part, that is a signal the model is short.
+
+| | store | main space | renderer |
+| --- | --- | --- | --- |
+| **CLI** | files | on disk | prints and exits |
+| **TUI** | files | on disk, or a socket | a screen |
+| **web** | IndexedDB | its own, or a socket | a browser |
+| **server** | files | on disk | none |
+
+There is no *hub* program. A hub is a server whose main space someone curated.
+
+Two consequences worth stating, because `CLIENTS.md` spent most of its length on
+them:
+
+**`thing` and `thing attach` stop being modes.** One program; the main space is
+local or remote. That was three modes and a control protocol; it is now a
+configuration value.
+
+**"Configure the server" and "edit a space" are the same act** for the common
+case. Adding a link to a server's main space tells it to hold another space, and
+it does — because that link is in the space it is already serving. No admin
+verb, no new protocol, and it works from any client that can write there.
+
+## The three cases, in more detail
 
 **A terminal client** points at a local main space, holds it on disk, and edits
 it directly. Today's CLI with links added.
@@ -149,10 +177,59 @@ That third case is the one the whole design is for, and it works because the
 thing the UI needs most — the list of spaces and what they are called — is
 exactly what a space replicates well.
 
+## Administration: the CLI only
+
+**The web client and the TUI are space editors, not admin consoles.** Neither
+can restart a peer, read its disk usage, or list its open connections. Server
+administration happens through the CLI, or other tools on the same machine.
+
+That reads like a gap and is a decision, for a reason worth writing down.
+
+**Space authority cannot answer operator questions.** Every authority in this
+design is per-space — the space key, `:writers`, moderators (§7.2) — and each
+answers *may this key write to this space*, verified by signature and computed
+by the fold. *May you shut down this process* is not that question. It is about
+a **machine**, not a space, and the two do not coincide in either direction: a
+hub might have twenty curators, none of whom should be able to restart it; and
+its operator might hold no writing key at all, being a host rather than a
+curator, while being exactly who should.
+
+So there is no derivation available. Remote administration would need an
+operator identity, credentials, and a way to grant and revoke them — a whole
+subsystem, reusing nothing, invented for a restart button.
+
+**The local socket's auth model is the filesystem, and that is an answer rather
+than a placeholder.** `CLIENTS.md` noted the socket must be local because any
+caller on it can control the peer, which is fine when the permissions guarding
+the socket also guard the key files. Read as convenience, that is a limitation;
+read properly, it is *the* authorisation model — "can you open this socket" is
+decidable, already enforced, and needs nothing built. The moment a control verb
+crosses a network that gate is gone and something must replace it.
+
+**What this costs, stated plainly.** A web client showing a server's tree cannot
+say whether that server is healthy — no disk usage, no connection count, no
+replication lag. Someone will want those, and the answer for now is a terminal.
+Paying an auth subsystem to avoid an `ssh` is the wrong trade at this stage.
+
+It also means the TUI is not quite one program: attached over a socket it is a
+space renderer, and on the machine it can additionally be a control surface.
+That asymmetry is real and is the cost of not inventing the auth model.
+
+### Deferred: durable operator history
+
+An earlier draft asked what *a day of connection history* would look like. It
+does not fit anywhere: not the main space (per-peer, false elsewhere, and
+appends are forever), not the ephemeral channel (which survives nothing). It is
+a fourth kind of state — **durable, local, unreplicated** — that the design has
+no place for.
+
+Rather than invent one, the activity buffer stays what it is: the last N events,
+in memory, gone on restart. If durable history is ever wanted it is a log file
+and a query over it, and the fourth category can be designed then.
+
 ## The server's API
 
-Much smaller than `CLIENTS.md` proposed, because most of what that API was
-carrying is now a space. What is left is what no space can hold:
+What is left is what no space can hold and no remote client may do:
 
 ```
 which main space am I pointing at, and point me at another
@@ -161,10 +238,17 @@ connect to / disconnect from an address
 shut down, restart
 ```
 
-Local socket, same constraint as before: any caller can control this peer, which
-is fine when the filesystem permissions guarding the socket also guard the keys.
+Local socket, and per the section above that is the authorisation model rather
+than a temporary constraint.
 
 ## What this does not solve
+
+**A remote client cannot tell whether a peer is healthy.** Covered above: it is
+a decision, not an oversight, and the cost is that someone wanting disk usage or
+connection counts opens a terminal. The model gives a remote UI *content* for
+free and *operations* not at all, and that split is clean — but it is a split,
+and the earlier claim that the control API is "much smaller than `CLIENTS.md`
+proposed" was true about writes and wrong about observability.
 
 **Link churn is permanent.** Browsing creates and destroys links, and appends
 are forever (§2.1). Your main space's log becomes a record of everything you
