@@ -142,12 +142,62 @@ of this design for a fix to a weaker one, unmeasured.
 verified answer, and it brings non-monotonic logic. Available as a policy on top
 of `deps` if the adversarial case ever needs closing.
 
+## The two deferrals, checked
+
+The fold has two reasons to hold an event back, and the worry was that they
+tangle:
+
+1. **its deps have not arrived**, so its permission cannot be decided — temporary;
+2. **its writer was not admitted** in the past it saw — permanent, because that
+   past is fixed at signing and the answer never changes.
+
+That asymmetry is what keeps them from deadlocking: (2) is not waiting for
+anything. Checked in the prototype:
+
+| case | result |
+| --- | --- |
+| 6-deep dep chain delivered backwards | all 6 fold; resolution cascades in one pass |
+| unadmitted writer, deps resolved | correctly excluded, not held forever |
+| a dep that will never arrive | held; the rest of the log folds normally |
+| a root event depending on a writer's own earlier event | deterministic over 200 orderings |
+| **a dep cycle** | **found a bug — see below** |
+
+### The second bug the prototype found
+
+Two events each naming the other as a dep **folded**. `resolvable` checked only
+that deps *exist*, so an event could appear in its own causal past and be judged
+against a writer set that depended on itself.
+
+A cycle cannot be *constructed* with content-addressed hashes — naming a hash
+requires the event to already exist — but a peer can send arbitrary bytes, and
+"impossible to construct honestly" is not a reason for the fold to accept it.
+Now rejected, like any malformed input (§2.3).
+
+## Generated histories, including removals
+
+The existing property tests generate multi-writer histories that **add** writers
+and never remove one, which is the gap 8a lived in. The prototype generates 30-
+event histories with adds *and* removals, partial sync (each writer sees a random
+subset of heads), and three writers.
+
+**300 histories × 12 shuffled orderings = 3,600 folds, zero non-determinism.**
+Widest `deps` observed: 4, matching the size estimate above.
+
+And, because a generator that cannot detect the bug it was written for proves
+nothing, the same histories were folded under *today's* rule — filter by the
+final writer set:
+
+> **299 of 300 histories disagree, and today's rule silently drops 1,719 events
+> that were validly written.**
+
+So the generator does catch the bug, and the zero above means something.
+
 ## Open before building
 
-- **The fold gains an ordering dependency.** An event whose deps have not
-  arrived cannot have its permission decided, so it waits. The fold already
-  defers events from unadmitted writers; the interaction between the two needs
-  care, and the prototype only shows that deferral works in isolation.
 - **A bound on `deps` under concurrency**, if this is ever used for a busy space.
+  Observed at 4 with three writers and partial sync; unbounded in principle.
 - **Whether `prev` survives at all**, or collapses into `deps`. Keeping it is the
   conservative choice and what makes this additive.
+- **Cost of `pastOf` on a real log.** The prototype walks the DAG per event,
+  which is fine at these sizes and is not how the real fold should do it —
+  admission wants to be computed once per distinct dep-set, not once per event.
