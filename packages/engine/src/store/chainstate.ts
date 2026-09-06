@@ -105,8 +105,14 @@ export class ChainSet {
       return { kind: 'gap', chain: w, expected: chain.frontier + 1, got: e.seq };
     }
 
-    // A `prev` that does not match is either a fork or a graft; both are the
-    // same refusal here, and §7.3 decides between branches at a higher layer.
+    // A `prev` that does not match is either a fork or a graft. The store
+    // refuses both, and that refusal is *not* the resolution: §7.3 decides
+    // between branches in the fold, which is the only layer that can, because
+    // the log is append-only (§2.1) and a store cannot un-store the loser.
+    //
+    // So a peer holds whichever branch reached it first, and `forkResolution`
+    // decides what folds. Two peers holding different branches converge only
+    // once they exchange them — which is what the `FORKED` report is for.
     if (checkLink(this.space, chain.last, e) !== null) {
       return { kind: 'fork', chain: w, seq: e.seq };
     }

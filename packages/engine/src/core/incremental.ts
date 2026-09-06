@@ -20,7 +20,7 @@
  */
 import { hex } from './bytes.js';
 import { keyOf } from './chain.js';
-import { type Event, ROOT, type Uuid } from './event.js';
+import { type Event, eventId, ROOT, type Uuid } from './event.js';
 import {
   BODY_ATTR,
   KIND_ATTR,
@@ -30,6 +30,7 @@ import {
   type SliceState,
   type State,
   admitsWith,
+  resolveForks,
 } from './fold.js';
 import type { AnyRule, Entry } from './rule.js';
 import { attributeRule, bodyRule } from './rules.js';
@@ -150,10 +151,17 @@ export class Folder {
     this.parents.clear();
     this.treeDirty = true;
 
-    // Judged by `deps`, exactly as the full fold does — it is the same
-    // function, so the two cannot give different answers.
-    const admits = admitsWith(this.space, [...this.roots, ...this.pending], this.spaceHex);
-    for (const e of this.pending) if (admits(e)) this.applyOther(e);
+    // Forks first, then `deps` — the same two functions the full fold uses, in
+    // the same order, so the two cannot give different answers. A losing branch
+    // must be gone before admission is computed, since it must not contribute
+    // to anything at all (§7.3.1).
+    const live = resolveForks(this.space, [...this.roots, ...this.pending]);
+    const admits = admitsWith(this.space, live, this.spaceHex);
+    const rootIds = new Set(this.roots.map((e) => hex(eventId(this.space, e))));
+    for (const e of live) {
+      if (rootIds.has(hex(eventId(this.space, e)))) continue;
+      if (admits(e)) this.applyOther(e);
+    }
   }
 
   private applyOther(e: Event): void {

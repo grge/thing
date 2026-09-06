@@ -679,16 +679,38 @@ it, and a space stays reachable after its writer disconnects.
 
 ---
 
-## Stage 9 — Multi-writer
+## Stage 9 — Multi-writer ✅
 
 Additive, because §7.2 settled the shape.
 
 - Writer set on the root; phase 1 admits root events on the space key alone.
 - Phase 2 filters by the set.
 - Moderators as ordinary writers with an attribute (§7.2.2).
-- Fork resolution: longest branch, ties on event hash (§7.3.1), with detection
-  surfaced rather than silent. If append points land first, this stops being the
-  *expected* path for two devices and becomes the malicious-writer case only.
+- Fork resolution: deterministic, with detection surfaced rather than silent.
+
+**Scope decision: defensive design is out of scope for this pass.** With append
+points, a fork is no longer what two of your own devices do by accident — it
+takes deliberate effort, so it means equivocation or a corrupted store. That
+whole area (backdating, the nuclear revoke, a compromised space key — see
+`LEARNINGS.md` and OPEN.md 5a, 10, 11) is a target for a later rewrite rather
+than something to half-build now.
+
+What this stage owes is therefore **convergence, not defence**: every peer must
+reach the same answer, by whatever rule is simplest.
+
+**That changes which rule to use.** §7.3.1 specifies *longest branch, ties on
+lowest event hash*, and is explicit that length "is not a security property —
+whoever writes more wins". Its justification is a heuristic for the honest case:
+*"one device carrying on while another sat stale"* — which is exactly the case
+append points removed. What length costs is that a peer must retain both
+branches to know which is longer, and keep re-deciding as more of the loser
+arrives.
+
+Since the case it was tuned for no longer exists, **the tiebreak alone is the
+rule**: at the first divergent sequence number, the lower event id wins. Total,
+computable from the event set alone, needs no branch retained, and cannot change
+its mind as more events arrive. §7.3.1's own standard — *"a rule that picks
+arbitrarily satisfies that"* — is met.
 
 **Decide here:** membership as whole-list register or add/remove operations
 (§7.4), and whether a peer keeps replicating a losing branch.
@@ -696,6 +718,26 @@ Additive, because §7.2 settled the shape.
 **Done when:** three writers converge on one space; a non-writer's events
 replicate but do not fold; a deliberately forked key resolves identically on
 every peer.
+
+**Done.** Three notes:
+
+- **Resolution lives in the fold, not the store.** The log is append-only
+  (§2.1), so a store cannot un-store a loser — it refuses the second branch and
+  keeps whichever arrived first. The fold is the only layer that can decide, and
+  §7.3.1 already said so: *"the losing branch's events are not folded. They
+  remain in the log."* Two peers holding different branches converge when they
+  exchange them.
+- **The incremental fold runs the same two functions in the same order** —
+  `resolveForks` then `admitsWith`. The first version did not, and disagreed
+  with a replay; the test caught it. This is the second time that exact shape
+  has appeared, so both are now shared functions rather than parallel logic.
+- **The order-independence tests pass against a wrong rule**, verified by
+  breaking it. They check convergence, not the choice, which is the right split
+  — but it means the "lowest id wins" tests are the only thing pinning the rule.
+
+**Left undone deliberately:** OPEN.md 8, whether a peer keeps replicating a
+losing branch. It is a bandwidth question with no correctness content now that
+resolution is deterministic, and it belongs with the defensive work.
 
 ---
 
