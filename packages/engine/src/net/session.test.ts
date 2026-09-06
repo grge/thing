@@ -18,9 +18,9 @@ import {
 import { point } from '../core/testkit.js';
 import { MemoryStore, type SpaceStore } from '../store/index.js';
 import { describe, expect, it } from 'vitest';
-import type { Channel } from './blobs.js';
 import { haveMessage, presenceMessage } from './ephemeral.js';
 import { Session } from './session.js';
+import { ChannelPair, channelPair } from './testwire.js';
 import type { Divergence } from './sync.js';
 
 const UTF8 = new TextEncoder();
@@ -31,42 +31,7 @@ function labelled(label: string, len: number): Uint8Array {
   return out;
 }
 
-/**
- * Two sessions wired to each other.
- *
- * Frames are queued rather than delivered synchronously, so `settle` drives the
- * exchange to quiescence — which is what a real connection does, and which
- * makes a protocol that needs several round trips work here.
- */
-class Wire {
-  private queueA: Uint8Array[] = [];
-  private queueB: Uint8Array[] = [];
-  a!: Session;
-  b!: Session;
-
-  channelFor(side: 'a' | 'b'): Channel {
-    const queue = side === 'a' ? this.queueB : this.queueA;
-    return {
-      send: (frame) => queue.push(frame),
-      get bufferedAmount() {
-        return 0;
-      },
-    };
-  }
-
-  /** Deliver until nothing is left to deliver. */
-  async settle(limit = 100): Promise<void> {
-    for (let i = 0; i < limit; i++) {
-      const toA = this.queueA.splice(0);
-      const toB = this.queueB.splice(0);
-      if (toA.length === 0 && toB.length === 0) return;
-      for (const f of toA) await this.a.receive(f);
-      for (const f of toB) await this.b.receive(f);
-    }
-    throw new Error('exchange did not settle');
-  }
-}
-
+/** One side of an exchange: a store, a writer, and what it has seen. */
 interface Peer {
   readonly store: SpaceStore;
   readonly writer: EventWriter;
@@ -82,6 +47,7 @@ interface Peer {
  * puts two peers on the *same* chain, which is how a genuine fork is staged —
  * honest software no longer produces one.
  */
+
 async function makePeer(space: KeyPair, writerKey: KeyPair, point?: Uint8Array): Promise<Peer> {
   const store = await new MemoryStore().open(hex(space.publicKey), space.publicKey);
   return {
@@ -104,8 +70,8 @@ async function write(peer: Peer, attr: string, value: string, wall: number): Pro
   return e;
 }
 
-async function connect(a: Peer, b: Peer): Promise<Wire> {
-  const wire = new Wire();
+async function connect(a: Peer, b: Peer): Promise<ChannelPair> {
+  const wire = channelPair();
   wire.a = new Session(a.store, wire.channelFor('a'), {
     peer: 'b',
     onFork: (f) => a.forks.push(f),

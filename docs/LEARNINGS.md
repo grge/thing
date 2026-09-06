@@ -76,7 +76,52 @@ half of the same problem.
 Everything downstream inherits its shape, and the envelope is the hardest thing
 to change once logs exist.
 
-## 3. Dense sequence numbers were chosen for sync and paid for everywhere else
+## 3. `Keystore` is four things, and only one of them has a contract
+
+Found while asking what the engine's tests supply for capabilities. It is the
+same shape as §2 above — several concepts under one name — and it is the piece
+`web/` and `node/` will collide with first when they are rebuilt.
+
+`web/src/keystore.ts` bundles everything a client knows about a space that is
+*not* in the space:
+
+| job | methods | nature |
+| --- | --- | --- |
+| secrets | `mint`, `keyFor` | the writing key; raw extractable seeds (§5.1) |
+| inventory | `spaces`, `remember`, `forget` | which spaces this client holds |
+| naming | `petname`, `setPetname` | §5.5, local, never replicated |
+| addresses | `locator`, `rememberLocator` | §5.3, **stale by default** |
+
+The unifying idea is sound — a log is replicated and identical everywhere, these
+four are per-client and lost with the client's storage — but the pieces want
+different treatment. **A secret and a disposable cache are sharing one
+interface**, so they get the same storage, the same lifetime and the same backup
+story, when they should share none of those. §5.1.1 calls losing the key the
+largest unresolved risk in the design; `locator` losing its contents is a minor
+inconvenience.
+
+**And `node/` does not implement it.** The same four jobs are solved four
+different ways there:
+
+- secrets → `keyPath`/`loadKey`/`saveKey`, three loose functions in `cli.ts`
+- inventory → absent; `Store.list()` serves, because a directory *is* the
+  inventory
+- naming → `FilePetnames`, its own class, against `PetnameStore` — the one
+  quarter that *does* have a shared contract, and it lives in the engine
+- addresses → **not implemented at all**; `thing join` takes a URL every time
+
+So this is not one interface with two backends. It is an interface in `web/`,
+four ad-hoc solutions in `node/`, and one of them missing.
+
+**Carry forward:** decide what the pieces are before writing a contract for
+them. The obvious move is a `MemoryKeystore` plus a conformance suite, matching
+what `MemoryStore` does for storage — and that would be premature here, because
+a conformance suite for the wrong shape makes the wrong shape harder to change.
+Split first: the key wants backup and recovery, the inventory is derivable from
+storage, the petname store already has its contract, and the locator cache wants
+to be forgettable.
+
+## 4. Dense sequence numbers were chosen for sync and paid for everywhere else
 
 `seq` exists so a version vector can say "I hold 0–47 contiguous". That is a
 genuinely good property: cheap to compute, cheap to compare, cheap on the wire.
@@ -96,7 +141,7 @@ lock is needed, whether the CLI is a peer, and what sync costs. Make it
 explicitly and early, with the downstream consequences written down, rather than
 as an implementation detail of "how do we detect gaps".
 
-## 4. Design pressure is a signal, and it was ignored twice
+## 5. Design pressure is a signal, and it was ignored twice
 
 The admin-tooling design got steadily more elaborate — a control API, then a
 write verb, then a split between reads and writes, then a fifth transport — and
@@ -113,7 +158,7 @@ as exceptional rather than as something two of your own processes do routinely.
 **Carry forward:** when a design keeps needing another layer to work around one
 sentence in the spec, suspect the sentence.
 
-## 5. A constraint stated as a premise stops being questioned
+## 6. A constraint stated as a premise stops being questioned
 
 §7.3 opens with *"a private key is meant to be held by one device at a time"*
 and then spends a section on surviving the violation. Stated that way it reads
@@ -123,7 +168,7 @@ as a fact about keys rather than as a consequence of a choice made in §2.1.
 produces it. "One device at a time, *because* `seq` is dense" invites the
 question that "one device at a time" closes.
 
-## 6. Invariants leak into distant sections without saying so
+## 7. Invariants leak into distant sections without saying so
 
 §6 proposes deriving the encryption nonce from `(writer, seq)`, unique "by
 construction under §7.3's constraint". That is a load-bearing dependency between
@@ -135,7 +180,7 @@ would silently produce nonce reuse under one key.
 declared where the invariant is *defined*, not only where it is used. §2.1 should
 say what depends on chain uniqueness.
 
-## 7. Package boundaries hid a missing layer
+## 8. Package boundaries hid a missing layer
 
 Four packages (`core`, `store`, `net`, `peer`) with nothing importing a subset
 of them. The split bought nothing measurable and cost something real: `peer`
@@ -148,7 +193,7 @@ were the same 300 lines twice.
 others, not to express layering. Layering is a reading order; a directory
 expresses it fine.
 
-## 8. Some bugs are only reachable from two processes
+## 9. Some bugs are only reachable from two processes
 
 The duplicate-frame-handler bug passed 324 unit tests and was found by running
 two real peers and noticing a delivery count double against a baseline. The
@@ -159,7 +204,7 @@ reachable from a single-process test.
 start, and record baseline counters (events delivered, sessions opened) so a
 doubling is visible rather than merely plausible.
 
-## 9. The spec's reasoning is usually better than a first read of it
+## 10. The spec's reasoning is usually better than a first read of it
 
 Twice now a section looked like an arbitrary restriction and turned out to be
 load-bearing once the *why* was read. §7.2.1 ("only the space key writes the
@@ -173,7 +218,7 @@ same pattern: a rule whose dependency is stated once, in passing.
 in the same breath. Both of these did explain themselves, but far enough from
 the rule that the rule could be read alone and misjudged.
 
-## 10. Small verification failures are silent
+## 11. Small verification failures are silent
 
 `grep` reports nothing on `fold.ts` because it contains an intentional `\0` as a
 map-key separator, which makes grep treat it as binary. A claim central to
