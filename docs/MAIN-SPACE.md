@@ -50,27 +50,65 @@ content has one; a pure viewer does not.*
 
 ## What a link is
 
-An object with `:kind` naming it a link, plus:
+**An object whose `:kind` is `link` and whose body is the target's public key.**
 
-| attribute | rule | holds |
-| --- | --- | --- |
-| `:name` | register | what this peer calls it — the old petname |
-| `:space` | register | the target's public key, 32 bytes |
-| `:parent` | register | which folder it sits in, like any object |
+```
+:kind    'link'        this object is a reference to a space
+:body    <32 bytes>    the target's public key — a register
+:name    'notes'       what this peer calls it: the old petname
+:parent  <uuid>        which folder it sits in, like any object
+```
 
-**No address.** A link names a space and says nothing about where it is; see
-below and [LOCATORS.md](LOCATORS.md).
+Nothing else. **No address**: a link names a space and says nothing about where
+it is ([LOCATORS.md](LOCATORS.md)).
 
-`:name` and `:parent` are the fixed attribute vocabulary already (§3.2), so a
-link folds in phase 2 with no new rule and no declaration. That is the point: a
-client that has never heard of links still folds the tree correctly, sees an
-object with a name and a kind it does not recognise, and shows it — §3.1's
-tiering, unchanged.
+### Why `:kind`, and why the body
 
-**`:space` is a key, not a locator.** Identity and address are separate (§5.1,
-§5.3): the key is what verification is against and never changes; addresses are
-hints that go stale. Conflating them was never on the table and is worth
-restating because a link is exactly where the temptation lives.
+§3.9 is open about how a *blob* reference is expressed, and asks whether it
+should be a `:kind` or a value encoding. A link looks like a third case of the
+same question and is not, which is worth stating because an earlier draft here
+assumed the three had to be settled together.
+
+§3.9's deciding case is a snapshot: *"a snapshot of a log-backed body is itself
+a content-addressed blob, belonging to an object whose body is emphatically not
+a blob"* — so *is this a blob* and *is this stored out of line* are different
+questions. That is a **storage** concern cutting across a **semantic** one.
+
+A link is not that. It does not say *this value lives elsewhere*; it says *this
+object is a reference to a space*. What the thing **is** — which is what §4.2
+says `:kind` is for. So the two questions are separable and this one can be
+settled now.
+
+Three checks against §4.2, all of which pass:
+
+- **`:kind` is set once and never changed.** A link is a link forever; making it
+  something else means making a new object. That is §4.2's rule exactly, and it
+  is what rules *out* a value encoding: a value can change, a kind cannot.
+- **The body is a register over 32 bytes** — structurally identical to the blob
+  rule, which is a register over a hash. One new body rule, and it is
+  `bytesRegister` with a length check.
+- **No overloading.** §4.2's complaint about media types is that they name the
+  rule *and* describe the bytes. `link` names only the rule, so §3.9's
+  outstanding question does not arrive here.
+
+**The key belongs in the body, not an attribute.** An earlier draft put it in a
+`:space` attribute. A link *is* its target, the way a file *is* its bytes; an
+attribute would make the key a property of some other thing and leave the object
+with no body, which §4.2 reserves for folders. It also makes links and files the
+same shape — a kind and a body — which is the uniformity that suggests it is
+right.
+
+**The key is an identity, not a locator.** Verification is against it and it
+never changes; addresses are hints that go stale (§5.1, §5.3). Worth restating
+because a link is exactly where the temptation to conflate them lives.
+
+### What an unfamiliar client does with one
+
+`:name` and `:parent` are already the fixed vocabulary (§3.2), so a link folds
+in phase 2 with no declaration. A client that has never heard of `link` folds
+the tree correctly, sees an object named `notes` whose kind it does not
+recognise, and shows it — §3.1's tiering, unchanged. It simply cannot follow
+it.
 
 ### Addresses are not on the link — see LOCATORS.md
 
@@ -85,7 +123,7 @@ replicated data is worse than no address at all*, because it looks
 authoritative, gets tried, and propagates to everyone holding your space. A
 stale entry in a client-side cache costs one dial and dies with the client.
 
-So **a link carries `:name`, `:space` and `:parent`, and no address.** Where a
+So **a link carries a name, a target key in its body, and no address.** Where a
 space is served is said by that space's own root (`:serves`), by peers on the
 ephemeral channel, and by a client-side cache that is in no space at all.
 
@@ -367,14 +405,6 @@ back to your own main space. §3.4's cycle-breaking handles `:parent` cycles
 nothing walks it today. Whatever renders "one big filesystem" must not recurse
 forever, and that is a renderer concern rather than a fold one — but it needs
 saying, because the fold's guarantee does not extend across a link.
-
-**A link is a third kind of reference**, and §3.9 is already open about the
-other two. An object's body may be a blob (a hash, fetched separately) or
-log-backed; a link points at a *space*. That is a third thing, and §3.9's
-argument — that "is this a blob" and "is this stored out of line" are different
-questions — suggests the answer is a value encoding rather than a `:kind`, which
-would make a link a *value* that happens to name a space. Not settled here, and
-it should be settled with §3.9 rather than separately.
 
 ## What would test it
 
