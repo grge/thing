@@ -26,6 +26,7 @@ Roughly in order of how much would change if the answer went the other way.
 | 3 | What cipher, nonce derivation and key derivation does encryption use? | §6 |
 | 4 | What exactly does the write-proposal channel between a view and its host look like? | §8.2 |
 | 5 | What happens when a private key is lost, which decides whether this is usable by non-technical people? | §5.1.1 |
+| 5a | What happens when a *space* key leaks? There is no in-band response: it cannot be purged (a purge is a root event, and only that key writes the root), removed from `:writers`, or rotated (the key *is* the space id). Same risk as 5 with the opposite sign, and only 5 is written down. See [LEARNINGS.md](LEARNINGS.md), "the nuclear revoke". | §5.1.1, §7.2.1 |
 | 6 | How does the connection lifecycle behave — concurrent syncs, mid-transfer drops, duplicate connections? | §5.6 |
 | 7 | Is membership a whole-list register or a set of add/remove operations? | §7.4 |
 | 8 | Does a peer keep replicating the losing branch of a resolved chain fork? | §7.3 |

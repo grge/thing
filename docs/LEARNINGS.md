@@ -312,6 +312,37 @@ should be removed** and **this key has been compromised**. The first should drop
 their writes; the second should keep them. Distinguishing them needs a stable
 identity above keys, with rotation — which is §1 above, and does not exist.
 
+**And it cannot touch the space key at all** — not by policy, but structurally.
+
+A purge list lives on the root, and root events are admitted on a signature from
+the space key alone (§7.2.1). So purging the space key means an event saying
+*do not fold what this key signed*, signed by that key, on the one object only
+that key can write. Honour it and it invalidates itself and the writer set with
+it, leaving a space with no membership; ignore it and it does nothing. There is
+no third reading.
+
+That is §7.2's circularity arriving from the other side. §7.2.1 broke the loop by
+making root events self-authorising — *"admitting one is a signature check, never
+a lookup"* — and a purge is precisely the lookup that puts it back.
+
+**So a compromised space key has no in-band response whatsoever.** It cannot be
+purged (above), cannot be removed from `:writers` (it is the authority the set
+derives from, and `removeWriter` already refuses), and cannot be rotated (the key
+*is* the space id — `mint()` returns one keypair whose public key names the
+space, so a new key is a new space). Whoever holds it can rewrite membership,
+purge every other writer, and be answered only out of band: everyone agrees to
+abandon the space and start another.
+
+§5.1.1 names key *loss* as the largest unresolved risk in the design. This is the
+same risk with the opposite sign — losing the key means nobody can administer,
+leaking it means anyone can — and only the first is written down.
+
+None of this is a flaw in the purge. It is the price of §7.2.1's bootstrap, which
+is load-bearing; the alternative was causal dependencies in the envelope, and
+§7.2 records why that was avoided. But it gives the feature a shape worth stating
+plainly: **a purge protects a space from its writers, and cannot protect it from
+its owner.**
+
 **Open before it could be built.**
 
 - **What happens to events that causally depend on purged ones?** Alice makes a
