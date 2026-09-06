@@ -26,6 +26,14 @@ Roughly in order of how much would change if the answer went the other way.
 | 7 | Is membership a whole-list register or a set of add/remove operations? | §7.4 |
 | 8 | Does a peer keep replicating the losing branch of a resolved chain fork? | §7.3 |
 | 9 | How is a blob reference expressed, and is `:kind` doing two jobs? | §3.9, §4.2 |
+| 10 | Do dense per-writer sequence numbers stay, given that they are what forces one-key-one-writer and are what the literature calls unsafe? See [EQUIVOCATION.md](EQUIVOCATION.md). | §2.1, §2.3, §7.3 |
+
+**Question 10 is the deepest.** It is the only one that would change the event
+format, and it arrived from the opposite direction to the rest: not from asking
+what the design should be, but from two sessions of admin tooling growing
+steadily more elaborate around a constraint nobody had questioned. The finding
+is that `seq` buys gap detection and brings one-key-one-writer along uninvited,
+and that convergence never used it. Unmeasured, and deliberately not decided.
 
 **Question 1 is the bet.** It is the only one whose answer would change what the
 system *is* rather than how it is built. It also fails soft: if the vocabulary

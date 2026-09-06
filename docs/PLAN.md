@@ -474,6 +474,15 @@ address feeds what it accepts to `Client.adopt`.
 What remains is the correctness half: the store lock, and routing the CLI
 through the holder.
 
+**Both are downstream of an open question about the core.** The lock exists
+because two processes sharing a writer key produce two validly signed events at
+one sequence number, and the control API exists because the lock forbids the
+second process from writing. `EQUIVOCATION.md` records what a literature review
+found: that hazard is what Kleppmann calls *equivocation*, dense per-writer
+sequence numbers are what make it harmful, and the fold never used them. Nothing
+is decided — but building the lock and the write API is building around a
+constraint that may not need to exist, so the question is worth closing first.
+
 The shape of that routing is settled (`CLIENTS.md`): **the client's public API is
 the only way in**, and every mode — in-process, one-shot CLI, attached TUI, and
 eventually a browser pointed at a server — is a transport to it. Writes go to
