@@ -1,8 +1,11 @@
 # Per-process append points: what would change
 
-**Status: a trace, not a proposal.** It answers one question — if `writer` stays
-the *identity* and the chain is keyed by something else, what breaks? — by
-reading the code rather than reasoning about it.
+**Status: traced, and the two open choices are now decided** (§7). Not yet
+built.
+
+It answers one question — if `writer` stays the *identity* and the chain is
+keyed by something else, what breaks? — by reading the code rather than
+reasoning about it.
 
 Prompted by the observation that the right design has `thing` and `thing attach`
 **assuming the same identity despite being separate processes**, which the
@@ -180,14 +183,62 @@ the lock, the write API, the two-tabs lock and one whole protocol all stop being
 necessary. Compare that to the design in `CLIENTS.md`, which was elaborate
 precisely because it was routing around this.
 
-Two things to settle before writing code:
+### Decided
 
-1. **What mints a point, and what retires it.** The vv-growth question above.
-   Per-process with compaction is the honest answer and needs §9.2.
-2. **Is `point` a fresh keypair or an opaque id?** A keypair would let a point
-   sign for itself (SSB's subfeed shape, and a route to delegation without
-   sharing the identity key). An opaque id is far simpler. This trace assumes
-   opaque, but the choice affects the preimage and should not be made twice.
+**A point is per process, minted when a process opens a space for writing.**
+Per-device is the tempting alternative and is wrong for exactly the reason
+`writelock.ts` exists: two tabs on one device are two writers. Per-process is
+correct and unbounded, so it needs a compaction story for retired points — which
+§9.2 wants regardless, so it is one mechanism rather than a new one.
+
+**A point is an opaque 16 bytes, not a keypair.** The alternative was for each
+point to have its own keypair, certified by the identity key: SSB's subfeed
+shape, and a route to revoking one process without revoking the writer.
+
+That was rejected once it was clear what identity currently *is* in this system.
+`mint()` generates one keypair whose public key **is the space id** and which is
+also the writer key. So:
+
+> space identity = writer identity = one key.
+
+There is no separate notion of a person. Not "a fresh identity per space" —
+*no identity concept at all* beyond the space's own key. Which means there is
+nothing for a certificate to bind a point to: "point 7f3a belongs to Alice"
+needs an Alice.
+
+The key-hygiene argument for keypairs collapses with it. The key a certificate
+scheme would protect the branches of is the space key, which holds permanent,
+unrevocable authority over the root (§7.2.1) and would still be sitting in a
+file. Certificate distribution, revocation and a second verification path, to
+protect everything except the thing that matters.
+
+The related-sounding argument — *per-point keys let you add a writer without
+sharing your key* — is the multi-writer problem (§7.2, stage 9, `:writers`), not
+the append-point problem. Two mechanisms for two questions.
+
+**Size: 16 bytes, matching `Uuid`.** An earlier draft suggested 32 so a point id
+could later *become* a public key without a format change. Dropped: with no
+cross-space identity to certify against, the shape it would upgrade to is
+unclear enough that reserving room for it is guessing, and a real identity layer
+would want a format change anyway.
+
+### The dependency this decision rests on
+
+**Opaque is right *given* per-space identity, and per-space identity is
+unfinished rather than decided.** §5.1.1 already names key management as the
+largest unresolved risk; "you are an unrelated key in every space" is part of
+that. There is no way to say *these three spaces are mine*, no recovery that
+spans them, and no way for a reader to know two writers are the same person.
+
+If a stable cross-space identity is ever introduced, the certificate design
+returns and points are the natural thing to hang off it. Recorded so this
+decision does not read as arbitrary later.
+
+Note also what the split does *not* achieve. `:writers` currently means both
+"a key that may write" and "a chain". Adding points separates the chain from the
+key, leaving space key → writer key → point, where the middle level is still a
+key doing double duty. The level that is missing — a person, stable across
+spaces — is still missing afterwards.
 
 And one thing to do first regardless: **stage 10's nonce derivation is unsafe
 under any scheme that lets one identity have two chains.** That is worth

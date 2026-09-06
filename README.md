@@ -13,6 +13,7 @@ code in `src/` currently does — see *Status* below.
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | **The design.** Self-contained, assumes no prior context. Every section marked Proven / Decided / Open |
 | [docs/PLAN.md](docs/PLAN.md) | **The implementation plan** — stages, what each answers, what moves to archive |
 | [docs/OPEN.md](docs/OPEN.md) | Open questions. Mutable — changes as questions close |
+| [docs/LEARNINGS.md](docs/LEARNINGS.md) | What building this taught, for whenever the design is rewritten again |
 | [archive/](archive/) | The previous implementation, and the fold prototype. Not built |
 | [docs/v1/](docs/v1/) | Archived — the design that came before, and the reasoning behind it |
 | [docs/v0/](docs/v0/) | Archived — the original proof of concept |
