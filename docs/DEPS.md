@@ -192,10 +192,66 @@ final writer set:
 
 So the generator does catch the bug, and the zero above means something.
 
+## How wide does `deps` get?
+
+`proto/deps-width.mjs`. 200 rounds, 20 seeds per scenario.
+
+| scenario | mean | p95 | max | bytes @ p95 |
+| --- | --- | --- | --- | --- |
+| 1 writer (a person, one device) | 0.99 | 1 | 1 | 33 |
+| 2 writers (laptop + server, synced) | 1.99 | 2 | 2 | 65 |
+| 5 writers (a team, mostly offline) | 1.34 | 2 | 4 | 65 |
+| 10 writers (busy space, patchy sync) | 1.95 | 4 | 6 | 129 |
+| 50 writers (large space, patchy sync) | 1.99 | 4 | 7 | 129 |
+
+**Bounded by concurrently-active writers, not by log length**, and the mechanism
+is that **writing consumes the heads it names**: every write collapses whatever
+it saw into one new head. Heads only accumulate between one writer's consecutive
+writes.
+
+The worst case is a peer that goes away while others write, and comes back: it
+sees one head per writer that moved. 50 peers → 50 deps → 1,601 bytes for **one
+event**, which then drains to 1 on its next write. A wide event, not a sustained
+cost.
+
+Note this barely grows with writer count once sync is good — 50 synced writers
+have the same p95 as 2. It is concurrency that costs, not population.
+
+## What the permission check costs
+
+`proto/deps-fold-cost.mjs`. The prototype walks the whole causal past per event,
+which is **O(n²)**: 10s at 10k events, and 50k did not finish. That is fine for
+a test harness and unusable in a fold.
+
+The right shape carries the **set of maximal root events** forward in topological
+order: each event's set is the union of its deps' sets, collapsing to itself if
+it is a root.
+
+| events | writers | sync | time | widest set |
+| --- | --- | --- | --- | --- |
+| 10,000 | 3 | 1.0 | 4ms | 1 |
+| 100,000 | 3 | 1.0 | 17ms | 1 |
+| 500,000 | 3 | 1.0 | 74ms | 1 |
+| 100,000 | 10 | 0.3 | 32ms | 15 |
+| 100,000 | 50 | 0.1 | 30ms | 26 |
+
+Linear, ~0.2µs per event. **Verified equivalent to the naive walk: zero
+mismatches over 8,000 events across 200 generated histories.**
+
+Two things that had to be got right, both found by measuring:
+
+- **A single carried-forward "winner" is wrong.** Two root events can be
+  genuinely concurrent — neither in the other's past — and which wins is a
+  tiebreak that has to be applied to the whole maximal set at once. Carrying one
+  id disagreed with the naive walk on 147 of 8,000 events.
+- **Consumed sets must be freed.** Retaining every event's set exhausted a 4GB
+  heap at 100k events. A dep that has been written past is never read again, so
+  dropping it after use takes the widest live set from 1,130 to 26.
+
 ## Open before building
 
-- **A bound on `deps` under concurrency**, if this is ever used for a busy space.
-  Observed at 4 with three writers and partial sync; unbounded in principle.
+- ~~A bound on `deps` under concurrency.~~ Measured above.
+- ~~The cost of `pastOf` on a real log.~~ Measured above.
 - ~~Whether `prev` survives, or collapses into `deps`.~~ **Not open — they prove
   different things.** `prev` is one hash of *your own* previous event, and
   `checkLink` verifying it against `eventId(previous)` is what makes `seq`
@@ -214,6 +270,7 @@ So the generator does catch the bug, and the zero above means something.
   Dropping `prev` therefore means dropping `seq`, which means dropping version
   vectors. That is the full DAG change (OPEN.md 10), not a tidy-up — and `prev`
   survives or dies with `seq` rather than on its own.
-- **Cost of `pastOf` on a real log.** The prototype walks the DAG per event,
-  which is fine at these sizes and is not how the real fold should do it —
-  admission wants to be computed once per distinct dep-set, not once per event.
+
+Nothing on that list is open any more. What remains before building is the
+build itself, and the limitations in *What it does not address* above — none of
+which measurement can change.
