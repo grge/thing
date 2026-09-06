@@ -10,6 +10,12 @@ export default defineConfig({
   ],
   // Bundle the engine from source rather than dist, so a dev server reflects
   // an edit without a separate build step.
-  resolve: { conditions: ['development'] },
+  //
+  // **`browser` must be listed explicitly.** `resolve.conditions` *replaces*
+  // Vite's defaults rather than adding to them, so naming only `development`
+  // drops `browser` — and Svelte then resolves to its `default` export, which
+  // is the *server* build. `mount()` throws `lifecycle_function_unavailable`
+  // the moment the app starts, with nothing in the build output to suggest why.
+  resolve: { conditions: ['development', 'browser', 'module', 'import'] },
   build: { outDir: 'dist-app', emptyOutDir: true },
 });
