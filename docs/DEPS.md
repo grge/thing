@@ -196,8 +196,24 @@ So the generator does catch the bug, and the zero above means something.
 
 - **A bound on `deps` under concurrency**, if this is ever used for a busy space.
   Observed at 4 with three writers and partial sync; unbounded in principle.
-- **Whether `prev` survives at all**, or collapses into `deps`. Keeping it is the
-  conservative choice and what makes this additive.
+- ~~Whether `prev` survives, or collapses into `deps`.~~ **Not open — they prove
+  different things.** `prev` is one hash of *your own* previous event, and
+  `checkLink` verifying it against `eventId(previous)` is what makes `seq`
+  trustworthy: you cannot claim `seq 5` without producing the real event at
+  `seq 4`. That is what turns the version vector's "0–47 contiguous" into a
+  verified statement rather than a claim. `deps` is a set, mostly of *other
+  people's* events, and nothing checks it against a chain because there is no
+  chain to check it against.
+
+  The test that settles it: **`prev` is not derivable from `deps`.** Given the
+  set you cannot tell which member is the author's own previous event without
+  already knowing the chain — which is the thing being verified. And nothing
+  reads `prev` except `checkLink` and the two serialisers, so no consumer would
+  be simplified by merging them.
+
+  Dropping `prev` therefore means dropping `seq`, which means dropping version
+  vectors. That is the full DAG change (OPEN.md 10), not a tidy-up — and `prev`
+  survives or dies with `seq` rather than on its own.
 - **Cost of `pastOf` on a real log.** The prototype walks the DAG per event,
   which is fine at these sizes and is not how the real fold should do it —
   admission wants to be computed once per distinct dep-set, not once per event.
