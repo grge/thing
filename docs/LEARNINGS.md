@@ -291,6 +291,27 @@ it delivers.
 What it does change is the asymmetry: an attacker reduced to backdating faces an
 administrator who can invalidate their entire history in one event.
 
+**It operates on keys, and a key is not a person.** A purge names a `writer`,
+so it removes everything that key ever signed, across every chain. Three cases,
+and they do not come out the same:
+
+| case | outcome |
+| --- | --- |
+| a member misbehaves and is purged | clean — they lose their writes, nobody else does |
+| an attacker forks *someone else's* chain by reusing their public `point` | clean — the branches have different `writer`s, so purging the attacker leaves the victim's chain intact |
+| **a key is stolen and used to fork its owner's chain** | **the owner's entire history goes with the attacker's** |
+
+The third has no finer-grained answer available. Both branches carry the same
+`writer` and the same valid signature, and `point` is self-chosen and unverified
+— so there is nothing in an event that distinguishes *Alice on her laptop* from
+*whoever took Alice's key*. Purging by `point` would mean trusting the one field
+the attacker picked freely.
+
+So a purge conflates two situations that want opposite treatment: **this person
+should be removed** and **this key has been compromised**. The first should drop
+their writes; the second should keep them. Distinguishing them needs a stable
+identity above keys, with rotation — which is §1 above, and does not exist.
+
 **Open before it could be built.**
 
 - **What happens to events that causally depend on purged ones?** Alice makes a
