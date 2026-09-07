@@ -124,12 +124,15 @@ authoritative, gets tried, and propagates to everyone holding your space. A
 stale entry in a client-side cache costs one dial and dies with the client.
 
 So **a link carries a name, a target key in its body, and no address.** Where a
-space is served is said by that space's own root (`:serves`), by peers on the
-ephemeral channel, and by a client-side cache that is in no space at all.
+space is served is said by peers on the ephemeral channel, and by a client-side
+cache that is in no space at all.
 
 The rule question that draft answered — grow-only set with read-time expiry
-rather than an OR-set — was the right answer to the wrong attribute. It carries
-over to `:serves`, which is genuinely a set for the same reasons.
+rather than an OR-set — was the right answer to the wrong attribute. It was then
+carried over to `:serves`, a locator list on the target's own root, and
+`LOCATORS.md` has since dropped that too: **no locator is stored in any space.**
+The peer that knows a serving address usually cannot write the root, and
+reachability is a property of a pair of peers rather than of a space.
 
 ## Resolution falls out
 
@@ -450,7 +453,8 @@ Cheap, in the engine, before any UI:
 1. **A link folds in a client that has never heard of links.** The tree is
    correct, the object appears, its kind is unrecognised (§3.1).
 2. **Two devices with one main-space key converge on an inventory**, including
-   concurrent link additions, and concurrent `:serves` additions from two
+   concurrent link additions, and — before it was dropped — concurrent `:serves`
+   additions from two
    devices — the case a register would silently lose.
 3. **Resolution answers from live connections**, not from stored addresses: a
    peer serving K, or connected to one that does, answers; a peer merely

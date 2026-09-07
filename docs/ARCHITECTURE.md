@@ -1110,30 +1110,53 @@ true), and *here are locators* (dial them).
 
 **Where locators come from.** A client collates a list in preference order:
 
-1. **The space's own declaration** — a signed list on the root of where the
-   writers say it is served. Durable, replicated with the log, and still valid
-   months later when every announcement has expired. Unavailable at first
-   contact, because it lives in a log you do not have yet.
-2. **The share link's hint** — the bootstrap case, and the only source that works
-   before you know anybody.
-3. **Cache** — locators for spaces opened before. First tried, first discarded:
-   a cached locator is stale by default and must never be the reason a space is
-   reported gone.
-4. **Learned** — whatever peers announced or answered.
-5. **A configured fallback resolver.**
+1. **Cache** — locators for spaces reached before, ordered by what most recently
+   worked. First tried, first discarded: a cached locator is stale by default
+   and must never be the reason a space is reported gone.
+2. **Learned** — whatever connected peers announced or answered.
+3. **The share link's hint** — the bootstrap case, and the only source that
+   works before you know anybody.
+4. **A configured fallback resolver.**
 
-Sources 1 and 2 are in tension in a way worth stating: **the best source is
-unavailable exactly when it is most needed.** The space's own declaration is
-durable and signed and still works months later — and it lives in a log you do
-not have yet, so it can never serve first contact. The link hint is the reverse:
-it is the only thing that works before you know anybody, and it is a guess made
-by whoever wrote the link, at the moment they wrote it.
+**No locator is stored in a space.** An earlier draft had a fifth source, and
+the best one: a signed `:serves` list on the root, durable and replicated, still
+valid months after every announcement expired. It is dropped, for two reasons
+that are worth keeping written down because the idea is a natural one to have
+again.
 
-Hence the asymmetry about where hints belong. **A share link should carry a
-locator hint; a link stored inside a space should not.** A share link is a
-one-shot introduction whose staleness is recoverable by resharing it. A stored
-link is data that outlives its target's hosting arrangements, and a rotted
-address embedded there is worse than no address at all.
+**The peer that knows the address cannot write it.** Only the space key writes
+the root (§7.2.1), and the peer that actually serves a space is usually a
+replica holding no key for it at all — §6.1 calls that an ordinary way to
+participate, and it is what a hub hosting someone else's space is. So the
+knowledge sits with the host and the authority sits with the writers, and a
+root declaration puts the record in the one place the knowledge is not.
+
+**Reachability is not a property of the space.** Whether a locator works is a
+fact about a *pair* — a LAN address reaches one client and not another, a
+`{via, peer}` locator needs the same signalling server, a peer behind NAT is
+reachable by some and not others. Replicating one answer means every client
+folds the same list and they disagree about which entry is real. That is a fact
+about the network stored as a fact about the space, and the disagreement is not
+a bug in the rule but in what is being replicated.
+
+There is a third, smaller reason: hosting arrangements change more often than
+space content, so a durable signed record of them means frequent root writes for
+something transient — on the most contended attribute in the system, since one
+key writes the root.
+
+**What this leaves unfilled, deliberately.** A client returning to a space it
+holds, with its cache cleared and no live peer that knows, has no in-band way to
+find it. That is the same shape as §5.1.1's key loss: some state is genuinely
+per-client, and its loss is genuinely unrecoverable from inside the system. The
+honest answer is one locator from outside — a re-shared link — which is what
+bootstrap already is. Filling that gap by replicating a network fact is what
+produced the crack above.
+
+**Hence where hints belong: a share link carries one, a link stored inside a
+space does not.** A share link is a one-shot introduction whose staleness is
+recoverable by resharing it. A stored link is data that outlives its target's
+hosting arrangements, and a rotted address embedded there is worse than no
+address at all.
 
 **Resolution knowledge travels along the link graph.** A link names a space and
 carries no locator, deliberately. It does not need one: reaching a space that

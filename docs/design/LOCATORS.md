@@ -8,6 +8,13 @@ It **corrects `MAIN-SPACE.md`**, which had `:at` on a link as the primary
 locator store. §5.3 had already considered and rejected that, with an argument
 the design conversation had not reached; the cross-check below supports §5.3.
 
+**It has since corrected §5.3 in turn.** This document originally kept
+`:serves`, a signed locator list on a space's root, which §5.3 ranked the best
+source of all. It is dropped — see "What is dropped" — because the peer that
+knows a serving address usually cannot write the root, and because reachability
+is a property of a pair of peers rather than of a space. **No locator is stored
+in any space now.** The scenario tables below predate that and are marked.
+
 ---
 
 ## The scenarios
@@ -57,14 +64,21 @@ the design conversation had not reached; the cross-check below supports §5.3.
 | | lives in | authored by | reaches |
 | --- | --- | --- | --- |
 | **share-link hint** | a URL fragment | whoever shares | one recipient, one moment |
-| **`:serves` on a root** | the target's own space | that space's writers | everyone holding its log |
-| **`:at` on a link** | your space | the link's curator | everyone holding *your* space |
+| ~~**`:serves` on a root**~~ | the target's own space | that space's writers | everyone holding its log |
+| ~~**`:at` on a link**~~ | your space | the link's curator | everyone holding *your* space |
 | **client-side cache** | outside any space | you | you |
 | **announce** (push) | ephemeral (§10) | a peer that serves | its current connections |
 | **query** (pull) | ephemeral (§10) | asked peers | one hop |
 | **fallback resolver** | configuration | an operator | whoever configures it |
 
 ## Crossing them
+
+**The two struck-through rows are what this document went on to drop** — `:at`
+in "The correction", `:serves` in "What is dropped". The tables below are the
+analysis that led there and are kept as written: the crossing is what showed
+`:at` covered one scenario alone, and the same exercise is what made the case
+for `:serves` look stronger than it was. Read them as the working, not the
+conclusion.
 
 | scenario | covered by |
 | --- | --- |
@@ -73,14 +87,14 @@ the design conversation had not reached; the cross-check below supports §5.3.
 | 4 | query; the hub serves it, so the hub answers |
 | **5** | **query, with the hub relaying what it learned** — or nothing works |
 | 7 | a cache, wherever it lives |
-| 8, 11 | `:serves` if you hold the log, else query |
+| 8, 11 | query, or cache — `:serves` was the answer here and is dropped |
 | **9** | **nothing distinguishes moved from offline** — see below |
 | 12, 13, 14 | any multi-valued source |
 | 15 | query, returning empty — the honest answer |
 | 16, 17 | bounds: timeout, caps |
 | 18 | merge; both kept |
-| **19** | **`:serves` or a hint only** — a space nobody links cannot have an `:at` |
-| 20 | `:serves` on your own root |
+| **19** | **its own configuration** — a server knows the address it listens on |
+| 20 | your own configuration, for the same reason |
 | 21 | never needs one |
 
 Three things fall out.
@@ -91,10 +105,13 @@ knowledge travels along the link graph: *"reaching a space that contains a link
 generally means reaching what it points at, because the peers you are already
 talking to are the ones who can say where the target is."*
 
-**`:serves` covers what nothing else can.** Scenario 19 — a server's own main
-space, held as nobody's link — has no `:at` available even in principle. Its
-only durable locator is its own root. That case is the one the whole main-space
-model is for, so this is not a corner.
+~~**`:serves` covers what nothing else can.**~~ **This was the argument that
+kept it, and it does not survive.** Scenario 19 — a server's own main space,
+held as nobody's link — has no `:at` available even in principle, and that
+looked decisive. But a server does not need to *learn* where it serves: it is
+the thing serving, and its address is configuration. The scenario that looked
+like the strongest case for a root declaration turns out not to need one, and
+what remained after that is in "What is dropped".
 
 **`:at` covers scenario 7 alone**, and only by saving a round trip. Every case
 it looked like it covered — 4 and 5, following a hub's links — turns out to be
@@ -123,24 +140,22 @@ space.** Losing it costs a query.
 
 ## What is kept
 
-**`:serves`, on a space's root.** The durable, signed statement of where a
-space's writers say it is served. Replicated with the log, so everyone holding
-the space learns of a move on next sync, and still valid months after every
-announcement has expired. The only thing that reaches scenario 19.
-
-It is a set — scenarios 12, 13 and 14 are ordinary — with the same rule question
-`MAIN-SPACE.md` worked through for `:at`, and the same answer: a **grow-only set
-with read-time expiry over `wall`**, not an OR-set. Removal is rare and
-imprecise, §5.3's model is TTL-shaped already, and an OR-set's causal tags and
-canonical form (§3.2, §3.6) are not worth buying for it.
-
 **Announce and query, on the ephemeral channel.** §5.3's two halves, unchanged.
 Push on starting to serve and on reconnect; pull by asking connected peers in
 parallel and merging. One hop, no transit, because at one hop every entry is
 about a live connection the answering peer can vouch for.
 
 **A client-side cache**, holding what worked. Not in any space, not replicated,
-never authoritative. This is where `:at` went.
+never authoritative. This is where `:at` went — and, since `:serves` was dropped
+too (below), it is now the whole of "returning to a space you already hold".
+
+That weight changes its shape. `get(space) -> url` is too thin for three
+reasons: a locator is not a string (§5.2 has two shapes, and `{via, peer}` is
+how a browser is reached); several may be worth keeping, since reachability
+differs per client; and nothing records whether one *worked*, which is what
+"first tried, first discarded" implies an ordering for. So it is a small
+bounded list per space, ordered by what most recently succeeded, with the
+client recording outcomes as it dials.
 
 **The share-link hint**, which §5.3 calls a primitive rather than decoration:
 
@@ -149,6 +164,31 @@ never authoritative. This is where `:at` went.
 > with a stranger's space needs one locator from outside the system.
 
 ## What is dropped
+
+**`:serves` on a space's root.** This document previously kept it, and §5.3
+ranked it the *best* source: durable, signed, replicated with the log, still
+valid months after every announcement expired. It is dropped for two reasons,
+and they are worth stating because the idea is a natural one to have again.
+
+**The peer that knows the address cannot write it.** Only the space key writes
+the root (§7.2.1), and a peer that serves a space is usually a replica holding
+no key for it — which is exactly what a hub hosting someone else's space is
+(§6.1). The knowledge sits with the host; the authority sits with the writers.
+
+**Reachability is not a property of the space.** Whether a locator works is a
+fact about a *pair* of peers. Replicating one answer means every client folds
+the same list and they disagree about which entry is real — a fact about the
+network stored as a fact about the space.
+
+A third, smaller: hosting changes more often than content, so a durable record
+of it means frequent writes to the most contended attribute in the system.
+
+**What it was for is now unfilled, deliberately.** Scenario 19 — a server's own
+main space — needs no locator from the log: a server knows its own address as
+configuration. What is genuinely lost is the long-gap case: a client holding a
+space, cache cleared, with no live peer that knows. §5.3 now says that is the
+same shape as §5.1.1's key loss — per-client state whose loss is unrecoverable
+in-band — and the honest answer is a re-shared link.
 
 **`:at` on a link.** A link names a space and carries no address. Scenario 4 and
 5's case — following a hub's curation — is answered by asking the hub, which is
