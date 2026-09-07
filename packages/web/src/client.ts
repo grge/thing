@@ -177,6 +177,17 @@ export class Client extends PeerClient {
       const name = this.local.petnames.nameFor(id);
       try {
         await this.open(fromHex(id), name);
+        // **Reconnect.** The cache exists precisely so that reopening a client
+        // does not mean pasting an address again (§5.3), and until this it was
+        // written and never read: a reload left every tab holding its events
+        // and talking to nobody, which looks exactly like a space that will
+        // not sync. Not awaited — a slow or dead peer must not hold up the
+        // rest of the restore, and the tree renders from the local copy
+        // meanwhile.
+        void this.reach(id).catch(() => {
+          // Unreachable now is ordinary: the locator is stale by default, and
+          // failing to reach a space is never a reason to drop it.
+        });
       } catch {
         // A space whose store will not open is one this client cannot show.
         // Dropping it from the list beats failing the whole restore.

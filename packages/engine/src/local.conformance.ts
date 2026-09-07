@@ -268,6 +268,22 @@ export function localConformanceTests(name: string, make: LocalBackends): void {
       await after();
     });
 
+    it('reads a cache an older version wrote', async () => {
+      // This is persisted by the client, and an earlier version stored one URL
+      // string per space. A client that upgrades finds those still there —
+      // reading one as a candidate that has never been tried beats crashing,
+      // which is what a bare `.map` over a string did.
+      const l = await make.locators();
+      (l as unknown as { state: Record<string, unknown> }).state = {
+        old: 'ws://typed-in:9944',
+      };
+      expect(l.get('old')).toEqual([ws('ws://typed-in:9944')]);
+      // And it still ranks: remembering another does not lose the first.
+      l.remember('old', ws('ws://learned:2'));
+      expect(l.get('old')).toHaveLength(2);
+      await after();
+    });
+
     it('forgets', async () => {
       const l = await make.locators();
       l.remember('aa', ws('ws://x:1'));

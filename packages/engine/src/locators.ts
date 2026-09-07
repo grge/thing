@@ -11,7 +11,7 @@
  * how many times it has failed since, which is enough to answer *try this one
  * first* without pretending to model the network.
  */
-import { type Locator, locatorKey } from './net/locator.js';
+import { type Locator, locatorKey, parseLocator } from './net/locator.js';
 import type { SpaceId } from './store/index.js';
 
 /** One candidate, with what this client knows about using it. */
@@ -66,16 +66,30 @@ export class Locators {
   ) {}
 
   get(space: SpaceId): readonly Locator[] {
-    return (this.state[space] ?? []).map((a) => a.locator);
+    return this.attempts(space).map((a) => a.locator);
   }
 
-  /** Every candidate with what is known about it — for a debug view. */
+  /**
+   * Every candidate with what is known about it — for a debug view.
+   *
+   * **Tolerates whatever is on disk.** This cache is persisted by the client
+   * and an earlier version stored one URL string per space; a client that
+   * upgrades finds those still there. Reading them as a lone candidate that
+   * has never been tried is better than either crashing — which is what a
+   * bare `.map` did — or silently dropping an address someone typed.
+   */
   attempts(space: SpaceId): readonly Attempt[] {
-    return this.state[space] ?? [];
+    const held: unknown = this.state[space];
+    if (Array.isArray(held)) return held as Attempt[];
+    if (typeof held === 'string') {
+      const l = parseLocator(held);
+      return l === null ? [] : [{ locator: l, worked: 0, failures: 0 }];
+    }
+    return [];
   }
 
   remember(space: SpaceId, locator: Locator): void {
-    const list = this.state[space] ?? [];
+    const list = [...this.attempts(space)];
     // Known already: leave its history alone. Hearing about a locator again is
     // not evidence that it works, and overwriting would discard the failures
     // that had sunk it.
@@ -86,14 +100,14 @@ export class Locators {
 
   succeeded(space: SpaceId, locator: Locator): void {
     const key = locatorKey(locator);
-    const list = (this.state[space] ?? []).filter((a) => locatorKey(a.locator) !== key);
+    const list = this.attempts(space).filter((a) => locatorKey(a.locator) !== key);
     this.state[space] = trim([{ locator, worked: this.now(), failures: 0 }, ...list]);
     this.save(this.state);
   }
 
   failed(space: SpaceId, locator: Locator): void {
     const key = locatorKey(locator);
-    const list = (this.state[space] ?? []).map((a) =>
+    const list = this.attempts(space).map((a) =>
       locatorKey(a.locator) === key ? { ...a, failures: a.failures + 1 } : a,
     );
     // Drop only what has never worked. A locator that worked once and is now
