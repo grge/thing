@@ -31,6 +31,7 @@ import {
 } from '@thing/engine';
 
 import { Client } from './client.js';
+import { IdbStore } from './idbstore.js';
 import { browserLocalState } from './local.js';
 
 /** Enough `localStorage` for the keyring. */
@@ -506,6 +507,66 @@ describe('tabs', () => {
     expect([...(await local.petnames.all())]).toEqual([]);
     // And the freed name is available.
     expect((await client.create('untitled')).name).toBe('untitled');
+    await client.close();
+  });
+
+  it('closing a tab deletes the space from storage', async () => {
+    // Closing used to close and keep. Nothing then removed a space ever, so a
+    // browser accumulated every space it had opened, with no way to drop one.
+    const client = new Client();
+    const tab = await client.create('mine');
+    await makeFile(client.space(tab.id)!, 'f.txt', new TextEncoder().encode('x'));
+    expect(await new IdbStore().list()).toContain(tab.id);
+
+    await client.closeTab(tab.id);
+
+    expect(await new IdbStore().list()).not.toContain(tab.id);
+    await client.close();
+  });
+
+  it('a space held only to expand a link goes with the tab', async () => {
+    // Browsing a hub fetches every space you expand. Those are cached rather
+    // than kept, and keeping them would mean a visit to one hub leaves fifty
+    // spaces behind.
+    const client = new Client();
+    const tab = await client.create('mine');
+    const other = await generateKeyPair();
+    await makeLink(client.space(tab.id)!, 'theirs', other.publicKey);
+    await client.hold(other.publicKey); // what expanding does
+
+    expect(await new IdbStore().list()).toContain(hex(other.publicKey));
+
+    await client.closeTab(tab.id);
+
+    expect(await new IdbStore().list()).not.toContain(hex(other.publicKey));
+    await client.close();
+  });
+
+  it('a linked space stays while another tab still links to it', async () => {
+    // Two tabs, both linking the same space: closing one must not take it.
+    const client = new Client();
+    const a = await client.create('a');
+    const b = await client.create('b');
+    const shared = await generateKeyPair();
+    await makeLink(client.space(a.id)!, 'shared', shared.publicKey);
+    await makeLink(client.space(b.id)!, 'shared', shared.publicKey);
+    await client.hold(shared.publicKey);
+
+    await client.closeTab(a.id);
+
+    expect(await new IdbStore().list()).toContain(hex(shared.publicKey));
+    await client.close();
+  });
+
+  it('an open tab is never dropped as unreferenced', async () => {
+    const client = new Client();
+    const a = await client.create('a');
+    const b = await client.create('b');
+
+    await client.closeTab(a.id);
+
+    expect(await new IdbStore().list()).toContain(b.id);
+    expect(client.view().map((t) => t.id)).toEqual([b.id]);
     await client.close();
   });
 

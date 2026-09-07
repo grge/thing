@@ -151,7 +151,19 @@
     if (tab !== null) show(tab.id);
   }
 
+  /**
+   * Closing deletes the space, so it asks first.
+   *
+   * A person cannot know whether their copy is the last one, so this is not a
+   * confirmation that can be reasoned away by the client — it is the one point
+   * where the cost is visible.
+   */
   async function closeTab(id: string): Promise<void> {
+    const tab = tabs.find((t) => t.id === id);
+    const label = tab?.name ?? id.slice(0, 8);
+    if (!confirm(`Close ${label}?\n\nThis deletes your copy. If nobody else has it, it is gone.`)) {
+      return;
+    }
     await client.closeTab(id);
     if (activeId === id) {
       activeId = null;

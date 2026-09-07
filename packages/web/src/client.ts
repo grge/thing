@@ -166,10 +166,27 @@ export class Client extends PeerClient {
     return this.tabOf(id)!;
   }
 
-  /** Close a tab. The space stays in storage if it was kept; otherwise it is just gone. */
+  /**
+   * Close a tab, and **delete the space**.
+   *
+   * Closing is destructive, deliberately. The alternative — closing leaves the
+   * log behind — means spaces accumulate silently with no way to remove one,
+   * and a browser that has visited a few hubs is holding every space it ever
+   * expanded.
+   *
+   * The rule chosen instead is simple enough to say in a sentence: *closing a
+   * tab deletes it*. That is a footgun, and it is one nothing can take away —
+   * **a client cannot know whether its copy is the last one**, so deciding
+   * what is safe to close is the person's job however this behaves. Better
+   * that they know the rule than that a policy guess for them.
+   *
+   * Spaces held only to expand a link go too, unless another open tab is
+   * showing them.
+   */
   async closeTab(id: string): Promise<void> {
     const at = this.tabs.findIndex((t) => hex(t.key) === id);
     if (at !== -1) this.tabs.splice(at, 1);
+
     await this.local.inventory.forget(id);
     // The petname goes too. Nothing can read it back — `restore` iterates the
     // inventory, so a name for a space that is not in it is unreachable — and
@@ -177,8 +194,36 @@ export class Client extends PeerClient {
     // have it. That is how `untitled 8` happens with no other untitled open.
     const name = this.local.petnames.nameFor(id);
     if (name !== null) await this.local.petnames.remove(name);
-    await this.release(id);
+
+    await this.forget(id);
+    await this.dropUnreferenced();
     this.changed();
+  }
+
+  /**
+   * Delete spaces held only to expand a link, once nothing shows them.
+   *
+   * Not reference counting, which cannot work here: links live *inside* spaces
+   * this client may not hold, so the graph cannot be walked without already
+   * holding all of it, and it has cycles by design. The rule is narrower —
+   * **a space that is not a tab is cached** — and cached spaces are disposable
+   * because losing one costs a fetch.
+   *
+   * The one thing that keeps a cached space alive is an open tab linking to it,
+   * checked one hop deep. Deeper expansions are re-fetched when expanded again.
+   */
+  private async dropUnreferenced(): Promise<void> {
+    const open = new Set(this.tabs.map((t) => hex(t.key)));
+    const referenced = new Set<string>();
+    for (const tabId of open) {
+      const space = this.space(tabId);
+      if (space === null) continue;
+      for (const l of links(space.state)) referenced.add(hex(l.target));
+    }
+    for (const held of this.holding()) {
+      if (open.has(held) || referenced.has(held)) continue;
+      await this.forget(held);
+    }
   }
 
   /** Every open tab, for a view. */
