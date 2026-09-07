@@ -109,6 +109,54 @@ function byChain<T extends { chain: string }>(a: T, b: T): number {
   return a.chain < b.chain ? -1 : a.chain > b.chain ? 1 : 0;
 }
 
+/**
+ * Whether one vector is at least as recent as another (§2.3.1).
+ *
+ * The question a writer asks a peer before it goes away: *are you still
+ * relying on me?* If `theirs` covers `mine`, that peer holds everything the
+ * asker did and the asker is free to disconnect.
+ *
+ * **Coverage, not equality.** Chains only `theirs` holds are ignored: a
+ * longer-running peer is ahead on writers the asker never had, and requiring
+ * equality would mean the check never passes on a space anyone else is using.
+ *
+ * **A mismatched tip is not lag.** Meeting the frontier on a different history
+ * is a fork (§2.3), which waiting will never resolve, so it is reported
+ * separately rather than folded into "not yet".
+ */
+export type Coverage =
+  | { readonly kind: 'covered' }
+  /** Behind on at least one chain. Named so a caller can say what is missing. */
+  | { readonly kind: 'behind'; readonly chains: readonly string[] }
+  /** A chain diverged. Waiting cannot fix this. */
+  | { readonly kind: 'forked'; readonly forks: readonly Divergence[] };
+
+export function covers(theirs: WireVersionVector, mine: WireVersionVector): Coverage {
+  const behind: string[] = [];
+  const forks: Divergence[] = [];
+
+  for (const [chain, a] of Object.entries(mine)) {
+    const b = theirs[chain];
+    if (b === undefined || b.frontier < a.frontier) {
+      behind.push(chain);
+      continue;
+    }
+    // They are at or past my frontier. If they are *at* it under a different
+    // tip, we are on different histories and no amount of waiting converges.
+    if (b.frontier === a.frontier && b.tip !== a.tip) {
+      forks.push({ chain, frontier: a.frontier, mine: a.tip, theirs: b.tip });
+    }
+    // Past my frontier under an unknown tip says nothing: their tip is at a
+    // position my vector does not describe. The events settle it, as in
+    // `reconcile`.
+  }
+
+  // A fork outranks lagging: it is the answer that changes what a caller does.
+  if (forks.length > 0) return { kind: 'forked', forks: [...forks].sort(byChain) };
+  if (behind.length > 0) return { kind: 'behind', chains: behind.sort() };
+  return { kind: 'covered' };
+}
+
 /** True if the two peers hold the same thing and nothing needs to move. */
 export function inSync(r: Reconciliation): boolean {
   return r.send.length === 0 && r.want.length === 0;

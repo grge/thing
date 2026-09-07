@@ -134,7 +134,46 @@ export interface NoBlob {
   readonly hash: string;
 }
 
-export type ControlMessage = Hello | Events | Want | Forked | WantBlob | NoBlob;
+/**
+ * Ask whether the peer is as recent as this vector (§2.3.1).
+ *
+ * `HELLO` carries a vector too, but only once, at open. A writer that connects,
+ * writes, and wants to know whether the write landed is asking about a moment
+ * strictly after the handshake, which needs a question that can be asked again.
+ *
+ * `id` pairs the answer with the question, so several may be outstanding and a
+ * late reply to an abandoned one is recognisable.
+ */
+export interface Synced {
+  readonly type: 'SYNCED?';
+  readonly id: number;
+  readonly vv: WireVersionVector;
+}
+
+/**
+ * The answer: whether that vector is covered, and what is missing if not.
+ *
+ * `behind` names the chains the peer lacks and `forked` the ones it disagrees
+ * with — a fork is not lag and no amount of waiting resolves it, so a caller
+ * that polls needs to be able to tell them apart.
+ */
+export interface SyncedIs {
+  readonly type: 'SYNCED';
+  readonly id: number;
+  readonly covered: boolean;
+  readonly behind?: readonly string[];
+  readonly forked?: readonly string[];
+}
+
+export type ControlMessage =
+  | Hello
+  | Events
+  | Want
+  | Forked
+  | WantBlob
+  | NoBlob
+  | Synced
+  | SyncedIs;
 
 /* ── ephemeral messages ─────────────────────────────────────────────────── */
 

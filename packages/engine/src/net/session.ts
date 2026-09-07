@@ -25,7 +25,14 @@ import {
   PROTOCOL_VERSION,
   type WireVersionVector,
 } from './protocol.js';
-import { frontiersOf, PendingEvents, reconcile, type Divergence } from './sync.js';
+import {
+  type Coverage,
+  covers,
+  frontiersOf,
+  PendingEvents,
+  reconcile,
+  type Divergence,
+} from './sync.js';
 import { fromWire, toWire, vvToWire } from './wire.js';
 
 export interface SessionOptions {
@@ -60,6 +67,16 @@ export class Session {
   private readonly reportedForks = new Set<string>();
   private greeted = false;
   private closed = false;
+
+  /**
+   * Questions asked and not yet answered (§2.3.1), by id.
+   *
+   * Kept so a reply can be matched to its asker: several may be outstanding,
+   * and a connection that closes must fail them rather than leave a caller
+   * waiting on a peer that has gone.
+   */
+  private readonly asked = new Map<number, (answer: Coverage) => void>();
+  private nextAsk = 1;
 
   constructor(
     private readonly store: SpaceStore,
@@ -176,6 +193,45 @@ export class Session {
 
       case 'NO_BLOB': {
         this.blobs.cancel(msg.hash);
+        return;
+      }
+
+      case 'SYNCED?': {
+        // Answered from the store, not from anything this session remembers:
+        // the question is about what the peer *holds*, and the store is the
+        // only thing that knows.
+        const answer = covers(vvToWire(await this.store.versionVector()), msg.vv);
+        this.send({
+          type: 'SYNCED',
+          id: msg.id,
+          covered: answer.kind === 'covered',
+          ...(answer.kind === 'behind' ? { behind: answer.chains } : {}),
+          ...(answer.kind === 'forked' ? { forked: answer.forks.map((f) => f.chain) } : {}),
+        });
+        return;
+      }
+
+      case 'SYNCED': {
+        const waiting = this.asked.get(msg.id);
+        if (waiting === undefined) return; // A late reply to something abandoned.
+        this.asked.delete(msg.id);
+        waiting(
+          msg.covered
+            ? { kind: 'covered' }
+            : msg.forked !== undefined && msg.forked.length > 0
+              ? {
+                  kind: 'forked',
+                  // The chains are what crossed the wire; the tips are not, and
+                  // are not needed to know that waiting is pointless.
+                  forks: msg.forked.map((chain) => ({
+                    chain,
+                    frontier: -1,
+                    mine: '',
+                    theirs: '',
+                  })),
+                }
+              : { kind: 'behind', chains: msg.behind ?? [] },
+        );
         return;
       }
     }
@@ -300,6 +356,26 @@ export class Session {
     }
   }
 
+  /**
+   * Ask whether this peer is at least as recent as `mine` (§2.3.1).
+   *
+   * The condition under which a writer may go away: if the answer is covered,
+   * this peer is not relying on the asker for anything in that vector.
+   *
+   * `mine` is passed in rather than read here, deliberately. A writer that
+   * keeps writing while it waits would never settle against its own moving
+   * vector, so the caller captures the moment it cares about and asks about
+   * that (§2.3.1's *against a snapshot, not the present*).
+   */
+  askSynced(mine: WireVersionVector): Promise<Coverage> {
+    if (this.closed) return Promise.resolve({ kind: 'behind', chains: Object.keys(mine) });
+    const id = this.nextAsk++;
+    return new Promise<Coverage>((resolve) => {
+      this.asked.set(id, resolve);
+      this.send({ type: 'SYNCED?', id, vv: mine });
+    });
+  }
+
   /** Ask a peer for a blob, resuming where an earlier attempt stopped. */
   requestBlob(hash: Uint8Array): void {
     const h = hex(hash);
@@ -330,6 +406,11 @@ export class Session {
 
   close(): void {
     this.closed = true;
+    // Answer whatever is outstanding rather than leaving it pending: a peer
+    // that has gone will never reply, and a caller waiting on a dead
+    // connection is the failure this whole question exists to prevent.
+    for (const [, resolve] of this.asked) resolve({ kind: 'behind', chains: [] });
+    this.asked.clear();
     this.ephemeral.forget(this.options.peer);
   }
 

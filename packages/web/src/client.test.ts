@@ -645,6 +645,7 @@ describe('connecting', () => {
    * `join` wires delivery and `attach` does not, asserted on handler counts
    * where both are reachable.
    */
+  it.skip('dialling wires frame delivery — see the note above', () => {});
 });
 
 describe('share links', () => {

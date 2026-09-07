@@ -278,6 +278,47 @@ loudly. `grep -c` returning 0 and grep declining to read the file look identical
 Not lessons from what went wrong — things worth building that came up while
 doing something else. Recorded at the level of the idea; none is designed.
 
+## 13. A test that passes without the code is not a test
+
+The `--at` work added a wait: the CLI must not exit until the holder confirms it
+has the write. The obvious test wrote a file through a running server and
+asserted the file was there when the command returned. It passed.
+
+It also passed with the wait **deleted**. On loopback the events arrive before
+any assertion can run, so the race is won either way, and the test was measuring
+delivery — which already worked — rather than confirmation, which was the new
+thing. Six integration tests, one of them asserting the central claim, and that
+one was worth nothing.
+
+What made it checkable was removing the timing question entirely: a fake
+connection that **stalls** — holds frames until released. While stalled the peer
+*provably* does not have the events, so `covered` would be a lie rather than a
+race won, and no wall-clock assumption is involved.
+
+Two things fell out of it immediately:
+
+- **A real bug.** With frames stalled, `askSynced` never resolved, and the wait
+  loop only checked its deadline *between* rounds — so an open-but-silent peer
+  hung the CLI forever. Every fast-wire test had missed it because no peer was
+  ever slow. Silence needed to count as "behind", which is now what it does.
+- **A false premise in another test.** The multi-peer test claimed the unstalled
+  peer was caught up, so an implementation satisfied by *any* peer would wrongly
+  pass. It was not caught up — the assertion ran too early — so both peers were
+  behind and the test proved nothing. Mutating the code to `answers.some(covered)`
+  showed it surviving; adding a wait for the first peer made it fail properly.
+
+**The habit worth keeping: break the code and check the test notices.** It costs
+one `git stash`-shaped edit and it is the only thing that distinguishes a test
+from a comment that runs. Both problems here were invisible while everything was
+green.
+
+A corollary about what a level of testing can honestly claim. The CLI test now
+says so out loud: the positive claim — a zero exit *means* the peer has it — is
+untestable over a real socket, and lives in `client.test.ts` where the wire can
+be stalled. What the CLI test proves is the other half, that an absent holder
+yields a non-zero exit. Better a narrow true claim than a broad one that passes
+for the wrong reason.
+
 ## The nuclear revoke
 
 **The problem it answers.** `deps` (see `DEPS.md`) narrows backdating without

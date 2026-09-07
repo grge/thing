@@ -18,6 +18,13 @@
  *   thing key                          this peer's space key, for sharing
  * ```
  *
+ * **Writing commands take `--at <url>`.** Per-process append points (§2.1) mean
+ * a one-shot write never contends with a running `serve`, but they do not make
+ * that holder *notice* — it serves what it loaded. `--at` dials the holder so
+ * the write reaches it live, and the command then waits for it to confirm
+ * (§2.3.1) rather than exiting on its own append, which would say nothing about
+ * whether the write arrived anywhere.
+ *
  * **Administration is the CLI's alone** (`docs/MAIN-SPACE.md`). Space authority
  * — who may write — cannot answer operator questions like *may you shut this
  * down*, and the two do not coincide: a hub's curators should not be able to
@@ -81,8 +88,20 @@ async function setMainSpace(dir: string, key: Uint8Array): Promise<void> {
   await writeFile(join(dir, SPACE_FILE), `${hex(key)}\n`);
 }
 
-/** Open this peer's space, or explain why not. */
-async function openMain(dir: string): Promise<{ server: Server; space: Space } | null> {
+/**
+ * Open this peer's space, or explain why not.
+ *
+ * `at` dials a running holder of the same space first. A one-shot command
+ * writes to its own store either way — per-process append points mean two
+ * processes writing one space extend separate chains and never contend
+ * (§2.1) — but a holder that is already running will not notice those writes
+ * on its own. Dialling it is what closes that gap, and `finish` is what waits
+ * for it to actually land.
+ */
+async function openMain(
+  dir: string,
+  at?: string,
+): Promise<{ server: Server; space: Space; at: string | null } | null> {
   const key = await mainSpace(dir);
   if (key === null) {
     process.stderr.write('no space here yet — run `thing init`\n');
@@ -95,7 +114,54 @@ async function openMain(dir: string): Promise<{ server: Server; space: Space } |
     await server.close();
     return null;
   }
-  return { server, space };
+
+  const url = at === undefined || at === '' ? null : at;
+  if (url !== null) {
+    try {
+      await server.connect(url);
+    } catch (err) {
+      await server.close();
+      process.stderr.write(
+        `could not reach ${url}: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      return null;
+    }
+  }
+  return { server, space, at: url };
+}
+
+/**
+ * Close a one-shot command, waiting for a dialled holder to catch up (§2.3.1).
+ *
+ * Without the wait this exits the moment its *own* append returns, which says
+ * nothing about whether the holder got it — the connection could have dropped
+ * between dialling and writing and this would still report success. The
+ * question asked is the honest one: *is your version vector at least as recent
+ * as mine?*
+ *
+ * Returns the exit code, because a write that did not reach the peer it was
+ * pointed at has not done what was asked, and a script needs to know.
+ */
+async function finish(opened: { server: Server; at: string | null }): Promise<number> {
+  if (opened.at === null) {
+    await opened.server.close();
+    return 0;
+  }
+  try {
+    const result = await opened.server.synced();
+    if (result.kind === 'covered') return 0;
+    if (result.kind === 'forked') {
+      // Waiting cannot resolve this, so it is reported rather than retried
+      // (§2.3). It means a key equivocated or a store was rolled back.
+      const chains = result.forks.map((f) => f.chain.slice(0, 16)).join(', ');
+      process.stderr.write(`chain forked, so ${opened.at} will not converge: ${chains}\n`);
+      return 1;
+    }
+    process.stderr.write(`${opened.at} did not catch up in time\n`);
+    return 1;
+  } finally {
+    await opened.server.close();
+  }
 }
 
 /**
@@ -220,19 +286,21 @@ export async function main(argv: readonly string[]): Promise<number> {
         process.stderr.write('usage: thing link <name> <key>\n');
         return 2;
       }
-      const opened = await openMain(dir);
+      const opened = await openMain(dir, flags['at']);
       if (opened === null) return 1;
+      let wrote = false;
       try {
         if (!opened.space.writable) {
           process.stderr.write('this peer cannot write to its space\n');
           return 1;
         }
         await makeLink(opened.space, name, fromHex(key));
+        wrote = true;
         process.stdout.write(`linked ${name}\n`);
-        return 0;
       } finally {
-        await opened.server.close();
+        if (!wrote) await opened.server.close();
       }
+      return finish(opened);
     }
 
     case 'unlink': {
@@ -241,8 +309,9 @@ export async function main(argv: readonly string[]): Promise<number> {
         process.stderr.write('usage: thing unlink <name>\n');
         return 2;
       }
-      const opened = await openMain(dir);
+      const opened = await openMain(dir, flags['at']);
       if (opened === null) return 1;
+      let wrote = false;
       try {
         const found = links(opened.space.state).find((l) => l.entry.name === name);
         if (found === undefined) {
@@ -252,11 +321,12 @@ export async function main(argv: readonly string[]): Promise<number> {
         // §7.2.3's shape: removal stops it being listed, and does not unwrite
         // the fact that it was there.
         await opened.space.write(found.entry.id, ':deleted', Uint8Array.of(1));
+        wrote = true;
         process.stdout.write(`unlinked ${name}\n`);
-        return 0;
       } finally {
-        await opened.server.close();
+        if (!wrote) await opened.server.close();
       }
+      return finish(opened);
     }
 
     case 'put': {
@@ -265,8 +335,9 @@ export async function main(argv: readonly string[]): Promise<number> {
         process.stderr.write('usage: thing put <file> [--as name]\n');
         return 2;
       }
-      const opened = await openMain(dir);
+      const opened = await openMain(dir, flags['at']);
       if (opened === null) return 1;
+      let wrote = false;
       try {
         if (!opened.space.writable) {
           process.stderr.write('this peer cannot write to its space\n');
@@ -275,11 +346,12 @@ export async function main(argv: readonly string[]): Promise<number> {
         const bytes = new Uint8Array(await readFile(path));
         const name = flags['as'] ?? basename(path);
         await makeFile(opened.space, name, bytes);
+        wrote = true;
         process.stdout.write(`wrote ${name} (${bytes.length} bytes)\n`);
-        return 0;
       } finally {
-        await opened.server.close();
+        if (!wrote) await opened.server.close();
       }
+      return finish(opened);
     }
 
     case 'get': {
@@ -375,6 +447,11 @@ const USAGE = `thing — one space, and links to others
   thing link <name> <key>            add a link to another space
   thing unlink <name>                remove one
   thing links                        every link this peer holds
+
+Writing commands take --at <url> to reach a peer already serving this
+space: the write goes to the running holder and this exits once that
+holder confirms it has it. Without --at the write lands on disk, and a
+running holder will not see it until restarted.
 
 A peer holds one space. Other spaces are links inside it.
 Administration is local: this CLI, on this machine.

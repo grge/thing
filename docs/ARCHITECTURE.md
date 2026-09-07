@@ -117,8 +117,7 @@ The substrate stores and replicates events. It never reads a value.
 
 Signed events, per-writer chains, version-vector reconciliation and chunked blob
 transfer with resume and backpressure are all implemented and working. This is
-the part of the design with the least risk attached. The one exception is
-§2.3.1, which is settled on paper and has no code.
+the part of the design with the least risk attached.
 
 ### 2.1 Events
 
@@ -270,7 +269,7 @@ change to this vocabulary and the two share a shape: both need a peer to say
 something about a range it cannot simply serve. Building either alone would mean
 revising the wire format twice.
 
-### 2.3.1 What a writer can learn about a peer — **Decided, not built**
+### 2.3.1 What a writer can learn about a peer — **Proven**
 
 Reconciliation says how two peers converge. It does not say how a writer learns
 that its write reached anywhere, and every client so far has quietly assumed it
@@ -327,6 +326,15 @@ only in memory. Not that anyone else has them. Not that they were *folded* —
 storage admits events the fold may still reject (§7.2.1), so a covered vector
 means received, never accepted. A client that needs to know its change took
 effect must read the state back, and that is a different question from this one.
+
+**A peer too old to answer looks the same as one that is behind**, since an
+unknown control message is ignored rather than refused. That is the correct
+default — silence must count as *not yet*, or a write is reported as landed when
+it went nowhere — but it means a caller cannot tell "still catching up" from
+"does not speak this". Observed the first time this ran against a holder started
+before the message existed. Distinguishing the two needs a capability in the
+handshake, which is not worth a protocol version on its own and should be
+carried by whatever next changes `HELLO`.
 
 The substrate verifies three things and no others:
 

@@ -729,15 +729,28 @@ trip. Ship the fold.
 have to go through the holder, so the socket carries administration and the view
 model because that is what is *left*, not because editing was excluded from it.
 
-**And what that opened.** A writer that no longer goes through the holder also
-no longer learns whether the holder got its write — it appends locally and
-exits. §2.3.1 settles the question that closes this: *is your version vector at
-least as recent as mine?*, answered by one peer about itself. It needs a
-request/response pair on the wire (`HELLO` carries a vector only at open, and
-this asks about a moment after the handshake), and then the exit condition for a
-one-shot write is "the holder covers what I wrote" rather than "my own append
-returned". Both the CLI and the web client want it, so it belongs here rather
-than in either.
+**And what that opened — now built.** A writer that no longer goes through the
+holder also no longer learns whether the holder got its write. §2.3.1's question
+— *is your version vector at least as recent as mine?* — is now `SYNCED?`/
+`SYNCED` on the wire, `covers()` in `net/sync.ts`, and `Client.synced()`, with
+`thing put|link|unlink --at <url>` as the caller: the write goes to the running
+holder and the command exits only once that holder confirms.
+
+Four notes:
+
+- **`--at` belongs to writing, not to `put`.** It is a parameter of `openMain`,
+  so `link` and `unlink` got it without code of their own. The alternative — a
+  flag per command — would have been the same plumbing three times.
+- **Silence counts as behind.** An open connection that never answers is
+  indistinguishable from a healthy one, so each question is bounded by the
+  caller's deadline. Found by a stalling test; without it the CLI hung forever
+  on a wedged peer. See LEARNINGS §13.
+- **Every session, not the first.** A client connected to two holders that exits
+  when one is caught up has told the other nothing.
+- **What is still not built:** the holder noticing a write made *beside* it, with
+  no `--at`. That remains a restart, and it is the same notification gap — `--at`
+  routes around it rather than closing it. Closing it needs the control socket,
+  which is the rest of this stage.
 
 ## Stage 8 — Resolution and the mesh
 

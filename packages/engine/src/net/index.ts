@@ -57,6 +57,8 @@ export {
 export { Session, type SessionOptions } from './session.js';
 
 export {
+  type Coverage,
+  covers,
   type Divergence,
   frontiersOf,
   inSync,

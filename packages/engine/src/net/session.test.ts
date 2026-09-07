@@ -21,6 +21,7 @@ import { describe, expect, it } from 'vitest';
 import { haveMessage, presenceMessage } from './ephemeral.js';
 import { Session } from './session.js';
 import { ChannelPair, channelPair } from './testwire.js';
+import { vvToWire } from './wire.js';
 import type { Divergence } from './sync.js';
 
 const UTF8 = new TextEncoder();
@@ -255,6 +256,131 @@ describe('forks', () => {
     expect(a.forks.length).toBeGreaterThan(0);
     const vvB = await b.store.versionVector();
     expect(vvB.get(third.chain)?.frontier).toBe(2);
+  });
+});
+
+describe('asking whether a peer is caught up (§2.3.1)', () => {
+  it('answers covered once the peer has everything', async () => {
+    const space = await keyPairFromSeed(labelled('space', SEED_LEN));
+    const a = await makePeer(space, space);
+    const b = await makePeer(space, space);
+
+    for (let i = 0; i < 3; i++) await write(a, ':name', `v${i}`, i);
+
+    const wire = await connect(a, b);
+    await wire.a.start();
+    await wire.settle();
+
+    const mine = vvToWire(await a.store.versionVector());
+    const answer = wire.a.askSynced(mine);
+    await wire.settle();
+    expect((await answer).kind).toBe('covered');
+  });
+
+  it('answers behind while the peer is still missing events', async () => {
+    // Asked *before* anything is exchanged, so the peer genuinely has nothing.
+    // This is the case the whole question exists for: the write is in my store
+    // and has reached no one.
+    const space = await keyPairFromSeed(labelled('space', SEED_LEN));
+    const a = await makePeer(space, space);
+    const b = await makePeer(space, space);
+
+    await write(a, ':name', 'unshared', 0);
+
+    const wire = await connect(a, b);
+    const mine = vvToWire(await a.store.versionVector());
+    // No `start()`: no HELLO, so no reconciliation has happened.
+    const answer = wire.a.askSynced(mine);
+    await wire.settle();
+
+    const got = await answer;
+    expect(got.kind).toBe('behind');
+    if (got.kind !== 'behind') throw new Error('unreachable');
+    expect(got.chains).toHaveLength(1);
+  });
+
+  it('goes from behind to covered as the events land', async () => {
+    const space = await keyPairFromSeed(labelled('space', SEED_LEN));
+    const a = await makePeer(space, space);
+    const b = await makePeer(space, space);
+    await write(a, ':name', 'eventually', 0);
+
+    const wire = await connect(a, b);
+    const mine = vvToWire(await a.store.versionVector());
+
+    const before = wire.a.askSynced(mine);
+    await wire.settle();
+    expect((await before).kind).toBe('behind');
+
+    await wire.a.start();
+    await wire.settle();
+
+    const after = wire.a.askSynced(mine);
+    await wire.settle();
+    expect((await after).kind).toBe('covered');
+  });
+
+  it('reports a fork rather than waiting on one', async () => {
+    // Staged by putting both peers on one append point, since honest software
+    // no longer produces a fork. Waiting would never resolve it.
+    const space = await keyPairFromSeed(labelled('space', SEED_LEN));
+    const shared = point('shared');
+    const a = await makePeer(space, space, shared);
+    const b = await makePeer(space, space, shared);
+
+    await write(a, ':name', 'mine', 0);
+    await write(b, ':name', 'theirs', 0);
+
+    const wire = await connect(a, b);
+    const mine = vvToWire(await a.store.versionVector());
+    const answer = wire.a.askSynced(mine);
+    await wire.settle();
+    expect((await answer).kind).toBe('forked');
+  });
+
+  it('answers an outstanding question when the connection closes', async () => {
+    // Otherwise a caller waits forever on a peer that has gone — which is the
+    // failure this question exists to prevent, arrived at from the other side.
+    const space = await keyPairFromSeed(labelled('space', SEED_LEN));
+    const a = await makePeer(space, space);
+    const b = await makePeer(space, space);
+    await write(a, ':name', 'x', 0);
+
+    const wire = await connect(a, b);
+    const answer = wire.a.askSynced(vvToWire(await a.store.versionVector()));
+    wire.a.close();
+    expect((await answer).kind).toBe('behind');
+  });
+
+  it('can be asked more than once on one connection', async () => {
+    // The reason this is not `HELLO`: that carries a vector once, at open, and
+    // a writer asking about a moment after the handshake needs to ask again.
+    const space = await keyPairFromSeed(labelled('space', SEED_LEN));
+    const a = await makePeer(space, space);
+    const b = await makePeer(space, space);
+
+    const wire = await connect(a, b);
+    await wire.a.start();
+    await wire.settle();
+
+    const first = wire.a.askSynced(vvToWire(await a.store.versionVector()));
+    await wire.settle();
+    expect((await first).kind).toBe('covered');
+
+    // A write *after* the handshake — exactly what HELLO could never cover.
+    await write(a, ':name', 'later', 1);
+    const mine = vvToWire(await a.store.versionVector());
+
+    const second = wire.a.askSynced(mine);
+    await wire.settle();
+    expect((await second).kind).toBe('behind');
+
+    wire.a.push([a.events[a.events.length - 1]!]);
+    await wire.settle();
+
+    const third = wire.a.askSynced(mine);
+    await wire.settle();
+    expect((await third).kind).toBe('covered');
   });
 });
 

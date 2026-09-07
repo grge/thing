@@ -19,6 +19,7 @@
 import {
   Client,
   type ClientObserver,
+  type Coverage,
   hex,
   type KeyPair,
   type PublicKey,
@@ -27,7 +28,7 @@ import {
 
 import { FileStore } from './filestore.js';
 import { FileKeyring } from './local.js';
-import { PeerServer } from './transport.js';
+import { dial, PeerServer } from './transport.js';
 
 export interface ServerOptions {
   /** Where the store, keys and everything else live. */
@@ -80,6 +81,31 @@ export class Server {
       this.listener.onConnection((conn) => this.client.adopt(conn));
       await this.listener.ready();
     }
+  }
+
+  /**
+   * Dial another holder of this space (§5.6).
+   *
+   * **`join`, not `adopt`.** A dialled connection has to be attached to the
+   * space it is for, and `join` is what wires frame delivery to a session; a
+   * caller that dials and forgets that gets a connection which opens, greets,
+   * and then silently delivers nothing.
+   */
+  async connect(url: string): Promise<void> {
+    if (this.held === null) throw new Error('not started');
+    const conn = await dial(url);
+    await this.client.join(hex(this.options.space), conn);
+  }
+
+  /**
+   * Wait until every connected peer holds what this one has written (§2.3.1).
+   *
+   * What a one-shot write needs before it exits: not "my append returned" but
+   * "the holder I was pointed at is no longer relying on me".
+   */
+  async synced(options: { timeoutMs?: number } = {}): Promise<Coverage> {
+    if (this.held === null) return { kind: 'behind', chains: [] };
+    return this.client.synced(hex(this.options.space), options);
   }
 
   /** The space this peer serves. Null before `start`. */

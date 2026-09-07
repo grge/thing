@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { generateKeyPair, hex } from '../core/index.js';
+import { generateKeyPair, hex, ROOT } from '../core/index.js';
 import { MemoryStore } from '../store/index.js';
 import { connectionPair as pair, until } from '../net/testwire.js';
 import { Client } from './client.js';
@@ -110,6 +110,95 @@ describe('Client', () => {
     expect(b.space(id)?.state.root.get(':name')?.value).toBe('later');
     await a.close();
     await b.close();
+  });
+
+  it('does not report synced while the peer cannot have the events (§2.3.1)', async () => {
+    // The claim `--at` rests on: when `synced` resolves covered, the peer
+    // holds the write. Stalling the wire makes that checkable without timing —
+    // while frames are held, the peer provably has nothing, so a `covered`
+    // here would be a lie rather than a race won.
+    const key = await generateKeyPair();
+    const a = new Client({ store: new MemoryStore() });
+    const b = new Client({ store: new MemoryStore() });
+    const id = hex(key.publicKey);
+
+    await a.hold(key.publicKey, key);
+    await b.hold(key.publicKey);
+
+    const [x, y] = pair();
+    await a.join(id, x);
+    await b.join(id, y);
+    await until(() => b.space(id) !== null);
+
+    x.stall();
+    await a.space(id)!.write(ROOT, ':name', new TextEncoder().encode('held'));
+
+    const answer = await a.synced(id, { timeoutMs: 60 });
+    expect(answer.kind).toBe('behind');
+    // And the peer really did not have it, which is what makes that correct.
+    expect(b.space(id)?.state.root.get(':name')?.value).not.toBe('held');
+
+    await x.release();
+    expect((await a.synced(id, { timeoutMs: 500 })).kind).toBe('covered');
+    expect(b.space(id)?.state.root.get(':name')?.value).toBe('held');
+
+    await a.close();
+    await b.close();
+  });
+
+  it('reports behind rather than covered with no peers at all', async () => {
+    // A client that wrote and is connected to nobody has told nobody. Saying
+    // "covered" because no peer disagreed is the exact lie §2.3.1 exists to
+    // prevent.
+    const key = await generateKeyPair();
+    const client = new Client({ store: new MemoryStore() });
+    const id = hex(key.publicKey);
+    await client.hold(key.publicKey, key);
+    await client.space(id)!.write(ROOT, ':name', new TextEncoder().encode('alone'));
+
+    expect((await client.synced(id, { timeoutMs: 50 })).kind).toBe('behind');
+    await client.close();
+  });
+
+  it('waits for every connected peer, not the first to answer', async () => {
+    // A client connected to two holders that exits when one is caught up has
+    // told the other nothing.
+    const key = await generateKeyPair();
+    const id = hex(key.publicKey);
+    const a = new Client({ store: new MemoryStore() });
+    const b = new Client({ store: new MemoryStore() });
+    const c = new Client({ store: new MemoryStore() });
+
+    await a.hold(key.publicKey, key);
+    await b.hold(key.publicKey);
+    await c.hold(key.publicKey);
+
+    const [toB, fromA1] = pair('a-b', 'b-a');
+    const [toC, fromA2] = pair('a-c', 'c-a');
+    await a.join(id, toB);
+    await b.join(id, fromA1);
+    await a.join(id, toC);
+    await c.join(id, fromA2);
+    await until(() => b.space(id) !== null && c.space(id) !== null);
+
+    // Only the second peer is stalled.
+    toC.stall();
+    await a.space(id)!.write(ROOT, ':name', new TextEncoder().encode('both'));
+
+    // The unstalled peer really is caught up, so an implementation satisfied
+    // by *any* peer would answer covered here. That is what makes this a test
+    // of "every peer" rather than of stalling.
+    await until(() => b.space(id)?.state.root.get(':name')?.value === 'both');
+    expect(c.space(id)?.state.root.get(':name')?.value).toBeUndefined();
+
+    expect((await a.synced(id, { timeoutMs: 60 })).kind).toBe('behind');
+
+    await toC.release();
+    expect((await a.synced(id, { timeoutMs: 500 })).kind).toBe('covered');
+
+    await a.close();
+    await b.close();
+    await c.close();
   });
 
   it('refuses an adopted connection for a space it does not hold', async () => {

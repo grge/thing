@@ -6,7 +6,7 @@
  * as two peers quietly failing to converge.
  */
 import { describe, expect, it } from 'vitest';
-import { frontiersOf, inSync, PendingEvents, reconcile } from './sync.js';
+import { covers, frontiersOf, inSync, PendingEvents, reconcile } from './sync.js';
 import type { WireVersionVector } from './protocol.js';
 
 const A = 'aaaa';
@@ -95,6 +95,69 @@ describe('reconcile', () => {
 
     expect(forward.send).toEqual(backward.want);
     expect(forward.want).toEqual(backward.send);
+  });
+});
+
+describe('covers (§2.3.1)', () => {
+  it('is covered when the peer holds exactly what I do', () => {
+    const mine = vv({ a: [3, 'x'] });
+    expect(covers(mine, mine).kind).toBe('covered');
+  });
+
+  it('is covered when the peer is ahead on my chain', () => {
+    // Their tip at 5 is at a position my vector does not describe, so it says
+    // nothing — being further along the same chain is not a disagreement.
+    const theirs = vv({ a: [5, 'later'] });
+    expect(covers(theirs, vv({ a: [3, 'x'] })).kind).toBe('covered');
+  });
+
+  it('ignores chains only the peer holds', () => {
+    // The whole point of coverage over equality: a peer that has been running
+    // longer holds writes from others, and requiring equality would mean this
+    // never passes on a space anyone else is using.
+    const theirs = vv({ a: [3, 'x'], b: [9, 'other'] });
+    expect(covers(theirs, vv({ a: [3, 'x'] })).kind).toBe('covered');
+  });
+
+  it('is behind when the peer lacks a chain entirely', () => {
+    const answer = covers(vv({}), vv({ a: [0, 'x'] }));
+    expect(answer).toEqual({ kind: 'behind', chains: ['a'] });
+  });
+
+  it('is behind when the peer is short on a chain', () => {
+    const answer = covers(vv({ a: [1, 'x'] }), vv({ a: [4, 'x'] }));
+    expect(answer).toEqual({ kind: 'behind', chains: ['a'] });
+  });
+
+  it('names every chain that is behind, sorted', () => {
+    const answer = covers(vv({ b: [0, 'y'] }), vv({ b: [2, 'y'], a: [1, 'x'] }));
+    expect(answer).toEqual({ kind: 'behind', chains: ['a', 'b'] });
+  });
+
+  it('reports a fork rather than calling it lag', () => {
+    // Same frontier, different history. No amount of waiting resolves this, so
+    // a caller that polls has to be able to tell it apart from being behind.
+    const answer = covers(vv({ a: [3, 'theirs'] }), vv({ a: [3, 'mine'] }));
+    expect(answer.kind).toBe('forked');
+    if (answer.kind !== 'forked') throw new Error('unreachable');
+    expect(answer.forks[0]).toEqual({
+      chain: 'a',
+      frontier: 3,
+      mine: 'mine',
+      theirs: 'theirs',
+    });
+  });
+
+  it('a fork outranks a chain that is merely behind', () => {
+    // Because it changes what the caller should do: waiting fixes one and
+    // never fixes the other.
+    const answer = covers(vv({ a: [3, 'theirs'], b: [0, 'y'] }), vv({ a: [3, 'mine'], b: [5, 'y'] }));
+    expect(answer.kind).toBe('forked');
+  });
+
+  it('an empty vector is covered by anything', () => {
+    // A writer that wrote nothing is owed nothing.
+    expect(covers(vv({}), vv({})).kind).toBe('covered');
   });
 });
 

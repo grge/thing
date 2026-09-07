@@ -21,7 +21,8 @@
  */
 import { type Event, hex, type KeyPair, type PublicKey } from '../core/index.js';
 import { Session } from '../net/session.js';
-import type { Divergence } from '../net/sync.js';
+import type { Coverage, Divergence } from '../net/sync.js';
+import { vvToWire } from '../net/wire.js';
 import type { SpaceId, SpaceStore } from '../store/index.js';
 import { Space } from '../space.js';
 import {
@@ -379,6 +380,64 @@ export class Client {
     }
   }
 
+  /**
+   * Wait until a peer holds everything this client has written (§2.3.1).
+   *
+   * The condition under which a writer may go away. Resolves when every
+   * connected peer's vector covers the one captured at the moment of the call
+   * — so a caller writes, then waits, then exits, and knows the holder is not
+   * relying on it.
+   *
+   * **The vector is captured once, up front.** Asking about "now" each round
+   * would never settle on a space this client keeps writing to (§2.3.1's
+   * *against a snapshot, not the present*).
+   *
+   * **Every session, not the first.** A client connected to two holders that
+   * exits when one is caught up has told the other nothing. Waiting on all of
+   * them is what "safe to disconnect" means for the connections it actually
+   * has — it says nothing about peers it never spoke to, which is §2.3.1's
+   * whole point about what a single peer can claim.
+   *
+   * Returns what stopped it: `covered` when all agreed, `behind` on timeout
+   * naming what was still missing, `forked` if any chain diverged — which no
+   * amount of waiting resolves, so it stops rather than spinning.
+   */
+  async synced(id: SpaceId, options: { timeoutMs?: number } = {}): Promise<Coverage> {
+    const entry = this.held.get(id);
+    if (entry === undefined) return { kind: 'behind', chains: [] };
+
+    const mine = vvToWire(await entry.space.versionVector());
+    const deadline = Date.now() + (options.timeoutMs ?? 10_000);
+
+    for (;;) {
+      const live = [...entry.sessions.values()].filter((s) => !s.isClosed);
+      // Nothing to wait for. Not "covered": no peer has said anything, and
+      // reporting success would be the exact lie this exists to prevent.
+      if (live.length === 0) return { kind: 'behind', chains: Object.keys(mine) };
+
+      // Bounded, because a question can go unanswered: a stalled or wedged
+      // connection is still open, so a peer that never replies would hang this
+      // forever rather than reporting what is missing. An unanswered question
+      // counts as behind, which is what it means.
+      const remaining = Math.max(0, deadline - Date.now());
+      const answers = await Promise.all(
+        live.map((s) => withDeadline(s.askSynced(mine), remaining, Object.keys(mine))),
+      );
+
+      const forked = answers.flatMap((a) => (a.kind === 'forked' ? a.forks : []));
+      if (forked.length > 0) return { kind: 'forked', forks: forked };
+
+      const behind = new Set(answers.flatMap((a) => (a.kind === 'behind' ? a.chains : [])));
+      if (behind.size === 0) return { kind: 'covered' };
+
+      if (Date.now() >= deadline) return { kind: 'behind', chains: [...behind].sort() };
+
+      // The peer is lagging, not broken: it has our events queued or is still
+      // applying them. Give it a moment rather than spinning on the question.
+      await new Promise<void>((r) => setTimeout(() => r(), 50));
+    }
+  }
+
   /** What each connected peer says it holds, for a space (§2.4, §10). */
   availability(id: SpaceId): { peer: string; blobs: number }[] {
     const entry = this.held.get(id);
@@ -427,4 +486,32 @@ export function spaceFromHello(data: Uint8Array): SpaceId | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * A coverage answer, or `behind` if the peer does not reply in time.
+ *
+ * Silence is not consent: a connection that is open but not delivering looks
+ * exactly like one that is, and treating an unanswered question as anything
+ * but "not yet" would report a write as landed when it went nowhere.
+ */
+function withDeadline(
+  answer: Promise<Coverage>,
+  ms: number,
+  chains: readonly string[],
+): Promise<Coverage> {
+  return new Promise<Coverage>((resolve) => {
+    // A settled flag rather than `clearTimeout`, which `platform.d.ts`
+    // deliberately does not declare: the engine may touch only what both
+    // runtimes genuinely provide, and a stray timer that fires after the
+    // answer is harmless as long as it cannot resolve twice.
+    let settled = false;
+    const finish = (a: Coverage): void => {
+      if (settled) return;
+      settled = true;
+      resolve(a);
+    };
+    setTimeout(() => finish({ kind: 'behind', chains }), ms);
+    void answer.then(finish);
+  });
 }

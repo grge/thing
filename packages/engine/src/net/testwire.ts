@@ -118,6 +118,18 @@ export interface FakeConnection extends ConnectionLike {
    * store deduplicates, so nothing fails — it just does the work twice.
    */
   readonly handlers: { frames: number; closes: number };
+  /**
+   * Hold frames from this endpoint until `release` is called.
+   *
+   * For asserting that a caller *waited* rather than merely that it eventually
+   * arrived. On a fake transport delivery is fast enough that a test which
+   * checks state after a call passes whether or not the call waited — the race
+   * is always won. Stalling makes the difference observable without depending
+   * on timing at all: while stalled the peer cannot have the events, so
+   * anything that claims otherwise is wrong.
+   */
+  stall(): void;
+  release(): Promise<void>;
 }
 
 function endpoint(name: string): FakeConnection & { link(peer: FakeConnection): void } {
@@ -126,12 +138,18 @@ function endpoint(name: string): FakeConnection & { link(peer: FakeConnection): 
   let other: FakeConnection | null = null;
   /** Rule 2: one frame at a time, in order. */
   let queue: Promise<void> = Promise.resolve();
+  /** Frames held back by `stall`, in send order. */
+  let stalled: Uint8Array[] | null = null;
 
   const self = {
     peer: name,
     channel: {
       send(frame: Uint8Array): void {
         const copy = frame.slice(); // rule 3
+        if (stalled !== null) {
+          stalled.push(copy);
+          return;
+        }
         // rule 1: a turn later, never inside `send`.
         queue = queue.then(async () => {
           await other?.deliver(copy);
@@ -162,6 +180,20 @@ function endpoint(name: string): FakeConnection & { link(peer: FakeConnection): 
     },
     link(peer: FakeConnection): void {
       other = peer;
+    },
+    stall(): void {
+      stalled ??= [];
+    },
+    async release(): Promise<void> {
+      const held = stalled ?? [];
+      stalled = null;
+      // In order, one at a time — rule 2 still applies to what was held.
+      for (const frame of held) {
+        queue = queue.then(async () => {
+          await other?.deliver(frame);
+        });
+      }
+      await queue;
     },
   };
   return self;
