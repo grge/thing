@@ -584,6 +584,45 @@ describe('tabs', () => {
   });
 });
 
+describe('arriving by a share link', () => {
+  it('keeps the tabs that were already open', async () => {
+    // A link says which space to *focus*, not which to have. Skipping restore
+    // when one is present made following a link look like losing everything
+    // else.
+    const first = new Client();
+    const a = await first.create('mine');
+    const b = await first.create('other');
+    await first.close();
+
+    const second = new Client();
+    await second.restore();
+    const arrived = await second.open((await generateKeyPair()).publicKey, 'shared');
+
+    expect(second.view().map((t) => t.id).sort()).toEqual(
+      [a.id, b.id, arrived.id].sort(),
+    );
+    await second.close();
+  });
+
+  it('a link to a space already open reuses its tab and keeps its name', async () => {
+    // Not a second tab, and not renamed to whatever the link called it — a
+    // name this client chose should survive someone else's link.
+    const first = new Client();
+    const mine = await first.create('mine');
+    await first.rename(mine.id, 'my notes');
+    await first.close();
+
+    const second = new Client();
+    await second.restore();
+    const again = await second.open(fromHexKey(mine.id), 'their name for it');
+
+    expect(second.view()).toHaveLength(1);
+    expect(again.id).toBe(mine.id);
+    expect(second.view()[0]!.name).toBe('my notes');
+    await second.close();
+  });
+});
+
 describe('connecting', () => {
   /**
    * Not tested here, deliberately, and worth saying why.

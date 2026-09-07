@@ -125,22 +125,30 @@
     // A share link is the one locator source that works before you know
     // anybody (`docs/LOCATORS.md`), so it is how a browser gets started.
     const link = parseShareLink(location.hash);
-    // Reopen what was open last time. A share link takes precedence, since
-    // arriving by one means being sent somewhere specific.
-    if (link === null) void client.restore();
-    if (link !== null) {
-      void (async () => {
+    void (async () => {
+      // **Always restore first.** A share link says which space to *focus*, not
+      // which spaces to have — arriving by one should not hide everything else
+      // that was open. An earlier version skipped restoring when a link was
+      // present, so following a link looked like losing your other spaces.
+      await client.restore();
+
+      if (link !== null) {
         try {
+          // `open` is idempotent: a space already restored keeps its tab and
+          // its name rather than getting a second one.
           const tab = await client.open(fromHex(link.key), link.name);
           activeId = tab.id;
+          // Dial regardless of whether the tab is new: a restored tab has no
+          // connection, and the link's hint may be the only address anyone has
+          // for that space (`docs/LOCATORS.md`).
           if (link.locator !== null) await client.connect(tab.id, link.locator);
           else if (link.token !== null) await client.meetAt(tab.id, link.token);
         } catch (err) {
           error = err instanceof Error ? err.message : 'could not open that space';
         }
-        refresh();
-      })();
-    }
+      }
+      refresh();
+    })();
     return off;
   });
 
