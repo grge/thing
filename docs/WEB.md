@@ -228,9 +228,18 @@ Each stage should leave a client someone can use.
    guarantees, since they are not interchangeable. Joining by *pasting* landed
    in stage 5; there is no join-by-code, because a code cannot be reversed to a
    key (§5.4) and so cannot open anything on its own.
-7. **Debug panel** — vectors, forks, peers, activity, **and storage**: every
-   space this browser holds, whether or not a tab shows it, with a way to
-   delete one or restore it to a tab. See below.
+7. ~~**Debug panel** — vectors, forks, peers, activity, **and storage**.~~
+   **Done.** Reached from the tab bar, closed by default: it is for when
+   something has gone wrong, and putting storage forward would suggest that
+   browsing it is ordinary. It renders outside the "a space is open" branch,
+   because the storage view is most useful exactly when nothing will open.
+
+   It earned its place immediately. On first run against a real browser it
+   showed **seven spaces with no tab** — every link expanded during testing,
+   held and unreachable, which is precisely the class of thing this exists to
+   surface. `canEnumerate` on `IdbStore` reports whether the listing is
+   complete, so a browser without `databases()` says so rather than showing a
+   short list that looks authoritative.
 8. **Settings** — signalling, ICE, keys.
 
 **1–3 are the ones that make it a client.** 5 is the one that makes it *this*

@@ -31,6 +31,7 @@
   import { Client, parsePasted, parseShareLink, type Tab } from '../client.js';
   import Icon from './Icon.svelte';
   import Preview from './Preview.svelte';
+  import Debug from './Debug.svelte';
   import Share from './Share.svelte';
   import Tree from './Tree.svelte';
 
@@ -71,6 +72,14 @@
   let pasted = $state('');
   /** Whether the share panel is showing, for the active tab. */
   let sharing = $state(false);
+  /**
+   * The debug panel.
+   *
+   * Off by default and reachable from the tab bar: it is for when something has
+   * gone wrong, and the storage view in particular should not read as an
+   * ordinary way to browse (`docs/WEB.md`).
+   */
+  let debugging = $state(false);
 
   const active = $derived(tabs.find((t) => t.id === activeId) ?? null);
   const writable = $derived(active?.writable === true);
@@ -554,6 +563,14 @@
     >
       <Icon name="clipboard" /> open
     </button>
+    <button
+      class="tab new debug-toggle"
+      class:on={debugging}
+      onclick={() => (debugging = !debugging)}
+      title="Peers, chains, storage and activity"
+    >
+      <Icon name="activity" />
+    </button>
   </nav>
 
   {#if pasting !== null}
@@ -714,6 +731,17 @@
       </section>
     </div>
   {/if}
+
+  <!-- Outside the `{#if}` above: the storage view is most useful exactly when
+       no space will open, which is when that branch renders nothing. -->
+  {#if debugging}
+    <Debug
+      {client}
+      tabs={tabs}
+      onclose={() => (debugging = false)}
+      onrestored={(id) => show(id)}
+    />
+  {/if}
 </div>
 
 <style>
@@ -809,6 +837,8 @@
   }
   .share-toggle:first-of-type { margin-left: auto; }
   .share-toggle:hover { color: var(--ink); }
+  /* On, rather than merely hovered: a panel that is open is a state. */
+  .debug-toggle.on { color: var(--ink); }
   /* On, rather than merely hovered: this one is a state, not an action. */
   .share-toggle.on { color: var(--ink); }
 

@@ -46,6 +46,18 @@ import { connectVia, type RtcConnection, type RtcOptions } from './webrtc.js';
 export type { Activity, PeerKind, PeerStatus };
 
 /** One open space, as a view sees it. */
+/** One space in this browser's storage (`docs/WEB.md`, the storage view). */
+export interface StoredSpace {
+  readonly id: string;
+  /** Whether a tab currently shows it. */
+  readonly inTab: boolean;
+  /** Whether it is open — held spaces include ones cached to expand a link. */
+  readonly held: boolean;
+  readonly name: string | null;
+  /** How many events it holds, or null if it is not open to be counted. */
+  readonly events: number | null;
+}
+
 export interface Tab {
   readonly id: string;
   readonly key: PublicKey;
@@ -93,15 +105,27 @@ export class Client extends PeerClient {
   private readonly retries = new Map<string, number>();
 
   constructor(private readonly browser: ClientOptions = {}) {
+    // Built here and kept, rather than constructed inline in the `super`
+    // call: the storage view needs to ask *this* store whether its listing is
+    // complete, and `capabilities.store` is a `Store`, which has no
+    // `canEnumerate` — that is an IndexedDB fact, not a general one. A second
+    // `IdbStore` would answer about a different object; a module-level one
+    // would be shared by every client in a process, which is wrong for tests
+    // even though a page only ever has one.
+    const store = new IdbStore();
     super({
-      store: new IdbStore(),
+      store,
       keys: { keyFor: (id) => this.local.keys.keyFor(id) },
       // No lock. Two tabs sharing a key mint separate append points and extend
       // separate chains (§2.1), so there is nothing to contend for — which is
       // what `writelock.ts` existed to prevent and no longer can happen.
     });
+    this.idb = store;
     this.observe({ onChange: () => this.changed() });
   }
+
+  /** This client's store, typed — see the constructor. */
+  private readonly idb: IdbStore;
 
   /**
    * Reopen what was open last time.
@@ -289,6 +313,69 @@ export class Client extends PeerClient {
     const found = links(held.space.state).find((l) => l.entry.name === linkName);
     if (found === undefined) return null;
     return this.open(found.target, found.entry.name);
+  }
+
+  /* ── what is actually in storage ──────────────────────────────────────── */
+
+  /**
+   * Every space this browser holds, whether or not a tab shows it.
+   *
+   * Closing a tab deletes its space and there is no inventory, so **a space in
+   * storage that no tab points at is unreachable**: nothing lists it, nothing
+   * opens it, nothing removes it. That should not happen — closing sweeps and
+   * `restore` reopens what was open — but "should not happen" is exactly the
+   * class of thing that wants a way to look (`docs/WEB.md`).
+   *
+   * `complete` is false where the browser cannot enumerate its own databases,
+   * in which case this can only report what is already open — the case where
+   * it is least useful, and so the one worth admitting to rather than showing
+   * a short list that looks authoritative.
+   */
+  async storage(): Promise<{ complete: boolean; spaces: StoredSpace[] }> {
+    const known = await this.list();
+    const open = new Set(this.tabs.map((t) => hex(t.key)));
+    const spaces = await Promise.all(
+      known.map(async (id): Promise<StoredSpace> => {
+        const held = this.entry(id);
+        return {
+          id,
+          inTab: open.has(id),
+          held: held !== undefined,
+          name: this.local.petnames.nameFor(id),
+          events: held === undefined ? null : await held.store.count(),
+        };
+      }),
+    );
+    return {
+      complete: this.idb.canEnumerate,
+      spaces: spaces.sort((a, b) => (a.id < b.id ? -1 : 1)),
+    };
+  }
+
+  /**
+   * Put a space in storage back into a tab.
+   *
+   * The route back to data whose tab was lost — if the tab list and storage
+   * ever disagree, there is no other one.
+   */
+  async restoreToTab(id: string): Promise<Tab | null> {
+    const key = fromHex(id);
+    if (key.length !== 32) return null;
+    return this.open(key, this.local.petnames.nameFor(id));
+  }
+
+  /**
+   * Delete a space from storage outright.
+   *
+   * Distinct from closing a tab, which also deletes: this reaches a space no
+   * tab points at, which closing cannot.
+   */
+  async deleteFromStorage(id: string): Promise<void> {
+    const name = this.local.petnames.nameFor(id);
+    if (name !== null) await this.local.petnames.remove(name);
+    await this.local.inventory.forget(id);
+    await this.forget(id);
+    this.changed();
   }
 
   /* ── spaces of one's own ──────────────────────────────────────────────── */

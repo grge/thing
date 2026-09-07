@@ -716,6 +716,79 @@ describe('connecting', () => {
   it.skip('dialling wires frame delivery — see the note above', () => {});
 });
 
+describe('the storage view', () => {
+  it('lists a space that is open in a tab', async () => {
+    const client = new Client();
+    const tab = await client.create('mine');
+
+    const { spaces } = await client.storage();
+    const found = spaces.find((s) => s.id === tab.id);
+    expect(found?.inTab).toBe(true);
+    expect(found?.name).toBe('mine');
+    await client.close();
+  });
+
+  it('restores a space in storage back to a tab', async () => {
+    // The route back to data whose tab was lost. If the tab list and storage
+    // ever disagree, there is no other one.
+    const client = new Client();
+    const someone = await generateKeyPair();
+    const id = hex(someone.publicKey);
+    await client.open(someone.publicKey, 'strays');
+
+    // Drop the tab without deleting, as a lost tab list would.
+    (client as unknown as { tabs: unknown[] }).tabs = [];
+    expect(client.view()).toHaveLength(0);
+
+    const back = await client.restoreToTab(id);
+    expect(back?.id).toBe(id);
+    expect(client.view().map((t) => t.id)).toEqual([id]);
+    await client.close();
+  });
+
+  it('deletes a space no tab points at', async () => {
+    // Distinct from closing a tab, which also deletes: this reaches a space
+    // closing cannot, which is the whole reason the view exists.
+    const client = new Client();
+    const someone = await generateKeyPair();
+    const id = hex(someone.publicKey);
+    await client.open(someone.publicKey, 'doomed');
+    (client as unknown as { tabs: unknown[] }).tabs = [];
+
+    await client.deleteFromStorage(id);
+
+    const { spaces } = await client.storage();
+    expect(spaces.find((s) => s.id === id)).toBeUndefined();
+    await client.close();
+  });
+
+  it('frees the petname when deleting from storage', async () => {
+    // Same trap as `closeTab`: a name left behind stays *taken*, so a later
+    // space cannot have it — which is how `untitled 8` happened.
+    const client = new Client();
+    const someone = await generateKeyPair();
+    const id = hex(someone.publicKey);
+    await client.open(someone.publicKey, 'reusable');
+
+    await client.deleteFromStorage(id);
+
+    const other = await generateKeyPair();
+    const tab = await client.open(other.publicKey, 'reusable');
+    expect(tab.name).toBe('reusable');
+    await client.close();
+  });
+
+  it('says whether the listing is complete', async () => {
+    // A short list that looks authoritative is worse than an admitted gap:
+    // `databases()` is not available everywhere, and without it this can only
+    // report what happens to be open.
+    const client = new Client();
+    const { complete } = await client.storage();
+    expect(typeof complete).toBe('boolean');
+    await client.close();
+  });
+});
+
 describe('share links', () => {
   it('round-trips: what shareLink makes, parsePasted reads', () => {
     // The two halves have to agree, and they are written far apart.

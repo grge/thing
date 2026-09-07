@@ -256,6 +256,18 @@ export class IdbStore implements Store {
     return s;
   }
 
+  /**
+   * Whether this browser can enumerate its own databases.
+   *
+   * `list()` degrades to "the spaces I happen to have open" when it cannot,
+   * and the two answers look identical — so anything that *shows* the list has
+   * to be able to tell a person which one they are looking at. A short list
+   * that appears authoritative and is not is worse than an admitted gap.
+   */
+  get canEnumerate(): boolean {
+    return typeof indexedDB.databases === 'function';
+  }
+
   async list(): Promise<readonly SpaceId[]> {
     // `databases()` is not universally available; where it is missing the
     // caller's own record of which spaces it holds is the answer, and that
