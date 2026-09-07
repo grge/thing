@@ -316,15 +316,15 @@ export class Client extends PeerClient {
       });
     });
 
-    const session = await this.attach(
-      socketConnection(socket, `ws:${url}`),
-      id,
-      'direct',
-      // This address has proved itself, so a later drop starts from a short
-      // delay rather than wherever the backoff had climbed to.
-      () => this.retries.delete(url),
-    );
-    if (session === null) throw new Error('that space is not open');
+    // **`join`, not `attach`.** `attach` deliberately does not wire frame
+    // delivery — an adopted connection reads its own frames to learn which
+    // space it is about, and would otherwise deliver each one twice — so a
+    // caller that dials must use `join`, which wires it. Calling `attach`
+    // here meant frames arrived at the socket and went nowhere: the space
+    // stayed empty and the connection looked healthy.
+    const conn = socketConnection(socket, `ws:${url}`);
+    conn.onFrame(() => this.retries.delete(url));
+    await this.join(id, conn);
 
     socket.addEventListener('close', () => {
       this.note('connection', id, `${url} closed`);
@@ -334,7 +334,6 @@ export class Client extends PeerClient {
     });
 
     this.note('connection', id, `dialled ${url}`);
-    await session.start();
     this.changed();
   }
 

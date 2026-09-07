@@ -584,6 +584,30 @@ describe('tabs', () => {
   });
 });
 
+describe('connecting', () => {
+  /**
+   * Not tested here, deliberately, and worth saying why.
+   *
+   * `connect` must call `join` rather than `attach`: `attach` builds the
+   * session and records the connection but does **not** wire frame delivery,
+   * because `adopt` reads its own frames to find the space and a second
+   * handler would deliver each one twice. A dialler that only attaches has a
+   * connection that looks healthy and receives nothing — which is what left
+   * every dialled space empty in the browser.
+   *
+   * Several attempts to pin that from here failed to distinguish the two: a
+   * HELLO goes out either way, and the socket has a `message` listener either
+   * way, because `socketConnection` adds one when it is built. What differs is
+   * whether that listener forwards into a session, and reaching it needs a
+   * real socket rather than a stub — so it belongs in an integration test
+   * against a running peer, which this package does not have.
+   *
+   * `client.test.ts` in the engine covers the same trap from the other side:
+   * `join` wires delivery and `attach` does not, asserted on handler counts
+   * where both are reachable.
+   */
+});
+
 describe('share links', () => {
   it('round-trips: what shareLink makes, parsePasted reads', () => {
     // The two halves have to agree, and they are written far apart.
