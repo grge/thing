@@ -6,7 +6,8 @@
  * Locks and a `WebSocket`; a server with a directory, a lock file and a TCP
  * socket. Neither is the privileged case.
  */
-import type { Channel } from '../net/index.js';
+import type { Channel, Locator } from '../net/index.js';
+import type { LocatorCache } from '../local.js';
 import type { KeyPair, PublicKey } from '../core/index.js';
 import type { Divergence } from '../net/sync.js';
 import type { Event } from '../core/index.js';
@@ -142,6 +143,23 @@ export interface ClientCapabilities {
    * means.
    */
   readonly mirrorBlobs?: boolean;
+  /**
+   * Where this client remembers reaching spaces (§5.3).
+   *
+   * Optional, because a client can sync perfectly well without one — it just
+   * has to be told an address every time. Supplied rather than built here for
+   * the same reason as the store: where it persists is a platform question.
+   */
+  readonly locators?: LocatorCache;
+  /**
+   * How this peer says it can be reached, if it can be.
+   *
+   * Empty is the ordinary case for a browser and for anything behind NAT: a
+   * peer with no address of its own still serves, and whoever is already
+   * connected can reach it on that connection. A server with a listening port
+   * supplies one so its announcements are dialable by peers it has never met.
+   */
+  readonly locatorsOfSelf?: () => readonly Locator[];
 }
 
 /** A space id is its public key in hex, so the key is recoverable from it. */

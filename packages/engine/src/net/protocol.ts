@@ -202,7 +202,66 @@ export interface Presence {
   readonly ttl: number;
 }
 
-export type EphemeralMessage = Have | Presence;
+/**
+ * I serve these spaces (§5.3's push half).
+ *
+ * Sent on connect and when what a peer serves changes, to the peers it is
+ * already connected to — so availability is maintained by the same traffic that
+ * does the work, with no crawl and no polling. A peer that stops announcing is
+ * gone within one TTL, which makes serving a genuine opt-in rather than a
+ * commitment that cannot be withdrawn.
+ *
+ * `at` is how the announcer says it can be reached. Absent means *on this
+ * connection* — a peer that dialled you needs no address, and a browser has
+ * none to give.
+ */
+export interface Announce {
+  readonly type: 'ANNOUNCE';
+  /** Space ids, hex. */
+  readonly spaces: readonly string[];
+  /** Locators in compact form (`formatLocator`), or absent for "reach me here". */
+  readonly at?: readonly string[];
+  /** Milliseconds after which a receiver should forget this (§10.1). */
+  readonly ttl: number;
+}
+
+/**
+ * Where is this space? (§5.3's pull half.)
+ *
+ * Asked of connected peers in parallel; answers merge rather than being taken
+ * from the first responder. `id` pairs answers with the question, since several
+ * may be outstanding.
+ */
+export interface Resolve {
+  readonly type: 'RESOLVE';
+  readonly id: number;
+  /** The space id, hex. */
+  readonly space: string;
+}
+
+/**
+ * The answer, which distinguishes three cases (§5.3).
+ *
+ * They call for different behaviour, so collapsing them into "no locators"
+ * would lose the difference between *stop asking this peer* and *ask again
+ * later*:
+ *
+ * - `unknown` — I do not track this space.
+ * - `none` — I track it and nobody is serving; `lastSeen` if I ever saw one.
+ * - locators — dial these.
+ */
+export interface Resolved {
+  readonly type: 'RESOLVED';
+  readonly id: number;
+  readonly space: string;
+  readonly known: boolean;
+  /** Locators in compact form. Empty with `known` true is "nobody serving". */
+  readonly at: readonly string[];
+  /** When this peer last saw anyone serving it, if it did. */
+  readonly lastSeen?: number;
+}
+
+export type EphemeralMessage = Have | Presence | Announce | Resolve | Resolved;
 
 /**
  * An event on the wire.

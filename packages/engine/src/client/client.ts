@@ -22,6 +22,9 @@
 import { type Event, hex, type KeyPair, type PublicKey } from '../core/index.js';
 import { Session } from '../net/session.js';
 import type { Coverage, Divergence } from '../net/sync.js';
+import type { Answer } from '../net/ephemeral.js';
+import { type Locator, locatorKey, parseLocator } from '../net/locator.js';
+import type { Resolved } from '../net/protocol.js';
 import { vvToWire } from '../net/wire.js';
 import type { SpaceId, SpaceStore } from '../store/index.js';
 import { referencedBlobs } from '../fs/files.js';
@@ -83,12 +86,38 @@ export interface Held {
   readonly wanted: Set<string>;
 }
 
+/** One outstanding resolution query. */
+interface Asking {
+  readonly answers: { peer: string; msg: Resolved }[];
+}
+
+/**
+ * What resolving a space turned up (§5.3).
+ *
+ * `viaPeers` is the case a list of addresses cannot express: a peer that says
+ * it serves the space and offers no address is offering *itself*, and it is
+ * already connected — so the way there is the connection, not a locator.
+ */
+export interface Resolution {
+  /** Candidates to dial, best first. Cache ahead of anything learned now. */
+  readonly at: readonly Locator[];
+  /** Whether anyone tracks this space at all — §5.3's *unknown* case. */
+  readonly known: boolean;
+  /** Connected peers that serve it and gave no address. */
+  readonly viaPeers: readonly string[];
+  /** When anyone was last seen serving it, if nobody is now. */
+  readonly lastSeen?: number;
+}
+
 const ACTIVITY_LIMIT = 200;
 
 export class Client {
   protected readonly held = new Map<SpaceId, Held>();
   /** Spaces being opened, so a concurrent `hold` waits rather than duplicating. */
   private readonly opening = new Map<SpaceId, Promise<Space>>();
+  /** Resolution queries in flight, by id, collecting answers as they arrive. */
+  private readonly asking = new Map<number, Asking>();
+  private nextAsk = 1;
   private readonly activityLog: Activity[] = [];
   private readonly observers = new Set<ClientObserver>();
   protected closed = false;
@@ -262,6 +291,10 @@ export class Client {
     conn.onFrame((data) => void session.receive(data));
     conn.onClose(() => this.dropped(conn.peer));
     await session.start();
+    // Tell this peer what we serve (§5.3's push half). Announcing on connect
+    // is what makes availability maintained by the traffic that does the work,
+    // with no crawl and no polling.
+    this.announceTo(session);
     // Blobs missed while there was nobody to ask. `onEvents` only fires for
     // *new* events, so without this a peer that folded a `:body` while
     // disconnected would never fetch its bytes — the gap is invisible,
@@ -310,6 +343,7 @@ export class Client {
           // has somebody. This is the path a *server* takes, where mirroring
           // is on by default, so it is the one that matters most.
           void this.mirror(id);
+          this.announceTo(opened);
           this.changed();
         }
 
@@ -406,6 +440,26 @@ export class Client {
         held.wanted.add(hash);
         this.note('blob', id, `${hash.slice(0, 8)} — not held by ${conn.peer}`);
         for (const o of this.observers) o.onNoBlob?.(id, hash, conn.peer);
+      },
+      onAnnounce: () => {
+        const s = held.sessions.get(conn.peer);
+        if (s !== undefined && !s.isClosed) this.announceTo(s);
+      },
+      onResolve: (space) => this.answerFor(space, conn.peer),
+      onResolved: (msg) => {
+        const waiting = this.asking.get(msg.id);
+        if (waiting === undefined) return;
+        // Every locator a peer offers goes in the cache, whether or not it
+        // works: §5.3 merges answers rather than taking the first, and a
+        // candidate that fails is dropped by the cache's own ranking.
+        for (const text of msg.at) {
+          const l = parseLocator(text);
+          if (l !== null) this.capabilities.locators?.remember(msg.space, l);
+        }
+        // An announcement with no address means *reach me on this connection*,
+        // and the asker is already on it — so the answering peer is itself a
+        // way to reach the space.
+        waiting.answers.push({ peer: conn.peer, msg });
       },
       onHave: (hashes) => {
         // The ephemeral channel had a name in `Activity` and nothing ever
@@ -516,6 +570,137 @@ export class Client {
       await this.setMirror(id, true);
     }
     return [...wanted].sort();
+  }
+
+  /* ── resolution (§5.3) ────────────────────────────────────────────────── */
+
+  /**
+   * Tell one peer what we serve, and how to reach us.
+   *
+   * Everything held, not only what it asked about: the point of the push half
+   * is that a peer learns of spaces it has not thought to ask for, and the
+   * per-peer cap is what bounds the cost of saying so.
+   */
+  protected announceTo(session: Session): void {
+    if (this.held.size === 0) return;
+    session.announce([...this.held.keys()], this.capabilities.locatorsOfSelf?.() ?? []);
+  }
+
+  /** Announce to every connected peer — after holding or releasing a space. */
+  protected announceAll(): void {
+    for (const entry of this.held.values()) {
+      for (const session of entry.sessions.values()) {
+        if (!session.isClosed) this.announceTo(session);
+      }
+    }
+  }
+
+  /**
+   * What this peer can say about where a space is (§5.3's three-way answer).
+   *
+   * Two sources, and no more: **what we serve**, and **what our current
+   * connections announced**. One hop, no transit — an answer may come from a
+   * live connection, never from what *that* peer was told, because at one hop
+   * every entry is about a connection the answering peer can vouch for.
+   *
+   * `asker` is excluded from the result: telling a peer it can reach a space
+   * through itself is noise, and it is the commonest case, since it is
+   * typically the one that just announced.
+   */
+  protected answerFor(space: SpaceId, asker: string): Answer {
+    const at: Locator[] = [];
+    const mine = this.capabilities.locatorsOfSelf?.() ?? [];
+    const serving = this.held.has(space);
+    if (serving) at.push(...mine);
+
+    let known = serving;
+    let lastSeen: number | undefined;
+
+    for (const entry of this.held.values()) {
+      for (const [peer, session] of entry.sessions) {
+        if (peer === asker || session.isClosed) continue;
+        for (const found of session.serversOf(space)) {
+          if (found.peer === asker) continue;
+          known = true;
+          for (const text of found.at) {
+            const l = parseLocator(text);
+            if (l !== null) at.push(l);
+          }
+        }
+        if (session.knowsOf(space)) {
+          known = true;
+          const seen = session.seenServing(space);
+          if (seen !== undefined && (lastSeen === undefined || seen > lastSeen)) lastSeen = seen;
+        }
+      }
+    }
+
+    const deduped = new Map<string, Locator>();
+    for (const l of at) deduped.set(locatorKey(l), l);
+    return {
+      known,
+      at: [...deduped.values()],
+      ...(lastSeen === undefined ? {} : { lastSeen }),
+    };
+  }
+
+  /**
+   * Ask connected peers where a space is (§5.3's pull half).
+   *
+   * **On demand, for a space being opened** — not for every link held, which
+   * for a hub with a hundred links would mean resolving a hundred spaces
+   * nobody is looking at.
+   *
+   * Several peers are asked in parallel and answers merge rather than being
+   * taken from the first responder, so one peer's silence or stale entry
+   * cannot decide the result. Returns what to try, best first, with the cache
+   * ahead of anything learned now — it is the only source that knows what
+   * worked *here*.
+   */
+  async resolve(space: SpaceId, options: { timeoutMs?: number } = {}): Promise<Resolution> {
+    const cached = this.capabilities.locators?.get(space) ?? [];
+
+    const live = [...this.held.values()].flatMap((e) =>
+      [...e.sessions.values()].filter((s) => !s.isClosed),
+    );
+    if (live.length === 0) {
+      return { at: [...cached], known: cached.length > 0, viaPeers: [] };
+    }
+
+    const id = this.nextAsk++;
+    const waiting: Asking = { answers: [] };
+    this.asking.set(id, waiting);
+    for (const session of live) session.resolve(id, space);
+
+    await new Promise<void>((r) => setTimeout(() => r(), options.timeoutMs ?? 1500));
+    this.asking.delete(id);
+
+    const at = new Map<string, Locator>();
+    for (const l of cached) at.set(locatorKey(l), l);
+    const viaPeers: string[] = [];
+    let known = cached.length > 0;
+    let lastSeen: number | undefined;
+
+    for (const { peer, msg } of waiting.answers) {
+      if (msg.known) known = true;
+      if (msg.lastSeen !== undefined && (lastSeen === undefined || msg.lastSeen > lastSeen)) {
+        lastSeen = msg.lastSeen;
+      }
+      for (const text of msg.at) {
+        const l = parseLocator(text);
+        if (l !== null) at.set(locatorKey(l), l);
+      }
+      // A peer that says it knows and offers no address is offering *itself*:
+      // it is already connected, and that connection is the way there.
+      if (msg.known && msg.at.length === 0) viaPeers.push(peer);
+    }
+
+    return {
+      at: [...at.values()],
+      known,
+      viaPeers,
+      ...(lastSeen === undefined ? {} : { lastSeen }),
+    };
   }
 
   /**

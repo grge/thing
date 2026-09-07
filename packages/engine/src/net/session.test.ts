@@ -23,6 +23,7 @@ import { Session } from './session.js';
 import { ChannelPair, channelPair } from './testwire.js';
 import { vvToWire } from './wire.js';
 import type { Divergence } from './sync.js';
+import type { Resolved } from './protocol.js';
 
 const UTF8 = new TextEncoder();
 
@@ -459,6 +460,125 @@ describe('a blob a peer does not have (§2.4)', () => {
     expect(refused).toEqual([]);
     expect(got).not.toBeNull();
     expect(hex(got!)).toBe(hex(bytes));
+  });
+});
+
+describe('resolution (§5.3)', () => {
+  it('answers a query from what the caller knows', async () => {
+    const space = await keyPairFromSeed(labelled('space', SEED_LEN));
+    const a = await makePeer(space, space);
+    const b = await makePeer(space, space);
+
+    const answers: Resolved[] = [];
+    const wire = channelPair();
+    wire.a = new Session(a.store, wire.channelFor('a'), {
+      peer: 'b',
+      onResolved: (m) => answers.push(m),
+    });
+    wire.b = new Session(b.store, wire.channelFor('b'), {
+      peer: 'a',
+      onResolve: () => ({
+        known: true,
+        at: [{ kind: 'ws', url: 'ws://found:9944' }],
+      }),
+    });
+
+    wire.a.resolve(1, 'ff'.repeat(32));
+    await wire.settle();
+
+    expect(answers).toHaveLength(1);
+    expect(answers[0]!.known).toBe(true);
+    expect(answers[0]!.at).toEqual(['ws://found:9944']);
+  });
+
+  it('distinguishes "never heard of it" from "nobody is serving"', async () => {
+    // §5.3 wants three answers, not two: they call for different behaviour —
+    // stop asking this peer, versus ask again later and tell the person
+    // something true.
+    const space = await keyPairFromSeed(labelled('space', SEED_LEN));
+    const a = await makePeer(space, space);
+    const b = await makePeer(space, space);
+
+    const answers: Resolved[] = [];
+    const wire = channelPair();
+    wire.a = new Session(a.store, wire.channelFor('a'), {
+      peer: 'b',
+      onResolved: (m) => answers.push(m),
+    });
+    wire.b = new Session(b.store, wire.channelFor('b'), {
+      peer: 'a',
+      onResolve: (s) =>
+        s.startsWith('aa')
+          ? { known: true, at: [], lastSeen: 1234 }
+          : { known: false, at: [] },
+    });
+
+    wire.a.resolve(1, 'aa'.repeat(32));
+    wire.a.resolve(2, 'bb'.repeat(32));
+    await wire.settle();
+
+    const tracked = answers.find((m) => m.id === 1)!;
+    expect(tracked.known).toBe(true);
+    expect(tracked.at).toEqual([]);
+    expect(tracked.lastSeen).toBe(1234);
+
+    const unknown = answers.find((m) => m.id === 2)!;
+    expect(unknown.known).toBe(false);
+  });
+
+  it('answers unknown when the caller offers no opinion', async () => {
+    // A session with no `onResolve` must still reply: silence is
+    // indistinguishable from a lost message, and a caller would wait forever.
+    const space = await keyPairFromSeed(labelled('space', SEED_LEN));
+    const a = await makePeer(space, space);
+    const b = await makePeer(space, space);
+
+    const answers: Resolved[] = [];
+    const wire = channelPair();
+    wire.a = new Session(a.store, wire.channelFor('a'), {
+      peer: 'b',
+      onResolved: (m) => answers.push(m),
+    });
+    wire.b = new Session(b.store, wire.channelFor('b'), { peer: 'a' });
+
+    wire.a.resolve(7, 'cc'.repeat(32));
+    await wire.settle();
+
+    expect(answers[0]).toMatchObject({ id: 7, known: false, at: [] });
+  });
+
+  it('records what a peer announced, and who serves what', async () => {
+    const space = await keyPairFromSeed(labelled('space', SEED_LEN));
+    const a = await makePeer(space, space);
+    const b = await makePeer(space, space);
+
+    const wire = channelPair();
+    wire.a = new Session(a.store, wire.channelFor('a'), { peer: 'b' });
+    wire.b = new Session(b.store, wire.channelFor('b'), { peer: 'a' });
+
+    wire.a.announce(['aa'.repeat(32)], [{ kind: 'ws', url: 'ws://me:1' }]);
+    await wire.settle();
+
+    expect(wire.b.serversOf('aa'.repeat(32))).toEqual([
+      { peer: 'a', at: ['ws://me:1'] },
+    ]);
+  });
+
+  it('an announcement with no address means "on this connection"', async () => {
+    // The browser case: a peer with no address of its own still serves, and
+    // the receiver already has the connection to reach it on.
+    const space = await keyPairFromSeed(labelled('space', SEED_LEN));
+    const a = await makePeer(space, space);
+    const b = await makePeer(space, space);
+
+    const wire = channelPair();
+    wire.a = new Session(a.store, wire.channelFor('a'), { peer: 'b' });
+    wire.b = new Session(b.store, wire.channelFor('b'), { peer: 'a' });
+
+    wire.a.announce(['aa'.repeat(32)]);
+    await wire.settle();
+
+    expect(wire.b.serversOf('aa'.repeat(32))).toEqual([{ peer: 'a', at: [] }]);
   });
 });
 

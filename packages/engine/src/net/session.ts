@@ -14,7 +14,15 @@
 import { chainOf, type Event, hex } from '../core/index.js';
 import type { AppendResult, SpaceStore } from '../store/index.js';
 import { BlobReceiver, type Channel, sendBlob } from './blobs.js';
-import { EphemeralState, haveMessage } from './ephemeral.js';
+import {
+  announceMessage,
+  type Answer,
+  EphemeralState,
+  haveMessage,
+  resolveMessage,
+  resolvedMessage,
+} from './ephemeral.js';
+import type { Locator } from './locator.js';
 import {
   type ControlMessage,
   decodeFrame,
@@ -23,6 +31,7 @@ import {
   type EphemeralMessage,
   type Hello,
   PROTOCOL_VERSION,
+  type Resolved,
   type WireVersionVector,
 } from './protocol.js';
 import {
@@ -63,6 +72,25 @@ export interface SessionOptions {
    * still fetching it.
    */
   readonly onHave?: (hashes: readonly string[]) => void;
+  /**
+   * A peer announced what it serves (§5.3).
+   *
+   * The caller answers in kind, for the same reason `HELLO` does: whichever
+   * side connects first announces into a connection whose other end has no
+   * session yet, and that announcement is lost. Answering makes the exchange
+   * symmetric without either side having to know which of them was first.
+   */
+  readonly onAnnounce?: () => void;
+  /**
+   * A peer is asking where a space is (§5.3).
+   *
+   * Answered by the caller, because only it knows what this peer serves and
+   * what its *other* connections announced. One hop, no transit: an answer may
+   * come from live connections, never from what those peers were told.
+   */
+  readonly onResolve?: (space: string) => Answer;
+  /** An answer to a query this session asked. */
+  readonly onResolved?: (msg: Resolved) => void;
   readonly now?: () => number;
 }
 
@@ -85,6 +113,8 @@ export class Session {
    */
   private readonly reportedForks = new Set<string>();
   private greeted = false;
+  /** Whether this session has answered a peer's first announcement. */
+  private replied = false;
   private closed = false;
 
   /**
@@ -135,10 +165,26 @@ export class Session {
       case 'control':
         await this.onControl(frame.msg);
         return true;
-      case 'ephemeral':
+      case 'ephemeral': {
         this.ephemeral.receive(this.options.peer, frame.msg);
-        if (frame.msg.type === 'HAVE') this.options.onHave?.(frame.msg.hashes);
+        const msg = frame.msg;
+        if (msg.type === 'HAVE') this.options.onHave?.(msg.hashes);
+        else if (msg.type === 'ANNOUNCE') {
+          // Answer the first one, once. Whichever side connects first
+          // announces into a connection whose other end has no session yet, so
+          // without a reply that announcement is simply lost — the same
+          // problem `HELLO` solves by answering a greeting with one. Guarded
+          // so two peers do not announce back and forth forever.
+          if (!this.replied) {
+            this.replied = true;
+            this.options.onAnnounce?.();
+          }
+        } else if (msg.type === 'RESOLVE') {
+          const answer = this.options.onResolve?.(msg.space) ?? { known: false, at: [] };
+          this.sendEphemeral(resolvedMessage(msg.id, msg.space, answer));
+        } else if (msg.type === 'RESOLVED') this.options.onResolved?.(msg);
         return true;
+      }
       case 'chunk': {
         const result = await this.blobs.accept(frame.chunk);
         if (result.kind === 'complete') {
@@ -414,6 +460,31 @@ export class Session {
    */
   announceBlob(hash: string): void {
     this.sendEphemeral(haveMessage([hash]));
+  }
+
+  /** Tell this peer what spaces we serve, and how to reach us (§5.3). */
+  announce(spaces: readonly string[], at: readonly Locator[] = []): void {
+    this.sendEphemeral(announceMessage(spaces, at));
+  }
+
+  /** Ask this peer where a space is. The answer arrives at `onResolved`. */
+  resolve(id: number, space: string): void {
+    this.sendEphemeral(resolveMessage(id, space));
+  }
+
+  /** What this peer's connections announced about a space, for answering. */
+  serversOf(space: string): { peer: string; at: readonly string[] }[] {
+    return this.ephemeral.whoServes(space);
+  }
+
+  /** Whether this peer ever announced a space — §5.3's *unknown* case. */
+  knowsOf(space: string): boolean {
+    return this.ephemeral.knows(space);
+  }
+
+  /** When it was last announced, for "nobody is serving, last seen at T". */
+  seenServing(space: string): number | undefined {
+    return this.ephemeral.seenAt(space);
   }
 
   /** Tell the peer what blobs we hold (§2.4). */

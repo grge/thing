@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 import { generateKeyPair, hex, ROOT } from '../core/index.js';
 import { list, makeFile } from '../fs/files.js';
 import { MemoryStore } from '../store/index.js';
+import { MemoryLocators } from '../local.memory.js';
 import { connectionPair as pair, until } from '../net/testwire.js';
 import { Client } from './client.js';
 import { NO_LOCK, type WriteLock } from './types.js';
@@ -305,6 +306,209 @@ describe('Client', () => {
 
     await client.close();
     await other.close();
+  });
+
+  it('resolves a space through a peer that serves it (§5.3)', async () => {
+    // The pull half. A client that holds nothing of a space asks whoever it is
+    // connected to, and the peer serving it answers with how to be reached.
+    const key = await generateKeyPair();
+    const id = hex(key.publicKey);
+    const host = new Client(
+      { store: new MemoryStore(), locatorsOfSelf: () => [{ kind: 'ws', url: 'ws://host:9944' }] },
+      {},
+    );
+    const seeker = new Client({ store: new MemoryStore(), locators: new MemoryLocators() }, {});
+
+    await host.hold(key.publicKey, key);
+    // The seeker holds a *different* space, which is what gives it a
+    // connection at all — resolution travels along connections it already has.
+    const other = await generateKeyPair();
+    await host.hold(other.publicKey);
+    await seeker.hold(other.publicKey);
+
+    const [x, y] = pair();
+    await seeker.join(hex(other.publicKey), x);
+    await host.join(hex(other.publicKey), y);
+    await until(() => seeker.peers().length > 0);
+
+    const found = await seeker.resolve(id, { timeoutMs: 300 });
+    expect(found.known).toBe(true);
+    expect(found.at).toContainEqual({ kind: 'ws', url: 'ws://host:9944' });
+
+    await host.close();
+    await seeker.close();
+  });
+
+  it('offers the connection itself when a peer has no address', async () => {
+    // The browser case, which a list of addresses cannot express: a peer that
+    // serves a space and gives no locator is offering *itself*, and it is
+    // already connected.
+    const key = await generateKeyPair();
+    const id = hex(key.publicKey);
+    const host = new Client({ store: new MemoryStore() }, {});
+    const seeker = new Client({ store: new MemoryStore() }, {});
+
+    await host.hold(key.publicKey, key);
+    const other = await generateKeyPair();
+    await host.hold(other.publicKey);
+    await seeker.hold(other.publicKey);
+
+    const [x, y] = pair('seek', 'host');
+    await seeker.join(hex(other.publicKey), x);
+    await host.join(hex(other.publicKey), y);
+    await until(() => seeker.peers().length > 0);
+
+    const found = await seeker.resolve(id, { timeoutMs: 300 });
+    expect(found.known).toBe(true);
+    expect(found.at).toEqual([]);
+    expect(found.viaPeers).toHaveLength(1);
+
+    await host.close();
+    await seeker.close();
+  });
+
+  it('says unknown when nobody has heard of a space', async () => {
+    // §5.3's first case: *I do not track this* — which tells a caller to stop
+    // asking rather than to wait.
+    const host = new Client({ store: new MemoryStore() }, {});
+    const seeker = new Client({ store: new MemoryStore() }, {});
+    const other = await generateKeyPair();
+    await host.hold(other.publicKey);
+    await seeker.hold(other.publicKey);
+
+    const [x, y] = pair();
+    await seeker.join(hex(other.publicKey), x);
+    await host.join(hex(other.publicKey), y);
+    await until(() => seeker.peers().length > 0);
+
+    const found = await seeker.resolve('ff'.repeat(32), { timeoutMs: 300 });
+    expect(found.known).toBe(false);
+    expect(found.at).toEqual([]);
+
+    await host.close();
+    await seeker.close();
+  });
+
+  it('answers from the cache when there is nobody to ask', async () => {
+    // The case `:serves` was meant for and no longer covers: returning to a
+    // space with no live peer. The cache is the whole answer.
+    const locators = new MemoryLocators();
+    const client = new Client({ store: new MemoryStore(), locators }, {});
+    const key = await generateKeyPair();
+    locators.remember(hex(key.publicKey), { kind: 'ws', url: 'ws://remembered:1' });
+
+    const found = await client.resolve(hex(key.publicKey), { timeoutMs: 100 });
+    expect(found.at).toEqual([{ kind: 'ws', url: 'ws://remembered:1' }]);
+    expect(found.known).toBe(true);
+    await client.close();
+  });
+
+  it('puts what worked before ahead of what a peer just said', async () => {
+    // The cache is the only source that knows what worked *here*, which is the
+    // per-client fact that made a replicated list wrong.
+    const key = await generateKeyPair();
+    const id = hex(key.publicKey);
+    const locators = new MemoryLocators();
+    locators.remember(id, { kind: 'ws', url: 'ws://mine:1' });
+    locators.succeeded(id, { kind: 'ws', url: 'ws://mine:1' });
+
+    const host = new Client(
+      { store: new MemoryStore(), locatorsOfSelf: () => [{ kind: 'ws', url: 'ws://theirs:2' }] },
+      {},
+    );
+    const seeker = new Client({ store: new MemoryStore(), locators }, {});
+    await host.hold(key.publicKey, key);
+    const other = await generateKeyPair();
+    await host.hold(other.publicKey);
+    await seeker.hold(other.publicKey);
+
+    const [x, y] = pair();
+    await seeker.join(hex(other.publicKey), x);
+    await host.join(hex(other.publicKey), y);
+    await until(() => seeker.peers().length > 0);
+
+    const found = await seeker.resolve(id, { timeoutMs: 300 });
+    expect(found.at[0]).toEqual({ kind: 'ws', url: 'ws://mine:1' });
+    expect(found.at).toContainEqual({ kind: 'ws', url: 'ws://theirs:2' });
+
+    await host.close();
+    await seeker.close();
+  });
+
+  it('caches every locator an answer offered', async () => {
+    // §5.3 merges answers rather than taking the first, so a candidate is
+    // worth keeping whether or not it is tried now — the cache's own ranking
+    // is what drops the ones that never work.
+    const key = await generateKeyPair();
+    const id = hex(key.publicKey);
+    const locators = new MemoryLocators();
+    const host = new Client(
+      { store: new MemoryStore(), locatorsOfSelf: () => [{ kind: 'ws', url: 'ws://host:1' }] },
+      {},
+    );
+    const seeker = new Client({ store: new MemoryStore(), locators }, {});
+
+    await host.hold(key.publicKey, key);
+    const other = await generateKeyPair();
+    await host.hold(other.publicKey);
+    await seeker.hold(other.publicKey);
+
+    const [x, y] = pair();
+    await seeker.join(hex(other.publicKey), x);
+    await host.join(hex(other.publicKey), y);
+    await until(() => seeker.peers().length > 0);
+
+    await seeker.resolve(id, { timeoutMs: 300 });
+    expect(locators.get(id)).toContainEqual({ kind: 'ws', url: 'ws://host:1' });
+
+    await host.close();
+    await seeker.close();
+  });
+
+  it('relays what a connection announced, one hop (§5.3)', async () => {
+    // The push half, and the case that needs it. A hub does not hold the
+    // space; it knows where it is *only* because the host announced on
+    // connecting. Without that announcement the hub has nothing to say.
+    //
+    // One hop is the limit: the hub answers from its own live connections, and
+    // never from what those peers were told.
+    const key = await generateKeyPair();
+    const id = hex(key.publicKey);
+    const shared = await generateKeyPair();
+    const sharedId = hex(shared.publicKey);
+
+    const host = new Client(
+      { store: new MemoryStore(), locatorsOfSelf: () => [{ kind: 'ws', url: 'ws://host:9944' }] },
+      {},
+    );
+    const hub = new Client({ store: new MemoryStore() }, {});
+    const seeker = new Client({ store: new MemoryStore() }, {});
+
+    await host.hold(key.publicKey, key);
+    await host.hold(shared.publicKey);
+    await hub.hold(shared.publicKey);
+    await seeker.hold(shared.publicKey);
+
+    const [h2b, b2h] = pair('host', 'hub-h');
+    // Deliberately the side that announces *first*: whichever peer connects
+    // first announces into a connection whose other end has no session yet, so
+    // this order is the one that fails without the answering half.
+    await host.join(sharedId, h2b);
+    await hub.join(sharedId, b2h);
+    const [s2b, b2s] = pair('seek', 'hub-s');
+    await seeker.join(sharedId, s2b);
+    await hub.join(sharedId, b2s);
+    await until(() => hub.peers().length >= 2);
+    // The hub holds no copy of the space at all.
+    expect(hub.holding()).not.toContain(id);
+
+    const found = await seeker.resolve(id, { timeoutMs: 400 });
+    expect(found.known).toBe(true);
+    expect(found.at).toContainEqual({ kind: 'ws', url: 'ws://host:9944' });
+
+    await host.close();
+    await hub.close();
+    await seeker.close();
   });
 
   it('refuses an adopted connection for a space it does not hold', async () => {
