@@ -17,11 +17,14 @@
     links,
     makeFile,
     makeFolder,
+    makeLink,
+    move,
     read,
     remove,
     rename,
     ROOT,
     type FileEntry,
+    type State,
     type Uuid,
   } from '@thing/engine';
   import { Client, parseShareLink, type Tab } from '../client.js';
@@ -40,6 +43,12 @@
   let error = $state<string | null>(null);
   let dragging = $state(false);
   let fileInput = $state<HTMLInputElement | null>(null);
+  /** The object being dragged within a tree, and the row it is over. */
+  let moving = $state<Uuid | null>(null);
+  let dropTarget = $state<string | null>(null);
+  /** The tab being dragged, and the tab it is over. */
+  let movingTab = $state<string | null>(null);
+  let tabTarget = $state<string | null>(null);
 
   const active = $derived(tabs.find((t) => t.id === activeId) ?? null);
   const writable = $derived(active?.writable === true);
@@ -154,9 +163,10 @@
   }
 
   function onDrop(event: DragEvent): void {
-    event.preventDefault();
     dragging = false;
-    void addFiles(event.dataTransfer?.files ?? null);
+    if (event.dataTransfer?.types.includes('Files') !== true) return;
+    event.preventDefault();
+    void addFiles(event.dataTransfer.files);
   }
 
   async function newFolder(): Promise<void> {
@@ -167,6 +177,76 @@
       return;
     }
     await makeFolder(space, 'untitled', here);
+  }
+
+  /**
+   * Re-parent within a tree.
+   *
+   * Dropping onto a **file** means *into the folder containing it*, which is
+   * what a person means by dropping something next to something else.
+   */
+  async function dropOnRow(targetId: Uuid): Promise<void> {
+    const src = moving;
+    moving = null;
+    dropTarget = null;
+    const space = activeId === null ? null : client.space(activeId);
+    if (space === null || src === null || hex(src) === hex(targetId)) return;
+
+    const target = entry(space.state, targetId);
+    if (target === null) return;
+    const destination = target.isFolder ? target.id : (parentOf(target) ?? ROOT);
+
+    // §3.4's cycle-breaking would resolve this deterministically by re-parenting
+    // to the root — correct, and a baffling thing to watch happen. Refusing is
+    // kinder than a silent surprise.
+    if (wouldCycle(space.state, src, destination)) {
+      error = 'A folder cannot be moved inside itself.';
+      return;
+    }
+    error = null;
+    await move(space, src, destination);
+  }
+
+  /** Would moving `id` under `destination` put it inside itself? */
+  function wouldCycle(state: State, id: Uuid, destination: Uuid): boolean {
+    let at: Uuid | null = destination;
+    const seen = new Set<string>();
+    while (at !== null) {
+      if (hex(at) === hex(id)) return true;
+      if (seen.has(hex(at))) return false; // already-broken cycle; not ours
+      seen.add(hex(at));
+      const e = entry(state, at);
+      at = e === null ? null : parentOf(e);
+    }
+    return false;
+  }
+
+  /**
+   * Dropping a tab into a space keeps it: a link, named as the tab is.
+   *
+   * The gesture is the same as dragging a file in — content arriving from
+   * outside — and it is the moment *looking at* becomes *kept*
+   * (`docs/MAIN-SPACE.md`).
+   */
+  async function dropTabOn(intoId: string): Promise<void> {
+    const src = movingTab;
+    movingTab = null;
+    tabTarget = null;
+    if (src === null || src === intoId) return;
+
+    const space = client.space(intoId);
+    if (space === null || !space.writable) {
+      error = 'that space is read-only here';
+      return;
+    }
+    const source = tabs.find((t) => t.id === src);
+    if (source === undefined) return;
+    if (links(space.state).some((l) => hex(l.target) === src)) {
+      error = 'that space is already linked here';
+      return;
+    }
+    error = null;
+    await makeLink(space, source.name ?? src.slice(0, 8), source.key);
   }
 
   async function renameChosen(): Promise<void> {
@@ -219,6 +299,11 @@
 <div
   class="app"
   ondragover={(e) => {
+    // Only files from outside. An internal drag — a row being re-parented, a
+    // tab being kept — is handled by whatever it is over, and showing the
+    // whole-window "drop files" outline for one would be a lie about what is
+    // about to happen.
+    if (e.dataTransfer?.types.includes('Files') !== true) return;
     e.preventDefault();
     dragging = true;
   }}
@@ -229,7 +314,36 @@
 >
   <nav class="tabs">
     {#each tabs as tab (tab.id)}
-      <span class="tab" class:active={tab.id === activeId}>
+      <span
+        class="tab"
+        class:active={tab.id === activeId}
+        class:drop={tabTarget === tab.id}
+        draggable="true"
+        role="tab"
+        tabindex="-1"
+        aria-selected={tab.id === activeId}
+        ondragstart={(event) => {
+          event.dataTransfer?.setData('text/plain', tab.id);
+          movingTab = tab.id;
+        }}
+        ondragend={() => {
+          movingTab = null;
+          tabTarget = null;
+        }}
+        ondragover={(event) => {
+          if (movingTab === null || movingTab === tab.id) return;
+          event.preventDefault();
+          event.stopPropagation();
+          tabTarget = tab.id;
+        }}
+        ondragleave={() => (tabTarget = null)}
+        ondrop={(event) => {
+          if (movingTab === null) return;
+          event.preventDefault();
+          event.stopPropagation();
+          void dropTabOn(tab.id);
+        }}
+      >
         <button class="label" onclick={() => show(tab.id)}>
           {tab.name ?? tab.id.slice(0, 8)}
           {#if tab.peers > 0}<span class="dot" title="{tab.peers} connected"></span>{/if}
@@ -290,8 +404,13 @@
           state={active.state}
           {expanded}
           {selected}
+          {writable}
+          {dropTarget}
           onSelect={choose}
           onToggle={toggle}
+          onDragStart={(id) => (moving = id)}
+          onDragOver={(id) => (dropTarget = id === null ? null : hex(id))}
+          onDropOn={(id) => void dropOnRow(id)}
         />
 
         {#if links(active.state).length > 0}
@@ -347,6 +466,7 @@
     background: var(--canvas);
   }
   .tab.active { border-color: var(--rule-strong); background: var(--canvas-sunken); }
+  .tab.drop { outline: 2px solid var(--action); outline-offset: 1px; }
   .tab .label, .tab .shut, .tab.new {
     background: none;
     border: none;

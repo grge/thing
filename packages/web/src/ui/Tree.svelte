@@ -15,11 +15,28 @@
     state: State;
     expanded: Set<string>;
     selected: Uuid | null;
+    writable: boolean;
+    /** Which row a drag is currently over, by hex id. */
+    dropTarget: string | null;
     onSelect: (e: FileEntry) => void;
     onToggle: (id: Uuid) => void;
+    onDragStart: (id: Uuid) => void;
+    onDragOver: (id: Uuid | null) => void;
+    onDropOn: (id: Uuid) => void;
   }
 
-  const { state, expanded, selected, onSelect, onToggle }: Props = $props();
+  const {
+    state,
+    expanded,
+    selected,
+    writable,
+    dropTarget,
+    onSelect,
+    onToggle,
+    onDragStart,
+    onDragOver,
+    onDropOn,
+  }: Props = $props();
 
   const roots = $derived(list(state));
 
@@ -34,7 +51,36 @@
   {@const canOpen = opens(state, e)}
   {@const isOpen = expanded.has(key)}
   <li>
-    <div class="row" class:selected={selected !== null && hex(selected) === key}>
+    <div
+      class="row"
+      class:selected={selected !== null && hex(selected) === key}
+      class:drop={dropTarget === key}
+      draggable={writable}
+      role="treeitem"
+      tabindex="-1"
+      aria-selected={selected !== null && hex(selected) === key}
+      ondragstart={(event) => {
+        // A row carries its own id, so a drop elsewhere knows what moved.
+        event.dataTransfer?.setData('text/plain', key);
+        onDragStart(e.id);
+      }}
+      ondragover={(event) => {
+        if (!writable) return;
+        // Only claim the drag when it is a row being moved: a file coming from
+        // the desktop should fall through to the whole-space handler.
+        if (event.dataTransfer?.types.includes('Files') === true) return;
+        event.preventDefault();
+        event.stopPropagation();
+        onDragOver(e.id);
+      }}
+      ondragleave={() => onDragOver(null)}
+      ondrop={(event) => {
+        if (event.dataTransfer?.types.includes('Files') === true) return;
+        event.preventDefault();
+        event.stopPropagation();
+        onDropOn(e.id);
+      }}
+    >
       <button
         class="twisty"
         aria-label={isOpen ? 'Collapse' : 'Expand'}
@@ -74,6 +120,7 @@
   .row { display: flex; align-items: center; }
   .row:hover { background: var(--canvas-raised); }
   .row.selected { background: var(--canvas-sunken); }
+  .row.drop { outline: 1px solid var(--action); outline-offset: -1px; }
   .twisty {
     background: none; border: none; cursor: pointer;
     color: var(--ink-faint); font: inherit;

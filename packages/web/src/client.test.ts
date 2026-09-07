@@ -22,6 +22,7 @@ import {
   makeFolder,
   makeLink,
   read,
+  move,
   remove,
   rename,
   ROOT,
@@ -250,6 +251,54 @@ describe('tabs', () => {
     expect(list(space.state, ROOT, { includeDeleted: true }).map((e) => e.name)).toEqual([
       'gone.txt',
     ]);
+    await client.close();
+  });
+
+  it('moves an object into a folder', async () => {
+    const client = new Client();
+    const tab = await client.create('mine');
+    const space = client.space(tab.id)!;
+    const folder = await makeFolder(space, 'docs');
+    await makeFile(space, 'loose.txt', new TextEncoder().encode('x'));
+    const file = list(space.state).find((e) => e.name === 'loose.txt')!;
+
+    await move(space, file.id, folder);
+
+    expect(list(space.state).map((e) => e.name)).toEqual(['docs']);
+    expect(list(space.state, folder).map((e) => e.name)).toEqual(['loose.txt']);
+    await client.close();
+  });
+
+  it('keeping a space writes a link named as the tab was', async () => {
+    // Dragging a tab into a space is the moment *looking at* becomes *kept*
+    // (docs/MAIN-SPACE.md). What it writes is an ordinary link.
+    const client = new Client();
+    const mine = await client.create('mine');
+    const theirs = await generateKeyPair();
+    await client.open(theirs.publicKey, 'theirs');
+
+    const space = client.space(mine.id)!;
+    await makeLink(space, 'theirs', theirs.publicKey);
+
+    const kept = links(space.state);
+    expect(kept.map((l) => l.entry.name)).toEqual(['theirs']);
+    expect(hex(kept[0]!.target)).toBe(hex(theirs.publicKey));
+    await client.close();
+  });
+
+  it('a kept space is still just a tab until reopened', async () => {
+    // Keeping does not change what is open, and opening does not keep. The two
+    // are separate acts, which is the whole point of the distinction.
+    const client = new Client();
+    const mine = await client.create('mine');
+    const theirs = await generateKeyPair();
+    await makeLink(client.space(mine.id)!, 'theirs', theirs.publicKey);
+
+    expect(client.view().map((t) => t.name)).toEqual(['mine']);
+
+    const opened = await client.follow(mine.id, 'theirs');
+    expect(opened!.name).toBe('theirs');
+    expect(client.view()).toHaveLength(2);
     await client.close();
   });
 

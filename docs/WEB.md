@@ -147,12 +147,16 @@ Each stage should leave a client someone can use.
    tree rather than a navigator. Recursive by snippet over `FileEntry`, with
    expansion held as interface state — the same shape `archive/ui/Tree.svelte`
    used. Delete is `:deleted`, which hides without unwriting (§7.2.3).
-3. **Drag: re-parent within a tree, and desktop-to-tree.** `archive/ui/Tree.svelte`
-   has a working implementation to read.
+3. ~~**Drag: re-parent within a tree, and desktop-to-tree.**~~ **Done**, plus
+   dragging a tab into a space to keep it. Dropping onto a file means *into the
+   folder containing it*; a move that would put a folder inside itself is
+   refused rather than resolved, since §3.4 would re-parent it to the root
+   deterministically and that is a baffling thing to watch happen. Internal
+   drags and file drops are distinguished by `dataTransfer.types`, so an
+   internal drag does not raise the whole-window "drop files" outline.
 4. **The renderer registry**, with text, image and PDF. Ports mostly whole.
-5. **Links: drag a tab into a space.** The model's central act, currently
-   impossible in the UI, and the gesture that makes *open* versus *keep*
-   visible. Pasting a key as a fallback.
+5. **Links: pasting a key**, for a space nobody has open. The drag gesture
+   landed in stage 3.
 6. **Share and join**, including a pasted code rather than only a URL.
 7. **Debug panel** — vectors, forks, peers, activity.
 8. **Settings** — signalling, ICE, keys.
