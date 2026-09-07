@@ -68,4 +68,13 @@ export {
   type SendRange,
 } from './sync.js';
 
+export {
+  formatLocator,
+  type Locator,
+  locatorKey,
+  parseLocator,
+  type ViaLocator,
+  type WsLocator,
+} from './locator.js';
+
 export { fromWire, toWire, vvToWire } from './wire.js';

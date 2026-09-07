@@ -24,6 +24,7 @@
  * the four read as a set.
  */
 import type { KeyPair } from './core/index.js';
+import type { Locator } from './net/locator.js';
 import type { SpaceId } from './store/index.js';
 
 export type { PetnameStore } from './store/naming.js';
@@ -86,19 +87,38 @@ export interface Inventory {
 }
 
 /**
- * Where a space was last reached (§5.3).
+ * Where a space has been reached, and how well (§5.3).
  *
  * **First tried, first discarded.** A locator is stale by default and must
  * never be the reason a space is reported gone — it exists so reopening a
  * client does not mean pasting an address again. Nothing should treat a miss
  * here as an error.
  *
+ * **This carries more weight than it looks.** §5.3 once ranked a signed list on
+ * a space's root the best locator source of all; it was dropped, because the
+ * peer that knows a serving address usually cannot write the root and because
+ * reachability is a fact about a *pair* of peers. So for "returning to a space
+ * you already hold", this cache is the whole answer — announce and query need a
+ * live peer who knows, and a share link is a one-shot introduction.
+ *
+ * **A list, not one entry, and ordered by what worked.** A space may be
+ * reachable at a LAN address *and* through a hub, and which one works is
+ * exactly the per-client fact that made a replicated list wrong. `succeeded`
+ * and `failed` are what turn "first tried, first discarded" into an order
+ * rather than a slogan.
+ *
  * Synchronous, because it is read on every reconnect and a cache that makes
  * callers await is a cache that gets skipped.
  */
 export interface LocatorCache {
-  get(space: SpaceId): string | null;
-  set(space: SpaceId, url: string): void;
+  /** Candidates for a space, best first. Empty is ordinary, never an error. */
+  get(space: SpaceId): readonly Locator[];
+  /** Remember a candidate, from anywhere: a peer, a share link, a person. */
+  remember(space: SpaceId, locator: Locator): void;
+  /** This one worked. It sorts first from now on. */
+  succeeded(space: SpaceId, locator: Locator): void;
+  /** This one did not. It sinks, and is dropped once it has only ever failed. */
+  failed(space: SpaceId, locator: Locator): void;
   forget(space: SpaceId): void;
 }
 

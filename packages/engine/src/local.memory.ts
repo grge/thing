@@ -10,7 +10,8 @@ import type { KeyPair } from './core/index.js';
 import { generateKeyPair } from './core/index.js';
 import type { SpaceId } from './store/index.js';
 import type { PetnameStore } from './store/naming.js';
-import type { Inventory, Keyring, LocalState, LocatorCache } from './local.js';
+import type { Inventory, Keyring, LocalState } from './local.js';
+import { Locators } from './locators.js';
 
 export class MemoryKeyring implements Keyring {
   private readonly keys = new Map<SpaceId, KeyPair>();
@@ -75,19 +76,10 @@ export class MemoryPetnames implements PetnameStore {
   }
 }
 
-export class MemoryLocators implements LocatorCache {
-  private readonly urls = new Map<SpaceId, string>();
-
-  get(space: SpaceId): string | null {
-    return this.urls.get(space) ?? null;
-  }
-
-  set(space: SpaceId, url: string): void {
-    this.urls.set(space, url);
-  }
-
-  forget(space: SpaceId): void {
-    this.urls.delete(space);
+/** The ranking from `Locators`, over an object that goes nowhere. */
+export class MemoryLocators extends Locators {
+  constructor(now?: () => number) {
+    super({}, () => {}, now);
   }
 }
 

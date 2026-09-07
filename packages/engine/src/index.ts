@@ -61,4 +61,12 @@ export {
   type LocalState,
   type LocatorCache,
 } from './local.js';
+export {
+  type Attempt,
+  DROP_AFTER,
+  KEEP_PER_SPACE,
+  Locators,
+  rank,
+  type Stored,
+} from './locators.js';
 export * from './client/index.js';

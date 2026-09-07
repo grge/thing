@@ -23,8 +23,9 @@ import {
   keyPairFromSeed,
   type Keyring,
   type LocalState,
-  type LocatorCache,
+  Locators,
   SEED_LEN,
+  type Stored,
   type SpaceId,
 } from '@thing/engine';
 
@@ -123,50 +124,39 @@ export class FileInventory implements Inventory {
  * reconnect without making callers await — loaded once at construction, which
  * suits a cache that is *"first tried, first discarded"* and never authoritative.
  */
-export class FileLocators implements LocatorCache {
-  private cache: Record<string, string> = {};
+/**
+ * The locator cache, on disk.
+ *
+ * Ranking lives in `Locators`; this supplies only where the JSON goes and how
+ * it is loaded. A read failure means an empty cache rather than an error —
+ * §5.3: losing it costs a re-typed address, nothing more.
+ */
+export class FileLocators extends Locators {
+  private constructor(
+    private readonly dir: string,
+    state: Stored,
+  ) {
+    super(state, (next) => void this.flush(next));
+  }
 
-  constructor(private readonly dir: string) {}
-
-  /** Load from disk. Called once; a failure means an empty cache, not an error. */
-  async load(): Promise<this> {
+  static async load(dir: string): Promise<FileLocators> {
+    let state: Stored = {};
     try {
-      const raw = await readFile(this.path, 'utf8');
-      const parsed: unknown = JSON.parse(raw);
-      if (typeof parsed === 'object' && parsed !== null) {
-        this.cache = parsed as Record<string, string>;
-      }
+      const parsed: unknown = JSON.parse(await readFile(join(dir, 'locators.json'), 'utf8'));
+      if (typeof parsed === 'object' && parsed !== null) state = parsed as Stored;
     } catch {
-      this.cache = {};
+      state = {};
     }
-    return this;
+    return new FileLocators(dir, state);
   }
 
-  private get path(): string {
-    return join(this.dir, 'locators.json');
-  }
-
-  get(space: SpaceId): string | null {
-    return this.cache[space] ?? null;
-  }
-
-  set(space: SpaceId, url: string): void {
-    this.cache[space] = url;
-    void this.flush();
-  }
-
-  forget(space: SpaceId): void {
-    delete this.cache[space];
-    void this.flush();
-  }
-
-  private async flush(): Promise<void> {
+  private async flush(state: Stored): Promise<void> {
     try {
       await mkdir(this.dir, { recursive: true });
-      await writeFile(this.path, JSON.stringify(this.cache, null, 2));
+      await writeFile(join(this.dir, 'locators.json'), JSON.stringify(state, null, 2));
     } catch {
-      // A locator cache that cannot be written is still a working cache for
-      // this process. §5.3: losing it costs a re-typed address, nothing more.
+      // A cache that cannot be written is still a working cache for this
+      // process, and losing it costs a re-typed address.
     }
   }
 }
@@ -180,6 +170,6 @@ export async function fileLocalState(
     keys: new FileKeyring(dir),
     inventory: new FileInventory(dir, listSpaces),
     petnames: new FilePetnames(dir),
-    locators: await new FileLocators(dir).load(),
+    locators: await FileLocators.load(dir),
   };
 }

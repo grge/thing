@@ -47,5 +47,5 @@ localConformanceTests('files', {
     };
   },
   petnames: async () => new FilePetnames(await tempDir()),
-  locators: async () => new FileLocators(await tempDir()),
+  locators: async () => FileLocators.load(await tempDir()),
 });

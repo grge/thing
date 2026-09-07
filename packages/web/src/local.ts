@@ -31,7 +31,8 @@ import {
   keyPairFromSeed,
   type Keyring,
   type LocalState,
-  type LocatorCache,
+  Locators,
+  type Stored,
   type PetnameStore,
   SEED_LEN,
 } from '@thing/engine';
@@ -204,21 +205,24 @@ export class LocalPetnames implements PetnameStore {
   }
 }
 
-export class LocalLocators implements LocatorCache {
-  get(space: string): string | null {
-    return map(LOCATORS)[space] ?? null;
-  }
-
-  set(space: string, url: string): void {
-    const all = map(LOCATORS);
-    all[space] = url;
-    localStorage.setItem(LOCATORS, JSON.stringify(all));
-  }
-
-  forget(space: string): void {
-    const all = map(LOCATORS);
-    delete all[space];
-    localStorage.setItem(LOCATORS, JSON.stringify(all));
+/**
+ * The locator cache, in `localStorage`.
+ *
+ * Ranking lives in `Locators`; this supplies only where the JSON goes. Read
+ * failures give an empty cache rather than an error — §5.3: losing it costs a
+ * re-typed address, nothing more.
+ */
+export class LocalLocators extends Locators {
+  constructor() {
+    let state: Stored = {};
+    try {
+      const raw = localStorage.getItem(LOCATORS);
+      const parsed: unknown = raw === null ? null : JSON.parse(raw);
+      if (typeof parsed === 'object' && parsed !== null) state = parsed as Stored;
+    } catch {
+      state = {};
+    }
+    super(state, (next) => localStorage.setItem(LOCATORS, JSON.stringify(next)));
   }
 }
 

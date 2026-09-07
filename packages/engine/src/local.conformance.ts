@@ -15,6 +15,8 @@ import { describe, expect, it } from 'vitest';
 import { hex } from './core/index.js';
 import type { PetnameStore } from './store/naming.js';
 import type { Inventory, Keyring, LocatorCache } from './local.js';
+import type { Locator } from './net/locator.js';
+import { DROP_AFTER, KEEP_PER_SPACE } from './locators.js';
 
 export interface LocalBackends {
   readonly keys: () => Promise<Keyring>;
@@ -185,33 +187,92 @@ export function localConformanceTests(name: string, make: LocalBackends): void {
   });
 
   describe(`${name}: locators`, () => {
+    const ws = (url: string): Locator => ({ kind: 'ws', url });
+
     it('remembers where a space was reached', async () => {
       const l = await make.locators();
-      l.set('aa', 'ws://example:9944');
-      expect(l.get('aa')).toBe('ws://example:9944');
+      l.remember('aa', ws('ws://example:9944'));
+      expect(l.get('aa')).toEqual([ws('ws://example:9944')]);
       await after();
     });
 
-    it('a miss is null, not an error (§5.3)', async () => {
+    it('a miss is empty, not an error (§5.3)', async () => {
       // Stale by default, and must never be the reason a space is reported
       // gone. Callers treat absence as ordinary.
-      expect((await make.locators()).get('nothing')).toBeNull();
+      expect((await make.locators()).get('nothing')).toEqual([]);
       await after();
     });
 
-    it('a later address replaces an earlier one', async () => {
+    it('keeps several candidates for one space', async () => {
+      // The reason this is a list: a space may be reachable at a LAN address
+      // *and* through a hub, and which one works is a per-client fact.
       const l = await make.locators();
-      l.set('aa', 'ws://old:1');
-      l.set('aa', 'ws://new:2');
-      expect(l.get('aa')).toBe('ws://new:2');
+      l.remember('aa', ws('ws://lan:1'));
+      l.remember('aa', ws('ws://hub:2'));
+      expect(l.get('aa')).toHaveLength(2);
+      await after();
+    });
+
+    it('what worked sorts first', async () => {
+      const l = await make.locators();
+      l.remember('aa', ws('ws://first:1'));
+      l.remember('aa', ws('ws://second:2'));
+      l.succeeded('aa', ws('ws://second:2'));
+      expect(l.get('aa')[0]).toEqual(ws('ws://second:2'));
+      await after();
+    });
+
+    it('hearing about a known locator again does not clear its history', async () => {
+      // Being told about it is not evidence that it works, and overwriting
+      // would discard the failures that had sunk it.
+      const l = await make.locators();
+      l.remember('aa', ws('ws://a:1'));
+      l.remember('aa', ws('ws://b:2'));
+      l.succeeded('aa', ws('ws://b:2'));
+      l.remember('aa', ws('ws://b:2'));
+      expect(l.get('aa')[0]).toEqual(ws('ws://b:2'));
+      await after();
+    });
+
+    it('drops a locator that has only ever failed', async () => {
+      const l = await make.locators();
+      l.remember('aa', ws('ws://wrong:1'));
+      for (let i = 0; i < DROP_AFTER; i++) l.failed('aa', ws('ws://wrong:1'));
+      expect(l.get('aa')).toEqual([]);
+      await after();
+    });
+
+    it('keeps one that worked before, however much it fails now', async () => {
+      // "This address is wrong" and "nobody is home right now" are different,
+      // and only the first is worth forgetting.
+      const l = await make.locators();
+      l.remember('aa', ws('ws://real:1'));
+      l.succeeded('aa', ws('ws://real:1'));
+      for (let i = 0; i < DROP_AFTER + 2; i++) l.failed('aa', ws('ws://real:1'));
+      expect(l.get('aa')).toEqual([ws('ws://real:1')]);
+      await after();
+    });
+
+    it('bounds how many it keeps', async () => {
+      const l = await make.locators();
+      for (let i = 0; i < KEEP_PER_SPACE + 5; i++) l.remember('aa', ws(`ws://h${i}:1`));
+      expect(l.get('aa').length).toBeLessThanOrEqual(KEEP_PER_SPACE);
+      await after();
+    });
+
+    it('holds a via locator, which is how a browser is reached', async () => {
+      const l = await make.locators();
+      const via: Locator = { kind: 'via', url: 'wss://signal:1', peer: 'sess-7' };
+      l.remember('aa', via);
+      expect(l.get('aa')).toEqual([via]);
       await after();
     });
 
     it('forgets', async () => {
       const l = await make.locators();
-      l.set('aa', 'ws://x:1');
+      l.remember('aa', ws('ws://x:1'));
       l.forget('aa');
-      expect(l.get('aa')).toBeNull();
+      expect(l.get('aa')).toEqual([]);
       await after();
     });
   });
