@@ -115,6 +115,17 @@ describe('Folder agrees with fold', () => {
     );
   });
 
+  /**
+   * **Why these carry a longer timeout.** They fold the same history under many
+   * permutations, and `Folder.apply` refolds everything it holds on every call
+   * (`incremental.ts`) — so applying N events one at a time is O(N²) and a
+   * 24-event history costs ~2.7s. That is comfortably under the 5s default in
+   * isolation and crosses it under full-suite CPU contention, which is the whole
+   * of what OPEN.md 10a used to describe as "the two folds disagree". They never
+   * disagreed. Stage 12 makes the incremental fold incremental; until then the
+   * limit is raised rather than the coverage cut, because `numRuns` is what these
+   * tests are for.
+   */
   it('event by event, in any order', async () => {
     const { key, events } = await history(24);
 
@@ -127,7 +138,7 @@ describe('Folder agrees with fold', () => {
       }),
       { numRuns: 150 },
     );
-  });
+  }, 20_000);
 
   it('in arbitrary batches', async () => {
     // A peer receives events in whatever groupings the network delivers, and

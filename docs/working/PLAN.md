@@ -1058,6 +1058,51 @@ choice is itself part of the bet.
 
 ---
 
+## Stage 12 — Make the incremental fold incremental
+
+**Found by chasing OPEN.md 10a, which turned out to be this wearing a
+misleading name.** The fold does not disagree with itself; it is slow enough
+that two property tests crossed a 5s timeout under load.
+
+Measured, on a 24-event history:
+
+| | |
+| --- | --- |
+| one full fold | 2.5 ms |
+| 50 incremental folds | 56.2 ms |
+| 24 events one at a time | 44.7 ms |
+| the same 24 in one batch | 7.4 ms |
+
+**The incremental fold is 22× slower than replaying from scratch**, which
+inverts the reason it exists. `apply()` calls `refold()` unconditionally
+(`incremental.ts`), clearing all state and re-folding everything held, so N
+events applied one at a time is O(N²) with every event re-hashed each pass.
+
+**That choice was deliberate and its reasoning still holds.** The comment says
+it: an earlier version refolded only when membership changed, which left events
+arriving *after* a change judged against the current writer set rather than
+against what their author had seen — §7.2.3's disagreement, reintroduced one
+layer down. Correctness was right; the cost was never measured.
+
+**The question this stage answers:** can admission be recomputed only when it
+could have changed, without reintroducing that drift? An event's admission
+depends on the writer set as of its `deps` (§7.2.3), so the candidate is that
+adding an event only invalidates events whose `deps` reach it — a much smaller
+set than "everything". Whether that is cheap to determine is the thing to find
+out, and `design/DEPS.md` measured `deps` width for exactly this kind of
+question.
+
+**Decide here:** whether the answer is invalidation (recompute a subset) or
+memoisation (cache admission per event and drop what a new root touches), and
+whether `Space.receive` should batch harder — a peer syncing thousands of
+events currently pays this per batch.
+
+**Done when:** applying N events one at a time is not asymptotically worse than
+one full fold of the same events, the two folds still agree over the generated
+histories, and the tests that carry a raised timeout no longer need one.
+
+---
+
 ## Beyond
 
 Not planned in detail, because each depends on what the stages above teach.

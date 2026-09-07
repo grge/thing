@@ -77,8 +77,18 @@ describe('deps and permission', () => {
       for (const e of events) folder.apply([e]); // one at a time, as they arrive
       expect(names(folder.state)).toBe(names(replayed));
     }
-  });
+  }, 20_000);
 
+  /**
+   * **These two carry a longer timeout.** They fold one history under 50
+   * permutations, and `Folder.apply` refolds everything it holds on every call
+   * (`incremental.ts`), so applying N events one at a time is O(N²) — a
+   * 24-event history costs ~2.7s against a 5s default. That margin survives in
+   * isolation and does not under full-suite CPU contention, which is all
+   * OPEN.md 10a ever was: the failure text is `Test timed out`, never a
+   * counterexample. Stage 12 makes the incremental fold incremental; until
+   * then the limit moves rather than `numRuns`, which is what these test.
+   */
   it('the full fold does not depend on arrival order', async () => {
     const { key, events } = await history(7);
     await fc.assert(
@@ -90,7 +100,7 @@ describe('deps and permission', () => {
       }),
       { numRuns: 50 },
     );
-  });
+  }, 20_000);
 
   it('the incremental fold does not depend on arrival order', async () => {
     const { key, events } = await history(11);
@@ -103,7 +113,7 @@ describe('deps and permission', () => {
       }),
       { numRuns: 50 },
     );
-  });
+  }, 20_000);
 
   it('claiming to have seen nothing does not bypass membership', async () => {
     // `deps` is self-reported, so an empty set costs nothing to claim. An event

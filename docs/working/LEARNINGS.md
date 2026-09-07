@@ -350,6 +350,38 @@ tested against one behaviour, made both mutants fail as they should. Same
 lesson as §13 from the other direction — a test whose subject can be reached by
 a path you did not intend is not testing what its name says.
 
+## 15. Read the failure text before writing down what failed
+
+OPEN.md carried this for weeks:
+
+> **The incremental fold intermittently disagrees with a replay.** Fails on
+> roughly one full-suite run in five, passes every time in isolation — so it is
+> order- or state-dependent rather than a bad generated case. This is the third
+> appearance of "the two folds disagree".
+
+The actual failure was `Error: Test timed out in 5000ms`. No counterexample, no
+assertion, no disagreement — the two folds have never disagreed. Every clause
+after the first sentence was reasoning built on a misread, and the "third
+appearance of a known pattern" framing made it *more* plausible rather than
+less: it fitted a story we already had.
+
+The tell was in the numbers all along. The two failing tests take ~2.7s in
+isolation against a 5s default; every other test in those files is under 500ms
+and never failed. A 1.8× margin plus a full suite on four cores is a flake, and
+`nproc` busy processes reproduce it deterministically — which took one command
+once the question was "why is it slow" instead of "why do they disagree".
+
+**Cost of the misread.** It survived long enough to be cited three times, and it
+was reached for twice in one session as the explanation for unrelated failures —
+once by me, mid-task, as "a regression I caused". A wrong entry in a known-issues
+list is worse than no entry: it is a ready-made answer that stops the next person
+looking.
+
+**What was underneath was worth finding.** The tests are slow because
+`Folder.apply` refolds everything it holds on every call, making the incremental
+fold 22× slower than a full replay of the same events — the opposite of its
+purpose. That is now stage 12. The bug was real; the description was fiction.
+
 ## The nuclear revoke
 
 **The problem it answers.** `deps` (see `../design/DEPS.md`) narrows backdating without
