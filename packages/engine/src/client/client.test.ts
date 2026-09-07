@@ -26,6 +26,26 @@ describe('Client', () => {
     await client.close();
   });
 
+  it('holds a space once when asked concurrently', async () => {
+    // Opening awaits several times before anything is recorded, so a `has`
+    // check is not a guard. A link graph makes this ordinary rather than
+    // exotic — it has cycles by design, so a walk reaches one space by two
+    // paths at once, and holding it twice is two stores and two folds.
+    const client = new Client({ store: new MemoryStore() });
+    const key = await generateKeyPair();
+
+    const [a, b, c] = await Promise.all([
+      client.hold(key.publicKey, key),
+      client.hold(key.publicKey, key),
+      client.hold(key.publicKey, key),
+    ]);
+
+    expect(a).toBe(b);
+    expect(b).toBe(c);
+    expect(client.holding()).toEqual([hex(key.publicKey)]);
+    await client.close();
+  });
+
   it('opens read-only without a writing key', async () => {
     const client = new Client({ store: new MemoryStore() });
     const key = await generateKeyPair();

@@ -224,13 +224,30 @@ the model is short.
 | **CLI** | files | one, named per command | prints and exits |
 | **TUI** | files | several, as tabs | a screen |
 | **web** | IndexedDB | several, as tabs | a browser |
-| **server** | files | **exactly one** | none |
+| **server** | files | **one, plus what it links to** | none |
 
 **The server is the odd one, and the reason is that it has no interface.** It is
 a store, a set of connections, and nothing to render into — so one space is what
-it can offer and one is what it has. Everything else opens as many as its
-interface can show. That asymmetry is not a special case bolted on; it falls out
-of what a renderer is for.
+it *chooses*, and everything else it holds follows from that one. Everything
+else opens as many as its interface can show. That asymmetry is not a special
+case bolted on; it falls out of what a renderer is for.
+
+**A server holds what its main space links to**, to a configurable depth (one
+hop by default). This is what makes hosting a drag: make a space in a browser,
+drop a link to it in your synced copy of the server's space, and the server
+holds it, serves it, and mirrors its blobs — because the link is already in the
+space it was serving anyway.
+
+The link is also the *authorisation*, which is why this needs no new permission
+concept. Only someone who may write the main space can add one, so what a hub
+hosts is exactly what its curators chose; unlinking withdraws it, since §7.2.3's
+tombstone already means "no longer". Compare `acceptUnknownSpaces`, the blunt
+alternative, which the engine describes as making a peer free storage for
+strangers.
+
+**Withdrawing hosting does not delete.** A mis-drag would otherwise destroy what
+may be the only copy of someone's space, so unlinking stops the hosting from
+being renewed and leaves the data; discarding it is a separate, deliberate act.
 
 There is no *hub* program. A hub is a server whose one space someone curated.
 
@@ -244,7 +261,14 @@ and a control protocol; it is now where a tab's events come from.
 **"Configure the server" and "edit a space" are the same act** for the common
 case. Adding a link to a server's main space tells it to hold another space, and
 it does — because that link is in the space it is already serving. No admin
-verb, no new protocol, and it works from any client that can write there.
+verb, no new protocol, and it works from any client that can write there. This
+is built: `hostDepth` on the server, `--host-depth` on `thing serve`.
+
+One detail that only shows up past one hop: **every hosted space is watched, not
+only the main one.** A hub holds a linked space before it has any of that
+space's events, so the links *inside* it are not visible until they replicate —
+watching only the main space would make deeper hosting work after a restart and
+not before.
 
 ## The cases, in more detail
 

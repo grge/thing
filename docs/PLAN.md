@@ -783,6 +783,39 @@ own in-flight transfer reached the reader regardless. Moved down to `Session`,
 where one message is tested against one behaviour; both mutants now fail.
 LEARNINGS §14.
 
+## Stage 7.11 — A hub hosts what it links ✅
+
+**Done.** `MAIN-SPACE.md` said adding a link to a server's main space "tells it
+to hold another space, and it does". It did not; that sentence described an
+intention. Now it is true.
+
+A server holds every space reachable by links from its main space, to
+`hostDepth` hops (default 1, `--host-depth` on the CLI), mirrors their blobs,
+and accepts connections about them. The workflow: make a space in a browser,
+drop a link to it in your synced copy of the hub's space, and it is hosted.
+
+**The link is the authorisation**, which is why this needed no new permission
+concept — only a writer of the main space can add one, and unlinking withdraws
+it. The blunt alternative, `acceptUnknownSpaces`, makes a peer free storage for
+strangers and is still off.
+
+Three things fell out of building it:
+
+- **`hold` was not reentrancy-safe.** It checked a map, then awaited several
+  times before recording anything, so two concurrent calls opened one space
+  twice — two stores, two folds. Latent until now; a link graph has cycles by
+  design, so a walk reaches one space by two paths at once. The promise is the
+  guard now, as in the `adopt` fix.
+- **Every hosted space is watched, not only the main one.** Past one hop the
+  links that matter live in spaces that arrive *after* the walk, so watching
+  only the main space would make deeper hosting work on restart and not before.
+- **Withdrawing hosting does not delete.** A mis-drag would otherwise destroy
+  what may be the only copy of someone's space.
+
+**Not built:** the hub only *accepts* connections about a hosted space; it never
+dials one. A space whose owner is offline stays as fetched, which is right, but
+a hub cannot go looking. That needs §5.3's resolution — stage 8.
+
 ## Stage 8 — Resolution and the mesh
 
 §5.3, which the archived tree never had.

@@ -38,13 +38,36 @@ export interface ServerOptions {
   /** Accept connections here. Absent means dial-only — the NAT case (§5.6). */
   readonly listen?: { readonly port: number; readonly host?: string };
   readonly observer?: ClientObserver;
+  /**
+   * How far to follow links out of the main space, hosting what it finds.
+   *
+   * **This is what makes a hub a hub.** Adding a link to your own space in a
+   * server's main space is how you ask it to host that space: the link is the
+   * authorisation, it is written by someone who may write the main space, and
+   * unlinking withdraws it. `0` holds only the main space, which is what a
+   * peer that is not a hub wants.
+   *
+   * Depth beyond 1 hosts what the linked spaces themselves link to — a hub of
+   * hubs. Bounded because the graph has cycles by design.
+   */
+  readonly hostDepth?: number;
 }
+
+/**
+ * One hop, by default: host what you were linked, not what they linked.
+ *
+ * Deeper is a legitimate choice and a different product — a hub of hubs — so
+ * it is asked for rather than assumed.
+ */
+const DEFAULT_HOST_DEPTH = 1;
 
 export class Server {
   private readonly client: Client;
   private readonly keyring: FileKeyring;
   private listener: PeerServer | null = null;
   private held: Space | null = null;
+  private hosted: readonly string[] = [];
+  private readonly watching = new Set<string>();
 
   constructor(private readonly options: ServerOptions) {
     this.keyring = new FileKeyring(options.dir);
@@ -82,6 +105,15 @@ export class Server {
       writer === null ? undefined : writer,
     );
 
+    // Everything the main space links to, held and mirrored (§2.4). Done
+    // before listening, so a peer that connects immediately finds the hosted
+    // spaces already open rather than being refused.
+    await this.rehost();
+    // A link added later must take effect without a restart — dragging a space
+    // into a hub *is* the request to host it, and a restart would make that a
+    // two-step operation with a delay in the middle.
+    this.watch(hex(this.options.space));
+
     if (this.options.listen !== undefined) {
       this.listener = new PeerServer(this.options.listen);
       // Whoever can listen feeds what it accepts to the client; accepting is
@@ -114,6 +146,68 @@ export class Server {
   async synced(options: { timeoutMs?: number } = {}): Promise<Coverage> {
     if (this.held === null) return { kind: 'behind', chains: [] };
     return this.client.synced(hex(this.options.space), options);
+  }
+
+  /**
+   * Hold and mirror everything the main space links to.
+   *
+   * Idempotent, and called again on every change to the main space, so linking
+   * hosts a space and unlinking stops the hosting from growing. **It does not
+   * delete anything.** A mis-drag would otherwise destroy what may be the only
+   * copy of someone's space; withdrawing hosting is a matter of no longer
+   * serving, and discarding the data is a separate, deliberate act.
+   */
+  private async rehost(): Promise<void> {
+    if (this.held === null) return;
+    const depth = this.options.hostDepth ?? DEFAULT_HOST_DEPTH;
+    const before = new Set(this.hosted);
+    this.hosted = await this.client.hostLinked(hex(this.options.space), depth);
+    for (const id of this.hosted) {
+      // **Every hosted space is watched, not only the main one.** Beyond depth
+      // 1 the links that matter live in spaces that arrive *after* the walk —
+      // a hub holds the middle space before it has any of its events, so its
+      // links are not visible until they replicate. Watching only the main
+      // space would make deeper hosting work on restart and not before.
+      this.watch(id);
+      if (!before.has(id) && id !== hex(this.options.space)) {
+        this.options.observer?.onActivity?.({
+          at: Date.now(),
+          channel: 'connection',
+          space: id,
+          text: `hosting ${id.slice(0, 8)} — linked from the main space`,
+        });
+      }
+    }
+  }
+
+  /**
+   * Re-run the hosting walk whenever this space changes.
+   *
+   * Once per space: `onChange` has no dedup of its own, so subscribing again
+   * on each pass would add a listener per rehost and turn one fold into a
+   * cascade of walks.
+   */
+  private watch(id: string): void {
+    if (this.watching.has(id)) return;
+    const space = this.client.entry(id)?.space;
+    if (space === undefined) return;
+    this.watching.add(id);
+    space.onChange(() => void this.rehost());
+  }
+
+  /** Every space this peer holds: its main space and whatever it hosts. */
+  get hosting(): readonly string[] {
+    return this.hosted;
+  }
+
+  /**
+   * A blob from any space this peer holds, or null.
+   *
+   * Named per space because a hub holds several, and the main space's store is
+   * not where a hosted space's content lives.
+   */
+  async blobOf(space: string, hash: Uint8Array): Promise<Uint8Array | null> {
+    return (await this.client.entry(space)?.space.getBlob(hash)) ?? null;
   }
 
   /** The space this peer serves. Null before `start`. */

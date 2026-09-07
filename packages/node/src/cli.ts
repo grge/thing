@@ -397,10 +397,19 @@ export async function main(argv: readonly string[]): Promise<number> {
       }
       const port = Number.parseInt(flags['port'] ?? '9944', 10);
       const quiet = flags['quiet'] !== undefined;
+      // How far to follow links out of the main space, hosting what it finds.
+      // One hop by default: drop a link to a space in here and this peer hosts
+      // it. `0` serves only this peer's own space.
+      const depth = Number.parseInt(flags['host-depth'] ?? '1', 10);
+      if (!Number.isFinite(depth) || depth < 0) {
+        process.stderr.write('--host-depth takes a number of hops, 0 or more\n');
+        return 2;
+      }
       const server = new Server({
         dir,
         space: key,
         listen: { port },
+        hostDepth: depth,
         observer: quiet ? {} : activityLog(),
       });
       await server.start();
@@ -441,6 +450,7 @@ const USAGE = `thing — one space, and links to others
   thing init [--name X]              mint a space and serve it
   thing key                          this peer's space key, for sharing
   thing serve [--port N] [--quiet]   accept connections
+              [--host-depth N]       host spaces linked from this one (default 1)
   thing ls [path]                    what this space contains
   thing put <file> [--as name]       write a file in
   thing get <name> [--out file]      read one back
@@ -453,7 +463,11 @@ space: the write goes to the running holder and this exits once that
 holder confirms it has it. Without --at the write lands on disk, and a
 running holder will not see it until restarted.
 
-A peer holds one space. Other spaces are links inside it.
+A peer holds one space. Other spaces are links inside it — and a
+running serve hosts what it links to: add a link to someone's space and
+this peer stores and serves it, content included. Unlink to stop, or
+pass --host-depth 0 to host nothing but this peer's own space.
+
 Administration is local: this CLI, on this machine.
 
 The space lives in $THING_DIR, or the XDG data directory.

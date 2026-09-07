@@ -25,6 +25,7 @@ import type { Coverage, Divergence } from '../net/sync.js';
 import { vvToWire } from '../net/wire.js';
 import type { SpaceId, SpaceStore } from '../store/index.js';
 import { referencedBlobs } from '../fs/files.js';
+import { links } from '../fs/links.js';
 import { Space } from '../space.js';
 import {
   type Activity,
@@ -86,6 +87,8 @@ const ACTIVITY_LIMIT = 200;
 
 export class Client {
   protected readonly held = new Map<SpaceId, Held>();
+  /** Spaces being opened, so a concurrent `hold` waits rather than duplicating. */
+  private readonly opening = new Map<SpaceId, Promise<Space>>();
   private readonly activityLog: Activity[] = [];
   private readonly observers = new Set<ClientObserver>();
   protected closed = false;
@@ -154,6 +157,25 @@ export class Client {
     const existing = this.held.get(id);
     if (existing !== undefined) return existing.space;
 
+    // **The promise is the guard, not the map.** Opening awaits several times
+    // before anything is recorded, so two concurrent calls for one space would
+    // both pass a `held.has` check and open it twice — two stores, two folds,
+    // two of every session. A link graph makes that ordinary rather than
+    // exotic: it has cycles by design, so a walk reaches the same space by
+    // more than one path at once. Same shape as the `adopt` race.
+    const opening = this.opening.get(id);
+    if (opening !== undefined) return opening;
+
+    const started = this.openSpace(id, key, writer);
+    this.opening.set(id, started);
+    try {
+      return await started;
+    } finally {
+      this.opening.delete(id);
+    }
+  }
+
+  private async openSpace(id: SpaceId, key: PublicKey, writer?: KeyPair): Promise<Space> {
     const store = await this.capabilities.store.open(id, key);
     const own = writer ?? (await this.capabilities.keys?.keyFor(id)) ?? null;
 
@@ -432,6 +454,59 @@ export class Client {
     for (const session of entry.sessions.values()) {
       if (!session.isClosed) session.push(events);
     }
+  }
+
+  /**
+   * Hold every space reachable by links from a root, to a given depth.
+   *
+   * **The link is the authorisation** (`docs/MAIN-SPACE.md`). A hub holds what
+   * its main space links to and nothing else, which is a far narrower rule than
+   * `acceptUnknownSpaces` — that one makes a peer free storage for strangers,
+   * this one hosts exactly what its curators chose. Only writers of the root
+   * space can add a link, so no new permission concept is involved, and
+   * unlinking stops the hosting because §7.2.3's tombstone already means
+   * "no longer".
+   *
+   * Depth is a setting because one hop and many are different products: one is
+   * "host what I linked", and more is "host what they linked too", which is a
+   * hub of hubs. The graph has cycles by design, so the walk tracks what it has
+   * seen rather than trusting depth alone to terminate.
+   *
+   * Blobs are mirrored for everything held this way: hosting a space whose
+   * content cannot be served is not hosting it.
+   */
+  async hostLinked(root: SpaceId, depth: number): Promise<readonly SpaceId[]> {
+    const wanted = new Set<SpaceId>([root]);
+    if (depth > 0) {
+      let frontier = [root];
+      for (let hop = 0; hop < depth && frontier.length > 0; hop++) {
+        const next: SpaceId[] = [];
+        for (const id of frontier) {
+          const space = this.space(id);
+          if (space === null) continue;
+          for (const { target } of links(space.state)) {
+            const child = hex(target);
+            // Cycles are ordinary here, so a space already queued is not
+            // queued again — depth alone would not terminate.
+            if (wanted.has(child)) continue;
+            wanted.add(child);
+            next.push(child);
+          }
+        }
+        frontier = next;
+      }
+    }
+
+    for (const id of wanted) {
+      if (id === root) continue;
+      const key = keyFromId(id);
+      if (key === null) continue;
+      // No writing key: a hub stores and serves someone else's space without
+      // one, which §6.1 calls an ordinary way to participate.
+      await this.hold(key);
+      await this.setMirror(id, true);
+    }
+    return [...wanted].sort();
   }
 
   /**
