@@ -906,7 +906,43 @@ Each stage should leave a client someone can use.
    restore the default.
 
 
-## Stage 8 — Resolution and the mesh
+## Stage 8 — Resolution and the mesh ✅
+
+**Done**, except the numbers. `design/LOCATORS.md` has the scenarios and
+`ARCHITECTURE.md` §5.3 the design; this is what it cost.
+
+The shape landed as specified, with one correction found on the way: **§5.3's
+best locator source does not work.** A signed `:serves` list on a space's root
+is unwritable by the peer that knows the address — a host is usually a replica
+holding no key — and replicates a fact about a *pair* of peers as a fact about
+the space. It is dropped, and the cache carries what it was for.
+
+Four notes:
+
+- **A locator is a shape, not a URL.** §5.2 has two, and `{via, peer}` is how a
+  browser is reached. The cache is a bounded ranked list per space, learning
+  from success and failure, because which locator works is per client.
+- **Announcement had to become symmetric.** Whichever side connects first
+  announces into a connection whose far end has no session yet, and that
+  announcement was lost. A session answers the first one it receives, once —
+  the same fix `HELLO` already uses.
+- **`reach` dialled without holding the space**, so it failed for every space
+  the client did not already have, which is every space worth reaching. Caught
+  by a test rather than by reading.
+- **A connection is per space, and that constrains who can ask whom.** A peer
+  must share *some* space with a hub to have a connection to ask over —
+  dialling a hub about a space it does not hold is refused, correctly. Linking
+  the hub is how a person follows one. Discovered by writing a probe that got
+  it wrong; the integration test now says so.
+
+**Left undone:** the numbers. `KEEP_PER_SPACE`, `DROP_AFTER`,
+`MAX_SPACES_PER_PEER`, `MAX_LOCATORS_PER_PEER` and the dial timeout are
+starting values, not findings — §5.3 asks for a measurement against a real
+network and there is not one yet. And dialling a `{via, peer}` locator: a
+browser can *say* where it is, and nothing yet turns that back into a WebRTC
+meeting.
+
+## Stage 8 — the original plan
 
 §5.3, which the archived tree never had.
 

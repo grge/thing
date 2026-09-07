@@ -169,6 +169,53 @@ describe('a hub hosts what its main space links to', () => {
     void url;
   });
 
+  it('a stranger reaches a hosted space through the hub (§5.3)', async () => {
+    // The chain resolution exists for. Someone who knows only the hub's
+    // address ends up holding a space they had never heard of.
+    //
+    // **They must share a space with the hub to have a connection at all.**
+    // Resolution travels along connections you already have, and a connection
+    // is per space — so dialling a hub about a space it does not hold is
+    // refused, correctly. Linking the hub is how a person follows one, and the
+    // hub's own main space is what everyone can ask about.
+    const { server: hubServer, key: hubKey, url: hubUrl } = await hub();
+
+    const ownerPeer = await owner();
+    const ownerServer = new Server({
+      dir: ownerPeer.dir,
+      space: ownerPeer.key.publicKey,
+      listen: { port: 0, host: '127.0.0.1' },
+    });
+    cleanup.push(() => ownerServer.close());
+    await ownerServer.start();
+    await makeFile(ownerServer.space!, 'shared.txt', new TextEncoder().encode('via the hub'));
+    const ownerId = hex(ownerPeer.key.publicKey);
+
+    // The hub is told where the owner is, then curates a link to it.
+    hubServer.remember(ownerId, `ws://127.0.0.1:${ownerServer.port}`);
+    await makeLink(hubServer.space!, 'theirs', ownerPeer.key.publicKey);
+    await waitFor(() => hubServer.spaceOf(ownerId) !== null);
+
+    // A stranger follows the hub, which is the only address it has.
+    const strangerDir = await tempDir();
+    const strangerKey = await createSpace(strangerDir);
+    const stranger = new Server({ dir: strangerDir, space: strangerKey.publicKey });
+    cleanup.push(() => stranger.close());
+    await stranger.start();
+    stranger.remember(hex(hubKey.publicKey), hubUrl);
+    await makeLink(stranger.space!, 'the-hub', hubKey.publicKey);
+    await waitFor(() => stranger.peers().length > 0);
+
+    // It has never heard of the owner's space, and asks.
+    expect(stranger.spaceOf(ownerId)).toBeNull();
+    expect(await stranger.reach(ownerId)).toBe(true);
+
+    await waitFor(() => {
+      const held = stranger.spaceOf(ownerId);
+      return held !== null && list(held.state).some((e) => e.name === 'shared.txt');
+    });
+  });
+
   it('refuses a space it was never linked (§the model)', async () => {
     // The narrowness is the point: a hub hosts what its curators chose, not
     // whatever a stranger offers.

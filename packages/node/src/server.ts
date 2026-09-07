@@ -26,6 +26,7 @@ import {
   type Locator,
   type LocatorCache,
   parseLocator,
+  type PeerStatus,
   type Space,
 } from '@thing/engine';
 
@@ -233,6 +234,27 @@ export class Server {
   remember(space: string, locator: string): void {
     const parsed = parseLocator(locator);
     if (parsed !== null) this.locators?.remember(space, parsed);
+  }
+
+  /**
+   * Find a space and connect to it (§5.3).
+   *
+   * For a space this peer does not already reach: it asks whoever it is
+   * connected to, dials what comes back, and remembers what worked. Hosted
+   * spaces do this on their own when linked; this is the explicit form.
+   */
+  /**
+   * Connected peers, for an operator's view.
+   *
+   * The CLI is the only admin surface (`docs/design/MAIN-SPACE.md`), so this is
+   * how "who is this peer talking to" gets answered at all.
+   */
+  peers(): readonly PeerStatus[] {
+    return this.client.peers();
+  }
+
+  async reach(space: string): Promise<boolean> {
+    return this.client.reach(space);
   }
 
   /** Any space this peer holds, by id. Null if it holds none such. */
