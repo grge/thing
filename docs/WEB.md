@@ -136,6 +136,29 @@ in a stored one.
 works, which means a phone cannot join from a message it was sent unless the
 link is tappable.
 
+## Closing a tab deletes the space
+
+**Deliberate, and a footgun.** The alternative is that closing leaves the log
+behind — which means spaces accumulate with no way to remove one, and a browser
+that has visited a few hubs holds every space it ever expanded. Before this was
+decided, nothing in the client deleted anything, ever.
+
+The reason for choosing the destructive rule is that the safe-looking
+alternative is not safer, only quieter: **a client cannot know whether its copy
+is the last one.** No policy can decide what is safe to close, so deciding is
+the person's job however this behaves, and a rule they can state in a sentence
+beats one that guesses on their behalf. The UI asks first and says what it
+means.
+
+Spaces held only to expand a link go too, unless another open tab links to them.
+
+**That is not reference counting**, which cannot work here: links live inside
+spaces this client may not hold, so the graph cannot be walked without already
+holding all of it, and it has cycles by design. The rule is narrower — **a space
+that is not a tab is cached** — and cached spaces are disposable because losing
+one costs a fetch. The one-hop check from open tabs is what stops a shared space
+vanishing while something still shows it.
+
 ## Build order
 
 Each stage should leave a client someone can use.

@@ -203,6 +203,11 @@ inventory, nothing else records that a space exists. A client that forgets its
 tabs has no route back to a space it made itself, so the cost is the space
 rather than a tab.
 
+**Closing a tab deletes the space** (`docs/WEB.md`). Not forced by the model —
+which says only that a client may hold spaces — but it follows from there being
+no inventory: with nothing recording that a space exists, a client that keeps
+closed spaces accumulates them invisibly and offers no way to remove one.
+
 It is still not an inventory in this document's sense — it is per-client, never
 replicated, and holds only what someone had open. But it is durable, which
 makes it the third thing in the local-state list rather than a detail below it.
