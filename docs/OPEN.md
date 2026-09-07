@@ -32,6 +32,7 @@ Roughly in order of how much would change if the answer went the other way.
 | 8 | Does a peer keep replicating the losing branch of a resolved chain fork? Now a bandwidth question rather than a correctness one — resolution is deterministic, so a peer that drops the loser and one that keeps it fold the same state. | §7.3 |
 | 9 | How is a blob reference expressed, and is `:kind` doing two jobs? *(A space link looked like a third case of this and is not: it is a semantic question, not a storage one, and is settled in [MAIN-SPACE.md](MAIN-SPACE.md).)* | §3.9, §4.2 |
 | 10 | Do dense per-writer sequence numbers stay at all, given that the literature calls them unsafe against a *malicious* writer? See [EQUIVOCATION.md](EQUIVOCATION.md). Append points do not answer this. | §2.1, §2.3, §7.3 |
+| 10a | **The incremental fold intermittently disagrees with a replay.** `deps.test.ts` and `folder.test.ts` both fail on roughly one full-suite run in five, and both pass every time in isolation — so it is order- or state-dependent rather than a bad generated case. Predates the web work (reproduced on an older tree). This is the third appearance of "the two folds disagree", after 8a and the stage-9 fork bug, and the first that is not obviously explained. | §3.6 |
 | 11 | Does signing ever have to carry *attribution* rather than only authority — and does this system want a notion of a person at all? See [LEARNINGS.md](LEARNINGS.md) §1. | §5.1, §7.2.1 |
 
 **An OR-set is still unimplemented, and still not needed.** The set that does

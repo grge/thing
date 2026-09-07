@@ -388,6 +388,40 @@ describe('tabs', () => {
     await client.close();
   });
 
+  it('signals a change when a linked space is fetched', async () => {
+    // Expanding a link the client does not hold fetches it, and a view has to
+    // learn that the contents are now available. Without a signal the tree
+    // showed "Fetching…" until some unrelated interaction forced a redraw.
+    const client = new Client();
+    const mine = await client.create('mine');
+    const other = await generateKeyPair();
+    await makeLink(client.space(mine.id)!, 'theirs', other.publicKey);
+
+    let signals = 0;
+    const off = client.subscribe(() => (signals += 1));
+
+    // What `expandLink` does: hold it, without opening a tab.
+    await client.hold(other.publicKey);
+
+    expect(signals).toBeGreaterThan(0);
+    expect(client.space(hex(other.publicKey))).not.toBeNull();
+    off();
+    await client.close();
+  });
+
+  it('holding for a link does not add a tab', async () => {
+    // Expanding is looking inside; opening is going there. Fetching a linked
+    // space to show its contents must not do the second.
+    const client = new Client();
+    const mine = await client.create('mine');
+    const other = await generateKeyPair();
+
+    await client.hold(other.publicKey);
+
+    expect(client.view().map((t) => t.id)).toEqual([mine.id]);
+    await client.close();
+  });
+
   it('tells a view when something changed', async () => {
     const client = new Client();
     let redraws = 0;

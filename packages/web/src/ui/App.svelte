@@ -93,8 +93,20 @@
     return p instanceof Uint8Array ? p : null;
   }
 
+  /**
+   * A counter bumped on every client change.
+   *
+   * `tabs` is not enough on its own: a linked space being fetched changes what
+   * the tree can show without changing the tab list, so anything reading the
+   * client outside `tabs` needs something reactive to depend on. Without this,
+   * expanding a link the client did not already hold showed "Fetching…" until
+   * some unrelated interaction forced a redraw.
+   */
+  let epoch = $state(0);
+
   function refresh(): void {
     tabs = client.view();
+    epoch += 1;
     if (activeId === null && tabs.length > 0) activeId = tabs[0]!.id;
   }
 
@@ -177,6 +189,20 @@
       error = 'could not open that space';
     }
   }
+
+  /**
+   * The fold of a linked space, if this client holds it.
+   *
+   * Rebuilt whenever the client changes, so the tree re-reads it. A plain
+   * function would not: nothing in it is reactive, so Svelte has no reason to
+   * call it again, and `void epoch` inside one is optimised away rather than
+   * registering as a dependency. Deriving the *function* is what makes the
+   * dependency real.
+   */
+  const lookup = $derived.by(() => {
+    void epoch;
+    return (target: PublicKey): State | null => client.space(hex(target))?.state ?? null;
+  });
 
   function toggle(path: string): void {
     const next = new Set(expanded);
@@ -479,7 +505,7 @@
         <Tree
           state={active.state}
           spaceId={active.id}
-          linked={(target) => client.space(hex(target))?.state ?? null}
+          linked={lookup}
           {expanded}
           {selectedPath}
           {writable}
