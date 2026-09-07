@@ -161,9 +161,14 @@
     font-weight: normal;
     margin: 0 0 var(--space-2) 0;
   }
-  .body { min-height: 0; overflow: auto; }
-  /* A renderer that scrolls itself must not be nested in a scroller. */
-  .body.fills { overflow: hidden; flex: 1; display: flex; }
+  /* Ordinary renderers scroll here. */
+  .body { min-height: 0; overflow: auto; flex: 1; }
+  /*
+   * One that fills scrolls itself, so this must not scroll *and* must give it
+   * a real height — `flex: 1` against a `min-height: 0` column does that, and
+   * `overflow: hidden` stops a second scrollbar fighting the renderer's own.
+   */
+  .body.fills { overflow: hidden; display: flex; }
   .note { color: var(--ink-muted); font-size: var(--text--1); }
   .key {
     font-family: var(--font-data);

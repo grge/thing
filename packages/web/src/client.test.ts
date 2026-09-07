@@ -353,6 +353,41 @@ describe('tabs', () => {
     await client.close();
   });
 
+  it('a file inside a linked space belongs to that space', async () => {
+    // Previewing a file reached through a link against the *tab's* space finds
+    // no such object, and reports "no content" for every file in a hub.
+    const client = new Client();
+    const mine = await client.create('mine');
+    const other = await client.create('theirs');
+    await makeFile(client.space(other.id)!, 'theirs.txt', new TextEncoder().encode('hi'));
+    await makeLink(client.space(mine.id)!, 'theirs', fromHexKey(other.id));
+
+    const inside = list(client.space(other.id)!.state)[0]!;
+
+    // Looked up in the linked space: found. In the tab's: not there.
+    expect(entry(client.space(other.id)!.state, inside.id)?.name).toBe('theirs.txt');
+    expect(entry(client.space(mine.id)!.state, inside.id)).toBeNull();
+    await client.close();
+  });
+
+  it('a space reached twice is the same space, whatever the path', async () => {
+    // Two hubs linking each other, or a link back to your own space. Expansion
+    // is keyed by path so each occurrence is its own row and a cycle can be
+    // walked by hand; the space behind them is one space.
+    const client = new Client();
+    const a = await client.create('a');
+    const b = await client.create('b');
+    await makeLink(client.space(a.id)!, 'b', fromHexKey(b.id));
+    await makeLink(client.space(b.id)!, 'a', fromHexKey(a.id));
+
+    const intoB = links(client.space(a.id)!.state)[0]!;
+    const backToA = links(client.space(b.id)!.state)[0]!;
+
+    expect(hex(intoB.target)).toBe(b.id);
+    expect(hex(backToA.target)).toBe(a.id);
+    await client.close();
+  });
+
   it('tells a view when something changed', async () => {
     const client = new Client();
     let redraws = 0;
@@ -365,3 +400,9 @@ describe('tabs', () => {
     await client.close();
   });
 });
+
+function fromHexKey(id: string): Uint8Array {
+  const out = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) out[i] = Number.parseInt(id.slice(i * 2, i * 2 + 2), 16);
+  return out;
+}

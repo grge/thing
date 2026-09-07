@@ -31,27 +31,34 @@
      * the row offers to open it instead.
      */
     linked: (target: PublicKey) => State | null;
+    /** The id of the space `state` belongs to. */
+    spaceId: string;
     expanded: Set<string>;
-    selected: Uuid | null;
     writable: boolean;
-    /** Which row a drag is currently over, by hex id. */
+    /** Which row a drag is currently over, by path. */
     dropTarget: string | null;
-    onSelect: (e: FileEntry) => void;
-    onToggle: (id: Uuid) => void;
+    /** The currently selected row's path, if any. */
+    selectedPath: string | null;
+    /** The entry, and the space it came from — which is not the tab's space
+     * once a link has been expanded. */
+    onSelect: (e: FileEntry, fromSpace: string, path: string) => void;
+    /** Keyed by *path*, not id: the same space reached twice is two rows. */
+    onToggle: (path: string) => void;
     /** Fetch a linked space so it can be expanded in place. */
     onExpandLink: (e: FileEntry, target: PublicKey) => void;
     onDragStart: (id: Uuid) => void;
-    onDragOver: (id: Uuid | null) => void;
+    onDragOver: (path: string | null) => void;
     onDropOn: (id: Uuid) => void;
   }
 
   const {
     state,
     linked,
+    spaceId,
     expanded,
-    selected,
     writable,
     dropTarget,
+    selectedPath,
     onSelect,
     onToggle,
     onExpandLink,
@@ -68,21 +75,22 @@
   }
 </script>
 
-{#snippet row(e: FileEntry, depth: number, from: State)}
+{#snippet row(e: FileEntry, depth: number, from: State, fromId: string, parentPath: string)}
   {@const key = hex(e.id)}
+  {@const path = `${parentPath}/${key}`}
   {@const target = isLink(e) ? targetOf(from, e.id) : null}
   {@const inside = target === null ? null : linked(target)}
   {@const canOpen = target !== null || opens(from, e)}
-  {@const isOpen = expanded.has(key)}
+  {@const isOpen = expanded.has(path)}
   <li>
     <div
       class="row"
-      class:selected={selected !== null && hex(selected) === key}
-      class:drop={dropTarget === key}
+      class:selected={selectedPath === path}
+      class:drop={dropTarget === path}
       draggable={writable}
       role="treeitem"
       tabindex="-1"
-      aria-selected={selected !== null && hex(selected) === key}
+      aria-selected={selectedPath === path}
       ondragstart={(event) => {
         // A row carries its own id, so a drop elsewhere knows what moved.
         event.dataTransfer?.setData('text/plain', key);
@@ -95,7 +103,7 @@
         if (event.dataTransfer?.types.includes('Files') === true) return;
         event.preventDefault();
         event.stopPropagation();
-        onDragOver(e.id);
+        onDragOver(path);
       }}
       ondragleave={() => onDragOver(null)}
       ondrop={(event) => {
@@ -116,12 +124,12 @@
           // A link this client does not hold yet has nothing to show, so
           // expanding it fetches first.
           if (target !== null && inside === null) onExpandLink(e, target);
-          onToggle(e.id);
+          onToggle(path);
         }}
       >
         {canOpen ? (isOpen ? '▾' : '▸') : ''}
       </button>
-      <button class="name" onclick={() => onSelect(e)}>
+      <button class="name" onclick={() => onSelect(e, fromId, path)}>
         <span class="glyph">
           {#if target !== null}
             <Icon name="link" />
@@ -142,7 +150,7 @@
             </li>
           {:else}
             {#each list(inside) as child (hex(child.id))}
-              {@render row(child, depth + 1, inside)}
+              {@render row(child, depth + 1, inside, hex(target), path)}
             {:else}
               <li class="empty" style="padding-left: calc({depth + 1} * var(--space-3))">
                 Empty, or not yet synced.
@@ -151,7 +159,7 @@
           {/if}
         {:else}
           {#each list(from, e.id) as child (hex(child.id))}
-            {@render row(child, depth + 1, from)}
+            {@render row(child, depth + 1, from, fromId, path)}
           {/each}
         {/if}
       </ul>
@@ -161,7 +169,7 @@
 
 <ul class="tree" role="tree">
   {#each roots as e (hex(e.id))}
-    {@render row(e, 0, state)}
+    {@render row(e, 0, state, spaceId, '')}
   {:else}
     <li class="empty">Empty.</li>
   {/each}

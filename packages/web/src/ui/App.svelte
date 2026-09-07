@@ -39,9 +39,20 @@
 
   let tabs = $state<Tab[]>([]);
   let activeId = $state<string | null>(null);
-  /** Which folders are open, by hex id. Interface state, in no log. */
+  /**
+   * Which rows are open, by **path** rather than id.
+   *
+   * A link can be reached twice — a hub linking back, two hubs linking each
+   * other — and those are two rows showing the same space. Keying by id would
+   * make them one, so expanding at one depth would toggle the other and a cycle
+   * could not be walked. Paths make each occurrence its own row, which is what
+   * lets a cycle be expanded indefinitely and by hand.
+   */
   let expanded = $state<Set<string>>(new Set());
   let selected = $state<Uuid | null>(null);
+  /** Which row is selected, and which space it came from. */
+  let selectedPath = $state<string | null>(null);
+  let selectedIn = $state<string | null>(null);
   let error = $state<string | null>(null);
   let dragging = $state(false);
   let fileInput = $state<HTMLInputElement | null>(null);
@@ -54,8 +65,17 @@
 
   const active = $derived(tabs.find((t) => t.id === activeId) ?? null);
   const writable = $derived(active?.writable === true);
+  /**
+   * The space the selection lives in.
+   *
+   * Not the tab's space once a link has been expanded: a file inside a linked
+   * space belongs to *that* space, and previewing it against the tab's would
+   * find no such object — which is what it did, reporting "no content" for
+   * every file reached through a link.
+   */
+  const selectedSpace = $derived(selectedIn === null ? null : client.space(selectedIn));
   const chosen = $derived<FileEntry | null>(
-    active === null || selected === null ? null : entry(active.state, selected),
+    selectedSpace === null || selected === null ? null : entry(selectedSpace.state, selected),
   );
 
   /**
@@ -137,8 +157,10 @@
    * yank the view into another tab. Opening a linked space in its own tab is
    * a separate action, offered in the bar when a link is selected.
    */
-  function choose(e: FileEntry): void {
+  function choose(e: FileEntry, fromSpace: string, path: string): void {
     selected = e.id;
+    selectedPath = path;
+    selectedIn = fromSpace;
   }
 
   /**
@@ -156,11 +178,10 @@
     }
   }
 
-  function toggle(id: Uuid): void {
-    const key = hex(id);
+  function toggle(path: string): void {
     const next = new Set(expanded);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
+    if (next.has(path)) next.delete(path);
+    else next.add(path);
     expanded = next;
   }
 
@@ -275,7 +296,9 @@
   }
 
   async function renameChosen(): Promise<void> {
-    const space = activeId === null ? null : client.space(activeId);
+    // The selection's own space: a file reached through a link belongs to the
+    // linked space, not the tab's.
+    const space = selectedSpace;
     if (space === null || chosen === null) return;
     const next = prompt('New name', chosen.name);
     if (next === null || next === '' || next === chosen.name) return;
@@ -287,7 +310,9 @@
    * The events stay in the log and a peer that already has them keeps them.
    */
   async function deleteChosen(): Promise<void> {
-    const space = activeId === null ? null : client.space(activeId);
+    // The selection's own space: a file reached through a link belongs to the
+    // linked space, not the tab's.
+    const space = selectedSpace;
     if (space === null || chosen === null) return;
     if (!confirm(`Delete ${chosen.name}?`)) return;
     await remove(space, chosen.id);
@@ -299,7 +324,9 @@
    * and the only way to get bytes back out of a space.
    */
   async function downloadChosen(): Promise<void> {
-    const space = activeId === null ? null : client.space(activeId);
+    // The selection's own space: a file reached through a link belongs to the
+    // linked space, not the tab's.
+    const space = selectedSpace;
     if (space === null || chosen === null) return;
     const bytes = await read(space, chosen.id);
     if (bytes === null) {
@@ -451,16 +478,17 @@
 
         <Tree
           state={active.state}
+          spaceId={active.id}
           linked={(target) => client.space(hex(target))?.state ?? null}
           {expanded}
-          {selected}
+          {selectedPath}
           {writable}
           {dropTarget}
           onSelect={choose}
           onToggle={toggle}
           onExpandLink={(e, target) => void expandLink(e, target)}
           onDragStart={(id) => (moving = id)}
-          onDragOver={(id) => (dropTarget = id === null ? null : hex(id))}
+          onDragOver={(path) => (dropTarget = path)}
           onDropOn={(id) => void dropOnRow(id)}
         />
 
@@ -473,8 +501,8 @@
           </button>
           <Preview
             {client}
-            space={client.space(active.id)!}
-            spaceId={active.id}
+            space={selectedSpace!}
+            spaceId={selectedIn!}
             id={selected}
             peers={active.peers}
           />
@@ -545,10 +573,15 @@
     min-height: 0;
     padding: var(--space-3);
   }
+  /*
+   * No `overflow: auto` here: a renderer that fills the pane — a PDF viewer —
+   * needs a height to resolve `100%` against, and a scrolling parent with no
+   * fixed height gives it zero. Scrolling belongs to the renderer's own
+   * container in Preview, which knows whether the renderer wants it.
+   */
   .pane-preview {
     display: flex;
     flex-direction: column;
-    overflow: auto;
     min-height: 0;
     padding: var(--space-3);
   }
