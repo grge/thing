@@ -126,7 +126,7 @@
           {#if target !== null}
             <Icon name="link" />
           {:else if canOpen}
-            <Icon name="files" />
+            <Icon name="folder" />
           {/if}
         </span>
         {e.name}
