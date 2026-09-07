@@ -68,7 +68,6 @@ export type WireVersionVector = Record<string, WireFrontier>;
  */
 export interface Hello {
   readonly type: 'HELLO';
-  readonly space: string;
   readonly protocol: number;
   readonly vv: WireVersionVector;
 }
@@ -165,7 +164,7 @@ export interface SyncedIs {
   readonly forked?: readonly string[];
 }
 
-export type ControlMessage =
+export type ControlBody =
   | Hello
   | Events
   | Want
@@ -174,6 +173,20 @@ export type ControlMessage =
   | NoBlob
   | Synced
   | SyncedIs;
+
+/**
+ * A control message, and the space it is about.
+ *
+ * **Every frame names its space, not only `HELLO`** (`design/CONNECTIONS.md`).
+ * One connection carries several spaces — which is not an optimisation but the
+ * only thing that works, since a browser cannot be dialled (§5.6) and so a hub
+ * that wants a space held there has no second connection to open.
+ *
+ * The id rather than a negotiated session index: an index is state a peer can
+ * misremember, and misremembering it applies events to the wrong log. A wrong
+ * id fails closed — there is no session for it and the frame is dropped.
+ */
+export type ControlMessage = ControlBody & { readonly space: string };
 
 /* ── ephemeral messages ─────────────────────────────────────────────────── */
 
@@ -310,6 +323,11 @@ function encodeJson(tag: number, msg: unknown): Uint8Array {
 
 export function encodeControl(msg: ControlMessage): Uint8Array {
   return encodeJson(TAG_CONTROL, msg);
+}
+
+/** The space a control frame is about, without decoding the whole message. */
+export function spaceOfControl(msg: ControlMessage): string {
+  return msg.space;
 }
 
 export function encodeEphemeral(msg: EphemeralMessage): Uint8Array {

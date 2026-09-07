@@ -216,6 +216,53 @@ describe('a hub hosts what its main space links to', () => {
     });
   });
 
+  it('hosts a space held only by a peer that cannot be dialled (§5.3)', async () => {
+    // The case hosting exists for, and the one that did not work until a
+    // connection could carry several spaces (`design/CONNECTIONS.md`).
+    //
+    // A browser cannot be dialled, so when a hub decides to host a space held
+    // there it has no second connection to open. It has to use the one the
+    // browser already opened — which means resolving over that connection,
+    // then greeting for a second space on it.
+    const { server: hubServer, key: hubKey, url } = await hub();
+    const hubId = hex(hubKey.publicKey);
+
+    // A "browser": it dials, and has no address of its own.
+    const dir = await tempDir();
+    const keyring = new FileKeyring(dir);
+    await keyring.mintFor(hubId);
+    const browser = new Client(
+      {
+        store: new FileStore(dir),
+        keys: { keyFor: (i) => keyring.keyFor(i) },
+      },
+      {},
+    );
+    cleanup.push(() => browser.close());
+    await browser.hold(hubKey.publicKey, (await keyring.keyFor(hubId)) ?? undefined);
+    await browser.join(hubId, await dial(url));
+    await waitFor(() => browser.peers().length > 0);
+
+    // It makes a space of its own and puts something in it.
+    const mine = await keyring.mint();
+    const mineId = hex(mine.publicKey);
+    const mineSpace = await browser.hold(mine.publicKey, mine);
+    await makeFile(mineSpace, 'only-here.md', new TextEncoder().encode('# held in a browser'));
+
+    // Linking it is the whole instruction — no address, and none to give.
+    await makeLink(browser.space(hubId)!, 'mine', mine.publicKey);
+
+    // The hub resolves it over the connection the browser opened, greets for
+    // it there, and ends up holding the content.
+    await waitFor(() => {
+      const held = hubServer.spaceOf(mineId);
+      return held !== null && list(held.state).some((e) => e.name === 'only-here.md');
+    });
+
+    // And the browser now has two sessions on one transport.
+    expect(browser.peers().filter((p) => p.space === mineId)).toHaveLength(1);
+  });
+
   it('refuses a space it was never linked (§the model)', async () => {
     // The narrowness is the point: a hub hosts what its curators chose, not
     // whatever a stranger offers.

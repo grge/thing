@@ -14,7 +14,7 @@ the decision was made, so one can be superseded without being wrong.
 | `APPEND-POINTS.md` | how a writer's chain is keyed, so two processes never fork |
 | `DEPS.md` | judging an event against the writer set its author had seen |
 | `SEQUENCE.md` | the sequence rule, written as a specification first (§3.6) |
-| `CONNECTIONS.md` | **not built** — a connection carries many spaces, not one |
+| `CONNECTIONS.md` | a connection carries many spaces, not one |
 | `WEB-CLIENT.md` | what the browser client is, and what shapes it |
 | `CLIENTS.md` | **superseded in part** — append points removed two of its conclusions |
 

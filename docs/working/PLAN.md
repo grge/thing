@@ -942,7 +942,7 @@ network and there is not one yet. And dialling a `{via, peer}` locator: a
 browser can *say* where it is, and nothing yet turns that back into a WebRTC
 meeting.
 
-## Stage 8.1 — A connection carries many spaces
+## Stage 8.1 — A connection carries many spaces ✅
 
 **Designed, not built.** `../design/CONNECTIONS.md` has the reasoning.
 
@@ -968,6 +968,18 @@ nothing left.
 **Done when:** a space created in a browser, linked into a hub's space, is held
 and served by that hub — and a second browser that has never met the first can
 read it.
+
+**Done.** Three notes:
+
+- **One router, two ways in.** `join` and `adopt` were separate frame handlers
+  and each hardwired one session; they are now the same routing table, and
+  `join` differs only in greeting eagerly for the space it dialled about.
+- **`reach` was attaching without greeting.** It built a session and said
+  nothing, so the far end never learned the space was wanted there — and a
+  session nobody greeted for is one the router will not deliver to either. It
+  is the mutation that fails the new test.
+- **Refusal is per space.** A peer that will not hold one closes the connection
+  only if nothing else on it survives.
 
 ## Stage 8 — the original plan
 

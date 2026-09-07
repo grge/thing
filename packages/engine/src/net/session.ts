@@ -24,6 +24,7 @@ import {
 } from './ephemeral.js';
 import type { Locator } from './locator.js';
 import {
+  type ControlBody,
   type ControlMessage,
   decodeFrame,
   encodeControl,
@@ -143,7 +144,6 @@ export class Session {
   private async sendHello(): Promise<void> {
     const hello: Hello = {
       type: 'HELLO',
-      space: this.store.space,
       protocol: PROTOCOL_VERSION,
       vv: vvToWire(await this.store.versionVector()),
     };
@@ -199,15 +199,18 @@ export class Session {
   }
 
   private async onControl(msg: ControlMessage): Promise<void> {
+    // **A frame for another space is not ours.** One connection carries several
+    // spaces (`design/CONNECTIONS.md`), so a session must check rather than
+    // assume — and dropping is the right answer, not closing: the frame belongs
+    // to a sibling session on the same transport, or to a space this peer does
+    // not hold. Closing would take down every space sharing the connection.
+    if (msg.space !== this.store.space) return;
+
     switch (msg.type) {
       case 'HELLO': {
         if (msg.protocol !== PROTOCOL_VERSION) {
           // Different versions share no readable messages, so there is nothing
           // to negotiate — the connection is simply not usable.
-          this.close();
-          return;
-        }
-        if (msg.space !== this.store.space) {
           this.close();
           return;
         }
@@ -504,9 +507,16 @@ export class Session {
     return this.ephemeral.whoHas(hex(hash)).includes(this.options.peer);
   }
 
-  private send(msg: ControlMessage): void {
+  /**
+   * Send a control message, stamped with this session's space.
+   *
+   * Callers name the message, never the space: a session is *for* one space
+   * (`design/CONNECTIONS.md`), so a caller that could choose would only ever
+   * choose wrong. One place to stamp it is also one place to get it right.
+   */
+  private send(msg: ControlBody): void {
     if (this.closed) return;
-    this.channel.send(encodeControl(msg));
+    this.channel.send(encodeControl({ ...msg, space: this.store.space }));
   }
 
   close(): void {

@@ -596,9 +596,12 @@ describe('the connection', () => {
     expect(wire.a.isClosed).toBe(true);
   });
 
-  it('closes on the wrong space', async () => {
-    // An event's signature covers the space key (§2.1), so a connection about
-    // a different space could never produce anything usable.
+  it('drops a frame for another space without closing', async () => {
+    // **This used to close**, which was right when a connection was about one
+    // space. It is wrong now: one connection carries several
+    // (`design/CONNECTIONS.md`), so a frame naming a different space belongs to
+    // a sibling session on the same transport — or to a space this peer does
+    // not hold. Closing would take down every space sharing the connection.
     const space = await keyPairFromSeed(labelled('space', SEED_LEN));
     const a = await makePeer(space, space);
     const wire = await connect(a, a);
@@ -607,8 +610,8 @@ describe('the connection', () => {
       0x01,
       ...UTF8.encode(JSON.stringify({ type: 'HELLO', space: 'somewhere-else', protocol: 1, vv: {} })),
     ]);
-    await wire.a.receive(elsewhere);
-    expect(wire.a.isClosed).toBe(true);
+    expect(await wire.a.receive(elsewhere)).toBe(true);
+    expect(wire.a.isClosed).toBe(false);
   });
 
   it('survives a malformed frame', async () => {

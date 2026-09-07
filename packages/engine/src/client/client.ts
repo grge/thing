@@ -130,6 +130,13 @@ export class Client {
   private readonly opening = new Map<SpaceId, Promise<Space>>();
   /** Resolution queries in flight, by id, collecting answers as they arrive. */
   private readonly asking = new Map<number, Asking>();
+  /** Sessions per connection, by space — the routing table (`CONNECTIONS.md`). */
+  private readonly routed = new Map<string, Map<SpaceId, Promise<Session | null>>>();
+  /** How to add a space to a routed connection, per connection. */
+  private readonly openers = new Map<
+    string,
+    (space: SpaceId, kind: PeerKind) => Promise<Session | null>
+  >();
   private nextAsk = 1;
   private readonly activityLog: Activity[] = [];
   private readonly observers = new Set<ClientObserver>();
@@ -295,19 +302,16 @@ export class Client {
    * connection — a WebSocket, a data channel, a Unix socket — hands it here.
    */
   async join(id: SpaceId, conn: Connection, kind: PeerKind = 'direct'): Promise<Session> {
-    const session = await this.attach(conn, id, kind);
-    if (session === null) throw new Error('not holding that space');
-    // Delivery is wired here rather than in `attach`, because the two ways in
-    // differ in exactly this: an adopted connection has to read its own frames
-    // to learn which space it is about, and would otherwise deliver each one
-    // twice.
-    conn.onFrame((data) => void session.receive(data));
-    conn.onClose(() => this.dropped(conn.peer));
+    // The same router as `adopt`, with one space greeted eagerly: a dialler
+    // knows what it came for, and the far end cannot know to expect it
+    // otherwise. Everything else on this connection opens when the peer greets
+    // for it — which is what lets a hub take a space held by a browser that
+    // cannot be dialled (`design/CONNECTIONS.md`).
+    void kind;
+    const sessions = this.route(conn, { greet: id });
+    const session = await sessions.get(id);
+    if (session === null || session === undefined) throw new Error('not holding that space');
     await session.start();
-    // Tell this peer what we serve (§5.3's push half). Announcing on connect
-    // is what makes availability maintained by the traffic that does the work,
-    // with no crawl and no polling.
-    this.announceTo(session);
     // Blobs missed while there was nobody to ask. `onEvents` only fires for
     // *new* events, so without this a peer that folded a `:body` while
     // disconnected would never fetch its bytes — the gap is invisible,
@@ -326,49 +330,111 @@ export class Client {
    * about *knowing*, not about authority.
    */
   adopt(conn: Connection): void {
-    // The *promise* is the guard, not the session. `attach` is asynchronous —
-    // it may open a store — so several frames can arrive before the first one
-    // finishes, and a `session === null` check would let each of them start
-    // another. Three sessions on one connection is three of everything:
-    // three copies of every event delivered, three vectors exchanged.
-    let starting: Promise<Session | null> | null = null;
-
     for (const o of this.observers) o.onConnect?.(null, conn.peer);
+    this.route(conn, { greet: null });
+  }
+
+  /**
+   * Deliver this connection's frames to the right session, opening as needed.
+   *
+   * **One connection, several spaces** (`design/CONNECTIONS.md`). Every control
+   * frame names its space, so routing is a lookup rather than a guess — the
+   * earlier code bound a connection to the first space it heard about and sent
+   * every later frame there, which meant a `HELLO` for a second space reached
+   * the wrong session and was refused.
+   *
+   * `greet` is the space this peer dialled *about*, if it dialled. That session
+   * is opened eagerly and greeted, because the far end cannot know to expect it
+   * otherwise. Everything else opens when the peer greets for it.
+   *
+   * The **promise** is the entry, not the session: opening is asynchronous, so
+   * several frames can arrive before the first finishes, and a `has` check
+   * would let each start another. Three sessions for one space is three copies
+   * of every event delivered.
+   */
+  private route(conn: Connection, options: { greet: SpaceId | null }): Map<SpaceId, Promise<Session | null>> {
+    // Kept per connection rather than per call, so a space wanted *later* — by
+    // `reach`, over a transport already open — can be added to the same
+    // routing table rather than starting a second one.
+    const sessions = this.routed.get(conn.peer) ?? new Map<SpaceId, Promise<Session | null>>();
+    this.routed.set(conn.peer, sessions);
+
+    const open = (id: SpaceId, kind: PeerKind): Promise<Session | null> => {
+      const existing = sessions.get(id);
+      if (existing !== undefined) return existing;
+      const starting = (async (): Promise<Session | null> => {
+        const session = await this.attach(conn, id, kind);
+        if (session === null) {
+          // A space this peer will not hold. **Refusing is per space, not per
+          // connection**: the transport may be carrying others it does hold,
+          // and closing would take those down with it.
+          sessions.delete(id);
+          this.note('connection', id, `refused ${conn.peer}: not holding that space`);
+          for (const o of this.observers) o.onRefused?.(id, conn.peer);
+          return null;
+        }
+        for (const o of this.observers) o.onConnect?.(id, conn.peer);
+        void this.mirror(id);
+        this.announceTo(session);
+        this.changed();
+        return session;
+      })();
+      sessions.set(id, starting);
+      return starting;
+    };
 
     conn.onFrame((data) => {
       void (async () => {
-        if (starting === null) {
-          const id = spaceFromHello(data);
-          // Not a greeting, and nothing has claimed this connection yet.
-          if (id === null) return;
-          starting = this.attach(conn, id, 'direct');
-          const opened = await starting;
-          if (opened === null) {
-            // A space this peer does not hold and will not accept. Closing is
-            // the honest answer: there is nothing to sync.
-            this.note('connection', id, `refused ${conn.peer}: not holding that space`);
-            for (const o of this.observers) o.onRefused?.(id, conn.peer);
-            conn.close();
-            return;
+        const framed = frameSpace(data);
+        // Not a control frame — a blob chunk or an ephemeral message. Those are
+        // about the connection rather than about one space, so any live session
+        // can handle them and the first will do.
+        if (framed === null) {
+          for (const pending of sessions.values()) {
+            const session = await pending;
+            if (session !== null && !session.isClosed) {
+              await session.receive(data);
+              return;
+            }
           }
-          for (const o of this.observers) o.onConnect?.(id, conn.peer);
-          // As in `join`: a peer that folded a `:body` with nobody to ask now
-          // has somebody. This is the path a *server* takes, where mirroring
-          // is on by default, so it is the one that matters most.
-          void this.mirror(id);
-          this.announceTo(opened);
-          this.changed();
+          return;
         }
 
-        // Frames that arrived while the session was opening wait for it here,
-        // in the order they arrived, rather than being dropped or duplicated.
-        const session = await starting;
+        // Only a greeting may open a session. Any other frame for a space this
+        // connection has not greeted about is not ours to act on.
+        const pending = framed.greeting ? open(framed.space, 'direct') : sessions.get(framed.space);
+        if (pending === undefined) return;
+        const session = await pending;
         if (session === null) return;
         await session.receive(data);
       })();
     });
 
-    conn.onClose(() => this.dropped(conn.peer));
+    conn.onClose(() => {
+      this.routed.delete(conn.peer);
+      this.dropped(conn.peer);
+    });
+
+    this.openers.set(conn.peer, open);
+    if (options.greet !== null) void open(options.greet, 'direct');
+    return sessions;
+  }
+
+  /**
+   * Open a session for a space on a connection that is already routed.
+   *
+   * How a space is added to a transport after the fact: `reach` finds that a
+   * connected peer serves it, and there is no second connection to open —
+   * which for a browser there never can be (§5.6).
+   */
+  private async openOn(
+    conn: Connection,
+    space: SpaceId,
+    kind: PeerKind,
+  ): Promise<Session | null> {
+    const open = this.openers.get(conn.peer);
+    if (open === undefined) return null;
+    return open(space, kind);
   }
 
   /**
@@ -759,7 +825,15 @@ export class Client {
         const k = keyFromId(space);
         if (k === null) continue;
         await this.hold(k);
-        await this.attach(conn, space, 'introduced');
+        // **Greet, over the connection that is already open.** `attach` alone
+        // builds a session and says nothing, so the far end never learns this
+        // space is wanted here — and a session nobody greeted for is one the
+        // router will not deliver to either. `openOn` does both: registers it
+        // for incoming frames and sends the `HELLO` that makes the other side
+        // open its own (`design/CONNECTIONS.md`).
+        const session = await this.openOn(conn, space, 'introduced');
+        if (session === null) continue;
+        await session.start();
         this.note('signalling', space, `reached via ${peer}`);
         return true;
       } catch {
@@ -971,13 +1045,27 @@ export class Client {
   }
 }
 
-/** Peek at a HELLO to learn which space a connection is about. */
-export function spaceFromHello(data: Uint8Array): SpaceId | null {
+/**
+ * Which space a control frame is about, and whether it opens a conversation.
+ *
+ * Every control frame names its space (`design/CONNECTIONS.md`), so this is the
+ * ordinary path rather than a peek: one connection carries several spaces, and
+ * a receiver has to know which one each frame belongs to before it can route
+ * it anywhere.
+ *
+ * `greeting` distinguishes a `HELLO` — which may *open* a session for a space
+ * not yet known on this connection — from every other frame, which may only be
+ * delivered to a session that already exists. Without that distinction any
+ * stray frame would open a store.
+ */
+export function frameSpace(data: Uint8Array): { space: SpaceId; greeting: boolean } | null {
   if (data.length < 2 || data[0] !== 0x01) return null;
   try {
-    const msg = JSON.parse(new TextDecoder().decode(data.subarray(1)));
-    if (msg?.type !== 'HELLO' || typeof msg.space !== 'string') return null;
-    return msg.space;
+    const msg: unknown = JSON.parse(new TextDecoder().decode(data.subarray(1)));
+    if (typeof msg !== 'object' || msg === null) return null;
+    const { space, type } = msg as { space?: unknown; type?: unknown };
+    if (typeof space !== 'string') return null;
+    return { space, greeting: type === 'HELLO' };
   } catch {
     return null;
   }

@@ -1,6 +1,6 @@
 # A connection carries many spaces
 
-**Status: a design, not built.** It corrects an assumption the code made without
+**Status: built** (PLAN.md stage 8.1). It corrects an assumption the code made without
 ever stating it, found by a browser that could see a link and never open it.
 
 ---

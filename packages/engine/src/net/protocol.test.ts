@@ -7,6 +7,9 @@
  */
 import { generateKeyPair, hex, keyPairFromSeed, ROOT, SEED_LEN, Writer } from '../core/index.js';
 import { describe, expect, it } from 'vitest';
+
+/** Every control frame names its space (`design/CONNECTIONS.md`). */
+const SPACE = 'aa'.repeat(32);
 import {
   CHUNK_HEADER_BYTES,
   CHUNK_SIZE,
@@ -32,12 +35,15 @@ function labelled(label: string, len: number): Uint8Array {
 
 describe('framing', () => {
   it('round-trips a control message', () => {
-    const frame = encodeControl({ type: 'WANT', chain: 'aa', from: 3 });
+    const frame = encodeControl({ space: SPACE, type: 'WANT', chain: 'aa', from: 3 });
     expect(frame[0]).toBe(TAG_CONTROL);
 
     const decoded = decodeFrame(frame);
     expect(decoded?.kind).toBe('control');
+    // The space rides along: every control frame names it, so a receiver can
+    // route it to the right session on a connection carrying several.
     expect(decoded?.kind === 'control' && decoded.msg).toEqual({
+      space: SPACE,
       type: 'WANT',
       chain: 'aa',
       from: 3,
@@ -54,7 +60,7 @@ describe('framing', () => {
   it('keeps the channels apart', () => {
     // The whole point of the tag: a receiver must never mistake something that
     // expires for something that enters the log (§10).
-    const control = decodeFrame(encodeControl({ type: 'NO_BLOB', hash: 'ff' }));
+    const control = decodeFrame(encodeControl({ space: SPACE, type: 'NO_BLOB', hash: 'ff' }));
     const ephemeral = decodeFrame(encodeEphemeral({ type: 'HAVE', hashes: [] }));
     expect(control?.kind).toBe('control');
     expect(ephemeral?.kind).toBe('ephemeral');
