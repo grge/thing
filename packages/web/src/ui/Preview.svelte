@@ -22,13 +22,13 @@
     entry,
     hex,
     isLink,
-    isTextual,
     read,
     targetOf,
     type Space,
     type Uuid,
   } from '@thing/engine';
   import type { Client } from '../client.js';
+  import { rendererFor } from './renderers/index.js';
 
   interface Props {
     client: Client;
@@ -95,36 +95,20 @@
     if (peers > 0 && bytes === null && hash !== null && !asked) fetchFromPeers();
   });
 
-  const text = $derived.by(() => {
-    if (bytes === null) return null;
-    const kind = item?.kind ?? null;
-    if (
-      kind !== null &&
-      (kind.startsWith('image/') ||
-        kind.startsWith('audio/') ||
-        kind.startsWith('video/') ||
-        kind === 'application/pdf')
-    ) {
-      return null;
-    }
-    if (isTextual(kind)) return decodeUtf8(bytes);
-    return looksTextual(bytes) ? decodeUtf8(bytes) : null;
+  /**
+   * The renderer for this object's type, if anything claims it.
+   *
+   * `:kind` is advisory (§4.2) — a file written by something that only had a
+   * filename may be labelled wrongly or not at all — so when nothing claims the
+   * declared type, bytes that decode as UTF-8 are offered to the text renderer
+   * anyway. A wrong label should not make a readable file unreadable.
+   */
+  const chosen = $derived.by(() => {
+    const declared = rendererFor(item?.kind ?? null);
+    if (declared !== null) return declared;
+    if (bytes !== null && looksTextual(bytes)) return rendererFor('text/plain');
+    return null;
   });
-
-  const imageUrl = $derived.by(() => {
-    if (bytes === null) return null;
-    const kind = item?.kind ?? null;
-    if (kind === null || !kind.startsWith('image/')) return null;
-    return URL.createObjectURL(new Blob([bytes as BlobPart], { type: kind }));
-  });
-
-  function decodeUtf8(b: Uint8Array): string | null {
-    try {
-      return new TextDecoder('utf-8', { fatal: true }).decode(b);
-    } catch {
-      return null;
-    }
-  }
 
   /** Valid UTF-8 with no control bytes is text, whatever it claims to be. */
   function looksTextual(b: Uint8Array): boolean {
@@ -133,7 +117,12 @@
       if (byte === 0) return false;
       if (byte < 9 || (byte > 13 && byte < 32)) return false;
     }
-    return decodeUtf8(sample) !== null;
+    try {
+      new TextDecoder('utf-8', { fatal: true }).decode(sample);
+      return true;
+    } catch {
+      return false;
+    }
   }
 </script>
 
@@ -153,21 +142,28 @@
     {:else}
       <p class="note">Fetching…</p>
     {/if}
-  {:else if text !== null}
-    <pre>{text}</pre>
-  {:else if imageUrl !== null}
-    <img src={imageUrl} alt={item?.name ?? ''} />
+  {:else if chosen !== null}
+    {@const View = chosen.component}
+    <div class="body" class:fills={chosen.fills === true}>
+      <View {bytes} type={item?.kind ?? null} name={item?.name ?? null} />
+    </div>
   {:else}
-    <p class="note">{bytes.length} bytes — {item?.kind ?? 'unknown type'}</p>
+    <p class="note">
+      Nothing here can show {item?.kind ?? 'this'} — {bytes.length} bytes. Download it instead.
+    </p>
   {/if}
 </section>
 
 <style>
-  .preview { border-top: 1px solid var(--line, #333); margin-top: 1rem; padding-top: 0.75rem; }
-  h2 { font-size: 0.95rem; font-weight: normal; margin: 0 0 0.5rem 0; opacity: 0.85; }
-  pre { margin: 0; white-space: pre-wrap; word-break: break-word; max-height: 22rem;
-        overflow: auto; font: inherit; opacity: 0.9; }
-  img { max-width: 100%; max-height: 22rem; }
+  .preview { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+  h2 {
+    font-size: var(--text-0);
+    font-weight: normal;
+    margin: 0 0 var(--space-2) 0;
+  }
+  .body { min-height: 0; overflow: auto; }
+  /* A renderer that scrolls itself must not be nested in a scroller. */
+  .body.fills { overflow: hidden; flex: 1; display: flex; }
   .note { color: var(--ink-muted); font-size: var(--text--1); }
   .key {
     font-family: var(--font-data);

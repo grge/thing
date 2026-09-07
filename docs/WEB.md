@@ -159,7 +159,10 @@ Each stage should leave a client someone can use.
    deterministically and that is a baffling thing to watch happen. Internal
    drags and file drops are distinguished by `dataTransfer.types`, so an
    internal drag does not raise the whole-window "drop files" outline.
-4. **The renderer registry**, with text, image and PDF. Ports mostly whole.
+4. ~~**The renderer registry**, with text, image and PDF.~~ **Done.** Type
+   parsing and the degradation chain went into the engine, since they are
+   platform-free and a terminal client wants the same fallbacks; the registry
+   and the three renderers are in `web/src/ui/renderers/`.
 5. **Links: pasting a key**, for a space nobody has open. The drag gesture
    landed in stage 3.
 6. **Share and join**, including a pasted code rather than only a URL.

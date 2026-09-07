@@ -1,49 +1,60 @@
 /**
- * Guessing a kind from a filename.
+ * Parsing a media type, and degrading along it.
  *
- * A guess, and advisory (§4.2) — but a wrong guess beats
- * `application/octet-stream` on every file, which tells a view nothing.
+ * The degradation chain is what keeps a specialised type readable: a client
+ * that has never heard of a board still knows it is JSON.
  */
 import { describe, expect, it } from 'vitest';
-import { isTextual, kindForName } from './mime.js';
 
-describe('kindForName', () => {
-  it('knows the cases people actually share', () => {
-    expect(kindForName('readme.txt')).toBe('text/plain');
-    expect(kindForName('notes.md')).toBe('text/markdown');
-    expect(kindForName('photo.jpg')).toBe('image/jpeg');
-    expect(kindForName('report.pdf')).toBe('application/pdf');
-    expect(kindForName('data.json')).toBe('application/json');
+import { degradations, parseType } from './mime.js';
+
+describe('parseType', () => {
+  it('splits a plain type', () => {
+    expect(parseType('text/markdown')).toMatchObject({
+      top: 'text',
+      sub: 'markdown',
+      essence: 'text/markdown',
+      suffix: null,
+    });
   });
 
-  it('is case-insensitive about the extension', () => {
-    expect(kindForName('PHOTO.JPG')).toBe('image/jpeg');
+  it('finds a +suffix', () => {
+    expect(parseType('application/vnd.thing.board+json')?.suffix).toBe('json');
   });
 
-  it('falls back rather than guessing wildly', () => {
-    expect(kindForName('unknown.zzz')).toBe('application/octet-stream');
-    expect(kindForName('noextension')).toBe('application/octet-stream');
-    // A dotfile is not an extension: `.bashrc` is a name, not a `bashrc` file.
-    expect(kindForName('.bashrc')).toBe('application/octet-stream');
-    expect(kindForName('trailing.')).toBe('application/octet-stream');
+  it('reads parameters, lowercasing keys and unquoting values', () => {
+    expect(parseType('text/plain; Charset="utf-8"')?.params).toEqual({ charset: 'utf-8' });
   });
 
-  it('uses the last extension', () => {
-    expect(kindForName('archive.tar.gz')).toBe('application/gzip');
+  it('returns null rather than throwing on anything unparseable', () => {
+    // A `:kind` is advisory (§4.2) and may be anything a writer put there, so
+    // this runs on untrusted input and must never be the thing that fails.
+    for (const bad of [null, '', '   ', 'notatype', '/leading', 'trailing/', 'a/b/c'.slice(0, 1)]) {
+      expect(parseType(bad)).toBeNull();
+    }
   });
 });
 
-describe('isTextual', () => {
-  it('accepts text and the structured formats that are text', () => {
-    expect(isTextual('text/plain')).toBe(true);
-    expect(isTextual('text/markdown')).toBe(true);
-    expect(isTextual('application/json')).toBe(true);
-    expect(isTextual('image/svg+xml')).toBe(true);
+describe('degradations', () => {
+  it('walks from most specific to least', () => {
+    expect(degradations('application/vnd.thing.board+json; schema=kanban')).toEqual([
+      'application/vnd.thing.board+json; schema=kanban',
+      'application/vnd.thing.board+json',
+      'application/json',
+      'application/*',
+    ]);
   });
 
-  it('rejects binary and the unknown', () => {
-    expect(isTextual('image/png')).toBe(false);
-    expect(isTextual('application/octet-stream')).toBe(false);
-    expect(isTextual(null)).toBe(false);
+  it('omits the parameter step when there are none', () => {
+    expect(degradations('text/markdown')).toEqual(['text/markdown', 'text/*']);
+  });
+
+  it('sorts parameters, so two spellings of one type agree', () => {
+    expect(degradations('text/plain; b=2; a=1')[0]).toBe(degradations('text/plain; a=1; b=2')[0]);
+  });
+
+  it('is empty for an unparseable type, so a caller falls through', () => {
+    expect(degradations(null)).toEqual([]);
+    expect(degradations('nonsense')).toEqual([]);
   });
 });

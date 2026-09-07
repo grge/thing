@@ -53,3 +53,22 @@ describe('vite resolve conditions', () => {
     expect(svelte.exports['.']!['browser']).toContain('client');
   });
 });
+
+describe('renderer claims', () => {
+  it('the registry test mirrors what index.ts registers', () => {
+    // `registry.test.ts` cannot import the real renderers — they are `.svelte`
+    // and the test runner has no compiler for them — so it registers stubs with
+    // copied claims. That duplication silently rots when a renderer changes, so
+    // this compares the two lists textually.
+    const claimsIn = (file: string): string[] =>
+      [...readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8').matchAll(
+        /claims:\s*\[([^\]]*)\]/g,
+      )].map((m) => m[1]!.replace(/\s+/g, ' ').trim());
+
+    const real = claimsIn('../../web/src/ui/renderers/index.ts');
+    const stubbed = claimsIn('../../web/src/ui/renderers/registry.test.ts');
+
+    expect(real.length).toBeGreaterThan(0);
+    expect(stubbed).toEqual(real);
+  });
+});

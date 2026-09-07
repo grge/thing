@@ -96,3 +96,100 @@ export function isTextual(kind: string | null): boolean {
     kind === 'image/svg+xml'
   );
 }
+
+/* ── parsing a type, and degrading along it ─────────────────────────────── */
+
+/**
+ * A parsed media type.
+ *
+ * `:kind` names a **format**, never a renderer: `text/markdown`, not
+ * `todo-list`. That distinction is what lets a terminal client, a browser and
+ * a client with a bespoke renderer all show the same object usefully — each
+ * degrades along the type until it finds something it understands.
+ */
+export interface ParsedType {
+  /** e.g. `application` */
+  readonly top: string;
+  /** e.g. `vnd.thing.board+json` */
+  readonly sub: string;
+  /** The `+suffix`, if any: `json`, `xml`. */
+  readonly suffix: string | null;
+  /** `text/markdown` — the type without parameters. */
+  readonly essence: string;
+  /** `; variant=todo` becomes `{ variant: 'todo' }`. Keys lowercased. */
+  readonly params: Readonly<Record<string, string>>;
+}
+
+/** Parse a media type. Null for anything unparseable — never throws. */
+export function parseType(raw: string | null): ParsedType | null {
+  if (raw === null) return null;
+  const trimmed = raw.trim();
+  if (trimmed === '') return null;
+
+  const [essenceRaw = '', ...paramParts] = trimmed.split(';');
+  const essence = essenceRaw.trim().toLowerCase();
+  const slash = essence.indexOf('/');
+  if (slash <= 0 || slash === essence.length - 1) return null;
+
+  const top = essence.slice(0, slash);
+  const sub = essence.slice(slash + 1);
+  const plus = sub.lastIndexOf('+');
+
+  const params: Record<string, string> = {};
+  for (const part of paramParts) {
+    const eq = part.indexOf('=');
+    if (eq <= 0) continue;
+    const key = part.slice(0, eq).trim().toLowerCase();
+    let value = part.slice(eq + 1).trim();
+    if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
+    if (key !== '') params[key] = value;
+  }
+
+  return {
+    top,
+    sub,
+    suffix: plus > 0 ? sub.slice(plus + 1) : null,
+    essence,
+    params,
+  };
+}
+
+/**
+ * Candidate types to try, most specific first.
+ *
+ * `application/vnd.thing.board+json; schema=kanban` yields:
+ *
+ * ```
+ * application/vnd.thing.board+json; schema=kanban
+ * application/vnd.thing.board+json
+ * application/json                    <- the +suffix fallback
+ * application/*
+ * ```
+ *
+ * **The suffix step is what keeps a specialised type readable.** A client that
+ * has never heard of a board still knows it is JSON, and shows it as such
+ * rather than as a byte count. That is §3.1's tiering — fold what you can,
+ * show what you cannot — applied to presentation.
+ */
+export function degradations(raw: string | null): string[] {
+  const t = parseType(raw);
+  if (t === null) return [];
+
+  const out: string[] = [];
+  if (Object.keys(t.params).length > 0) out.push(normalise(raw!));
+  out.push(t.essence);
+  if (t.suffix !== null) out.push(`${t.top}/${t.suffix}`);
+  out.push(`${t.top}/*`);
+  return [...new Set(out)];
+}
+
+/** A type with its parameters sorted, so two spellings compare equal. */
+function normalise(raw: string): string {
+  const t = parseType(raw);
+  if (t === null) return raw.trim().toLowerCase();
+  const params = Object.entries(t.params)
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([k, v]) => `; ${k}=${v}`)
+    .join('');
+  return t.essence + params;
+}
