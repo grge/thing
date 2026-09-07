@@ -2,7 +2,7 @@
  * The browser client.
  *
  * Supplies what `@thing/engine` is handed — IndexedDB, WebRTC, a keyring — and
- * a client that opens spaces as tabs (`docs/MAIN-SPACE.md`).
+ * a client that opens spaces as tabs (`docs/design/MAIN-SPACE.md`).
  */
 export {
   Client,

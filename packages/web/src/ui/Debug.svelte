@@ -8,7 +8,7 @@
   **For when something has gone wrong**, which is why it is a panel rather than
   part of the interface — the footer carries what matters continuously. Putting
   storage forward would suggest that browsing it is an ordinary thing to do; it
-  is not, and the cases it exists for are all failures (`docs/WEB.md`).
+  is not, and the cases it exists for are all failures (`docs/design/WEB-CLIENT.md`).
 -->
 <script lang="ts">
   import { onMount } from 'svelte';

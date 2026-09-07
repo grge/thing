@@ -1,6 +1,6 @@
 # Open questions
 
-Companion to [ARCHITECTURE.md](ARCHITECTURE.md), which describes the design and
+Companion to [ARCHITECTURE.md](../ARCHITECTURE.md), which describes the design and
 changes rarely, and to [PLAN.md](PLAN.md), which sets out the implementation
 stages. This one tracks what is still undecided, and changes as questions close.
 
@@ -30,14 +30,14 @@ Roughly in order of how much would change if the answer went the other way.
 | 6 | How does the connection lifecycle behave — concurrent syncs, mid-transfer drops, duplicate connections? | §5.6 |
 | 7 | Is membership a whole-list register or a set of add/remove operations? | §7.4 |
 | 8 | Does a peer keep replicating the losing branch of a resolved chain fork? Now a bandwidth question rather than a correctness one — resolution is deterministic, so a peer that drops the loser and one that keeps it fold the same state. | §7.3 |
-| 9 | How is a blob reference expressed, and is `:kind` doing two jobs? *(A space link looked like a third case of this and is not: it is a semantic question, not a storage one, and is settled in [MAIN-SPACE.md](MAIN-SPACE.md).)* | §3.9, §4.2 |
-| 10 | Do dense per-writer sequence numbers stay at all, given that the literature calls them unsafe against a *malicious* writer? See [EQUIVOCATION.md](EQUIVOCATION.md). Append points do not answer this. | §2.1, §2.3, §7.3 |
+| 9 | How is a blob reference expressed, and is `:kind` doing two jobs? *(A space link looked like a third case of this and is not: it is a semantic question, not a storage one, and is settled in [MAIN-SPACE.md](../design/MAIN-SPACE.md).)* | §3.9, §4.2 |
+| 10 | Do dense per-writer sequence numbers stay at all, given that the literature calls them unsafe against a *malicious* writer? See [EQUIVOCATION.md](../design/EQUIVOCATION.md). Append points do not answer this. | §2.1, §2.3, §7.3 |
 | 10a | **The incremental fold intermittently disagrees with a replay.** `deps.test.ts` and `folder.test.ts` both fail on roughly one full-suite run in five, and both pass every time in isolation — so it is order- or state-dependent rather than a bad generated case. Predates the web work (reproduced on an older tree). This is the third appearance of "the two folds disagree", after 8a and the stage-9 fork bug, and the first that is not obviously explained. | §3.6 |
 | 11 | Does signing ever have to carry *attribution* rather than only authority — and does this system want a notion of a person at all? See [LEARNINGS.md](LEARNINGS.md) §1. | §5.1, §7.2.1 |
 
 **An OR-set is still unimplemented, and still not needed.** The set that does
 want a rule is `:serves` — where a space's writers say it is served
-([LOCATORS.md](LOCATORS.md)) — and a grow-only set with read-time expiry covers
+([LOCATORS.md](../design/LOCATORS.md)) — and a grow-only set with read-time expiry covers
 it: removal is rare and imprecise, and §5.3's model is TTL-shaped already. An
 OR-set's causal tags and canonical form (§3.2, §3.6) are not worth buying for
 that. The rule table still names one and nothing implements it; wanting it for
@@ -93,7 +93,7 @@ because two of these were once the most expensive things on the list.
 **Can one identity write from two processes? — decided, not yet built.** Split
 `writer` into an identity and a per-process *append point*, so two processes of
 one identity extend different chains and never contend for a position.
-`APPEND-POINTS.md` has the trace and the two choices settled (per process;
+`../design/APPEND-POINTS.md` has the trace and the two choices settled (per process;
 opaque 16 bytes, not a keypair); PLAN.md stage 7.6 has the work. It is
 subtractive — the store lock, the write-through-the-holder API and
 `writelock.ts` all stop being necessary.
@@ -102,7 +102,7 @@ subtractive — the store lock, the write-through-the-holder API and
 fold filtered by the *final* writer set, so removing a writer unwrote everything
 they had written; the incremental fold kept whatever it had applied, so the
 answer depended on arrival order. Both were wrong and they disagreed with each
-other. `DEPS.md` and PLAN.md stage 7.8: an event now names what its author had
+other. `../design/DEPS.md` and PLAN.md stage 7.8: an event now names what its author had
 seen, and both folds judge against that using one shared function. It does not
 close *backdating* — an event naming only pre-removal heads still folds, and is
 indistinguishable from an honest offline one.
@@ -182,7 +182,7 @@ fold would still be affordable.
 list on the root, a permission check in phase 2, no envelope change. It can be
 built whenever it is wanted. What it requires is §7.3's constraint being
 enforced where it can be and stated plainly where it cannot — and
-`APPEND-POINTS.md` changes what "where it can be" means.
+`../design/APPEND-POINTS.md` changes what "where it can be" means.
 
 **Deferred until forced:** compaction and views-as-code, each either unresolved
 above or much cheaper once the questions ahead of it have answers.
@@ -227,7 +227,7 @@ built.)*
 PLAN.md's stage order is the answer; what follows is what is most expensive to
 delay, which is not always the same thing.
 
-1. **Append points** (`APPEND-POINTS.md`, stage 7.6). Changes the event
+1. **Append points** (`../design/APPEND-POINTS.md`, stage 7.6). Changes the event
    envelope, so it gets more expensive with every log that exists and every
    design decision taken on the old shape. Nothing is deployed today. That
    window closes.

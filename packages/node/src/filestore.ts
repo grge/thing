@@ -14,7 +14,7 @@
  *
  * Reading is a full scan. That is acceptable now — the log is read on open and
  * on range requests — and it is the thing a SQLite backend would improve, along
- * with making a space a single sendable file (see docs/OPEN.md).
+ * with making a space a single sendable file (see docs/working/OPEN.md).
  *
  * **Lives in `node` rather than in `store`.** Putting it in `store` would mean
  * widening that package's `types` to include Node's, which would let `process`

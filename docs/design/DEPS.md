@@ -100,7 +100,7 @@ policy that can be layered on `deps` if it is ever wanted.
 **It does not solve equivocation** (OPEN.md 10). One writer can still sign two
 different events at one `(writer, point, seq)`. §7.3's resolution still applies.
 
-**It does not give attribution** (`LEARNINGS.md` §1). Still no notion of a person.
+**It does not give attribution** (`../working/LEARNINGS.md` §1). Still no notion of a person.
 
 **`deps` is unbounded under heavy concurrency.** It is the set of current heads,
 and heads multiply with simultaneous writers. For this system's expected shape —
@@ -123,7 +123,7 @@ where this design gets expensive.
 
 For context, the wire format already costs **2.1x** what the same event takes on
 disk, because every binary field is hex inside JSON. Fixing that would save more
-than `deps` adds — see `LEARNINGS.md` §3a. Not proposed here.
+than `deps` adds — see `../working/LEARNINGS.md` §3a. Not proposed here.
 
 ## Why not the alternatives
 

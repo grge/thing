@@ -1,5 +1,5 @@
 /**
- * The browser client's tab model (`docs/MAIN-SPACE.md`).
+ * The browser client's tab model (`docs/design/MAIN-SPACE.md`).
  *
  * The properties worth pinning are the ones the rebuild exists for: opening a
  * space writes nothing, following a link opens a tab rather than acquiring the
@@ -344,7 +344,7 @@ describe('tabs', () => {
 
   it('keeping a space writes a link named as the tab was', async () => {
     // Dragging a tab into a space is the moment *looking at* becomes *kept*
-    // (docs/MAIN-SPACE.md). What it writes is an ordinary link.
+    // (docs/design/MAIN-SPACE.md). What it writes is an ordinary link.
     const client = new Client();
     const mine = await client.create('mine');
     const theirs = await generateKeyPair();
@@ -376,7 +376,7 @@ describe('tabs', () => {
   });
 
   it('reopens what was open, across a reload', async () => {
-    // With no inventory (docs/MAIN-SPACE.md), a lost tab list means a space you
+    // With no inventory (docs/design/MAIN-SPACE.md), a lost tab list means a space you
     // made yourself is unfindable — nothing else records that it exists. So the
     // list is persisted even though it is interface state.
     const first = new Client();

@@ -1,11 +1,11 @@
 <!--
-  The browser client (`docs/WEB.md`).
+  The browser client (`docs/design/WEB-CLIENT.md`).
 
   Sidebar tree, preview pane. Below 40rem it becomes one pane and selecting a
   file pushes the preview over the tree — the breakpoint and the mechanism both
-  come from `docs/v0/MOBILE.md`, which settled them by building it once.
+  come from `docs/archive/v0/MOBILE.md`, which settled them by building it once.
 
-  Tabs are open spaces (`docs/MAIN-SPACE.md`): opening writes nothing, and
+  Tabs are open spaces (`docs/design/MAIN-SPACE.md`): opening writes nothing, and
   following a link opens another rather than descending in place.
 -->
 <script lang="ts">
@@ -85,7 +85,7 @@
    *
    * Off by default and reachable from the tab bar: it is for when something has
    * gone wrong, and the storage view in particular should not read as an
-   * ordinary way to browse (`docs/WEB.md`).
+   * ordinary way to browse (`docs/design/WEB-CLIENT.md`).
    */
   let debugging = $state(false);
   /** Settings, alongside the debug panel and shown the same way. */
@@ -142,7 +142,7 @@
     const off = client.subscribe(refresh);
 
     // A share link is the one locator source that works before you know
-    // anybody (`docs/LOCATORS.md`), so it is how a browser gets started.
+    // anybody (`docs/design/LOCATORS.md`), so it is how a browser gets started.
     const link = parseShareLink(location.hash);
     void (async () => {
       // **Always restore first.** A share link says which space to *focus*, not
@@ -159,7 +159,7 @@
           activeId = tab.id;
           // Dial regardless of whether the tab is new: a restored tab has no
           // connection, and the link's hint may be the only address anyone has
-          // for that space (`docs/LOCATORS.md`).
+          // for that space (`docs/design/LOCATORS.md`).
           if (link.locator !== null) await client.connect(tab.id, link.locator);
           else if (link.token !== null) await client.meetAt(tab.id, link.token);
         } catch (err) {
@@ -178,7 +178,7 @@
     selected = null;
   }
 
-  /** Following a link opens a tab. It writes nothing (`docs/MAIN-SPACE.md`). */
+  /** Following a link opens a tab. It writes nothing (`docs/design/MAIN-SPACE.md`). */
   async function follow(name: string): Promise<void> {
     if (activeId === null) return;
     const tab = await client.follow(activeId, name);
@@ -408,7 +408,7 @@
    *
    * The gesture is the same as dragging a file in — content arriving from
    * outside — and it is the moment *looking at* becomes *kept*
-   * (`docs/MAIN-SPACE.md`).
+   * (`docs/design/MAIN-SPACE.md`).
    */
   async function dropTabOn(intoId: string): Promise<void> {
     const src = movingTab;
@@ -918,7 +918,7 @@
 
   /*
    * One pane below 40rem, and selecting pushes the preview over the tree
-   * (`docs/v0/MOBILE.md`). Everything else stays as it is — including the
+   * (`docs/archive/v0/MOBILE.md`). Everything else stays as it is — including the
    * gestures a touch device cannot reach, which are tracked separately rather
    * than made to work here.
    */

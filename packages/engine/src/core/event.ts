@@ -28,7 +28,7 @@ export const UUID_LEN = 16;
  * cannot: both resume from one tip, both mint at `seq = frontier + 1`, and the
  * result is two different events at one sequence number, *both validly signed*.
  * Signing cannot catch that, because the key genuinely signed both; the
- * literature calls it equivocation (`docs/EQUIVOCATION.md`).
+ * literature calls it equivocation (`docs/design/EQUIVOCATION.md`).
  *
  * So a chain is keyed by `(writer, point)` rather than by `writer`, and each
  * process mints a fresh point when it opens a space for writing. Nothing
@@ -36,7 +36,7 @@ export const UUID_LEN = 16;
  *
  * **Opaque, and deliberately not a key.** A point identifies a chain; it does
  * not authorise anything. Authority is the writer's, checked by the signature,
- * exactly as before. See `docs/APPEND-POINTS.md` for why a per-point keypair
+ * exactly as before. See `docs/design/APPEND-POINTS.md` for why a per-point keypair
  * was rejected.
  */
 export type Point = Uint8Array;
@@ -125,7 +125,7 @@ export interface EventBody {
    * indistinguishable from an honest peer that was offline, and the literature
    * is clear that causality alone cannot separate the two. `deps` narrows
    * backdating from *claim any position in history* to *claim a real position
-   * you can produce hashes for*. See `docs/DEPS.md`.
+   * you can produce hashes for*. See `docs/design/DEPS.md`.
    *
    * Ordered and deduplicated by `newDeps`, so the encoding is canonical.
    */

@@ -2,7 +2,7 @@
  * A headless peer: one space, served.
  *
  * **It holds exactly one space, and that is not a limitation being worked
- * around** (`docs/MAIN-SPACE.md`). A server has no interface — it is a store, a
+ * around** (`docs/design/MAIN-SPACE.md`). A server has no interface — it is a store, a
  * set of connections, and nothing to render into — so one space is what it can
  * offer and one is what it has. A client with a screen opens as many as it can
  * show; a server cannot show any, so it holds its own.

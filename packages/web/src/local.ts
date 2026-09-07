@@ -43,7 +43,7 @@ const LOCATORS = 'thing:locators';
 const SETTINGS = 'thing:settings';
 
 /**
- * What this browser has been configured to do (`docs/WEB.md`, stage 8).
+ * What this browser has been configured to do (`docs/design/WEB-CLIENT.md`; the stage is in `docs/working/PLAN.md`).
  *
  * Local, like everything else here, and for the same reason: it is about this
  * client rather than any space, so it is in no log and replicates nowhere.

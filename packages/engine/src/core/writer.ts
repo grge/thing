@@ -138,7 +138,7 @@ export class Writer {
     const id = eventId(this.space, body);
     this.prev = id;
     // This write consumed every head it named and is now the only one. That
-    // collapse is what bounds `deps` — see docs/DEPS.md.
+    // collapse is what bounds `deps` — see docs/design/DEPS.md.
     this.heads.clear();
     this.heads.set(hex(id), id);
     return event;

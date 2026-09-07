@@ -2,7 +2,7 @@
  * The browser client: tabs over spaces.
  *
  * **A client with an interface holds several spaces at once, as tabs**
- * (`docs/MAIN-SPACE.md`). That is the whole difference from a server, and it
+ * (`docs/design/MAIN-SPACE.md`). That is the whole difference from a server, and it
  * comes from having a renderer: a server has nothing to draw into, so it serves
  * one space; a client can show many, so it opens many.
  *
@@ -56,7 +56,7 @@ export interface BlobRow {
   readonly held: boolean;
 }
 
-/** One space in this browser's storage (`docs/WEB.md`, the storage view). */
+/** One space in this browser's storage (`docs/design/WEB-CLIENT.md`, the storage view). */
 export interface StoredSpace {
   readonly id: string;
   /** Whether a tab currently shows it. */
@@ -103,9 +103,9 @@ export class Client extends PeerClient {
    * Open tabs, in the order they were opened.
    *
    * Interface state — in no log, and never replicated. But it *is* persisted:
-   * with no inventory (`docs/MAIN-SPACE.md`), a lost tab list means a space
+   * with no inventory (`docs/design/MAIN-SPACE.md`), a lost tab list means a space
    * you made yourself becomes unfindable, since nothing else records that it
-   * exists. `docs/WEB.md` called this "a UI question, deliberately not a design
+   * exists. `docs/design/WEB-CLIENT.md` called this "a UI question, deliberately not a design
    * one, since losing it costs reopening a tab" — which was wrong. It costs
    * the space.
    */
@@ -372,7 +372,7 @@ export class Client extends PeerClient {
    * storage that no tab points at is unreachable**: nothing lists it, nothing
    * opens it, nothing removes it. That should not happen — closing sweeps and
    * `restore` reopens what was open — but "should not happen" is exactly the
-   * class of thing that wants a way to look (`docs/WEB.md`).
+   * class of thing that wants a way to look (`docs/design/WEB-CLIENT.md`).
    *
    * `complete` is false where the browser cannot enumerate its own databases,
    * in which case this can only report what is already open — the case where
@@ -614,7 +614,7 @@ export class Client extends PeerClient {
    * impostor who answers still cannot produce events that verify (§5.4).
    *
    * `l` is optional and is the one locator source that works before you know
-   * anybody (`docs/LOCATORS.md`). It belongs in a *share* link and never in a
+   * anybody (`docs/design/LOCATORS.md`). It belongs in a *share* link and never in a
    * stored one: a share link's staleness is fixed by resharing it, where a
    * rotted address inside a space propagates to everyone holding it.
    */
@@ -690,7 +690,7 @@ function rtcConnection(conn: RtcConnection): Connection {
  *
  * The key is in the **fragment**, so it never reaches a server. A link carries
  * full verification because it names the key; the `l=` hint is the one locator
- * source that works before you know anybody (`docs/LOCATORS.md`).
+ * source that works before you know anybody (`docs/design/LOCATORS.md`).
  */
 export interface ShareLink {
   readonly key: string;

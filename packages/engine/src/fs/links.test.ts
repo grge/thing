@@ -1,5 +1,5 @@
 /**
- * Links (`docs/MAIN-SPACE.md`).
+ * Links (`docs/design/MAIN-SPACE.md`).
  *
  * The properties that matter are that a link is an ordinary object — so a
  * client that has never heard of one still folds the tree — and that its target

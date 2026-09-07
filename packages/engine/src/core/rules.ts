@@ -150,7 +150,7 @@ const keyCodec = {
   encode: (v: Uint8Array): Uint8Array => v,
 };
 
-/** A link's body: the space it points at (`docs/MAIN-SPACE.md`). */
+/** A link's body: the space it points at (`docs/design/MAIN-SPACE.md`). */
 export const spaceRegister: Rule<Uint8Array, RegisterAcc<Uint8Array>, Uint8Array | null> = {
   id: 'link',
   codec: keyCodec,
@@ -207,10 +207,10 @@ export const BODY_RULES: Readonly<Record<string, AnyRule>> = {
   // §3.8's bet: an ordered list two writers can edit at once, fitting the same
   // contract as the register above it. If this had needed an escape hatch —
   // log access, a clock, state outside the accumulator — the vocabulary claim
-  // would have failed. See `sequence.ts` and `docs/SEQUENCE.md`.
+  // would have failed. See `sequence.ts` and `docs/design/SEQUENCE.md`.
   sequence: erase(sequence),
   // A reference to another space: a register over its public key
-  // (`docs/MAIN-SPACE.md`). Structurally the blob rule with a different width —
+  // (`docs/design/MAIN-SPACE.md`). Structurally the blob rule with a different width —
   // a key rather than a hash — and it is the body rather than an attribute
   // because a link *is* its target, the way a file is its bytes (§4.2).
   link: erase(spaceRegister),

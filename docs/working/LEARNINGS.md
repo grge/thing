@@ -46,7 +46,7 @@ with signing carrying attribution alongside authority. That is roughly what
 Keyhive separates (capabilities delegated to keys, identity deliberately left to
 a layer above) and what SSB's fusion identity gropes toward.
 
-It also reframes the two decisions taken in `APPEND-POINTS.md`. Opaque points
+It also reframes the two decisions taken in `../design/APPEND-POINTS.md`. Opaque points
 were chosen partly because "there is no Alice for a certificate to bind to" —
 which is correct today and is exactly the thing a social system would have to
 change first.
@@ -66,7 +66,7 @@ Today one field answers three different questions:
 | which chain does this extend? | `checkLink`, `ChainSet`, sync | per process |
 | which key signed it? | `verifyEvent` | per key rotation |
 
-`APPEND-POINTS.md` splits the second off. The first and third are still fused,
+`../design/APPEND-POINTS.md` splits the second off. The first and third are still fused,
 and the level above all of them — **a person, stable across spaces** — does not
 exist at all: a writer key is minted per space, and is the space key for the
 space's creator. That missing level is §1 above; this entry is the mechanical
@@ -158,7 +158,7 @@ process cannot write, which means a control API, which means a second protocol.
 Two sessions of admin-tooling design were spent routing around a constraint
 introduced by a sync optimisation.
 
-The literature (`EQUIVOCATION.md`) is blunter still: version vectors are unsafe
+The literature (`../design/EQUIVOCATION.md`) is blunter still: version vectors are unsafe
 against a Byzantine writer for the same reason.
 
 **Carry forward:** the causal-structure decision (dense sequences vs. hash DAG)
@@ -265,7 +265,7 @@ real time here.
 
 `grep` reports nothing on `fold.ts` because it contains an intentional `\0` as a
 map-key separator, which makes grep treat it as binary. A claim central to
-`EQUIVOCATION.md` — that the fold never reads `seq` — was first "verified" by a
+`../design/EQUIVOCATION.md` — that the fold never reads `seq` — was first "verified" by a
 command that could not have found anything. It happened to be true.
 
 **Carry forward:** when a check underpins a design decision, make it fail
@@ -352,7 +352,7 @@ a path you did not intend is not testing what its name says.
 
 ## The nuclear revoke
 
-**The problem it answers.** `deps` (see `DEPS.md`) narrows backdating without
+**The problem it answers.** `deps` (see `../design/DEPS.md`) narrows backdating without
 closing it: a writer about to be revoked can sign events naming only
 pre-revocation heads, release them later, and they fold. That is
 indistinguishable from an honest peer that was offline, and the literature is

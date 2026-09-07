@@ -468,7 +468,7 @@ export class Client {
   /**
    * Hold every space reachable by links from a root, to a given depth.
    *
-   * **The link is the authorisation** (`docs/MAIN-SPACE.md`). A hub holds what
+   * **The link is the authorisation** (`docs/design/MAIN-SPACE.md`). A hub holds what
    * its main space links to and nothing else, which is a far narrower rule than
    * `acceptUnknownSpaces` — that one makes a peer free storage for strangers,
    * this one hosts exactly what its curators chose. Only writers of the root

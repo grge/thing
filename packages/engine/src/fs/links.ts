@@ -1,5 +1,5 @@
 /**
- * Links: an object that is a reference to another space (`docs/MAIN-SPACE.md`).
+ * Links: an object that is a reference to another space (`docs/design/MAIN-SPACE.md`).
  *
  * ```
  * :kind    'link'        this object is a reference to a space
@@ -18,7 +18,7 @@
  * it never changes; where a space is *served* is said by that space's own root,
  * by peers on the ephemeral channel, and by a client-side cache — never by a
  * stored link, because a rotted address in replicated data is worse than no
- * address at all (§5.3, `docs/LOCATORS.md`).
+ * address at all (§5.3, `docs/design/LOCATORS.md`).
  *
  * A client that has never heard of `link` still folds the tree, sees an object
  * with a name and an unrecognised kind, and shows it (§3.1). It simply cannot

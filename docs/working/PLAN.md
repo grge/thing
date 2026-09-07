@@ -1,6 +1,6 @@
 # Implementation plan
 
-The route from [ARCHITECTURE.md](ARCHITECTURE.md) to a running system, in stages
+The route from [ARCHITECTURE.md](../ARCHITECTURE.md) to a running system, in stages
 that each land green and each answer something.
 
 Two rules throughout:
@@ -465,7 +465,7 @@ notes on what was written:
 
 ## Stage 7.5 — One client, two transports
 
-Proposed in `CLIENTS.md`; **partly done** — the shared client exists, the store
+Proposed in `../design/CLIENTS.md`; **partly done** — the shared client exists, the store
 lock and the CLI routing do not. Two motivations, and the first is a
 correctness bug: `thing put` appends to a served space's log with no lock and
 no way to tell the running holder, so a write is invisible until restart and
@@ -500,9 +500,9 @@ signed events at one sequence number; the write API existed because the lock
 forbade the second process from writing. Each step was locally reasonable and
 the design kept getting more elaborate, which was the signal.
 
-`EQUIVOCATION.md` records what a literature review then found: the hazard is
+`../design/EQUIVOCATION.md` records what a literature review then found: the hazard is
 what Kleppmann calls *equivocation*, dense per-writer sequence numbers are what
-make it harmful, and the fold never used them. `APPEND-POINTS.md` traces the
+make it harmful, and the fold never used them. `../design/APPEND-POINTS.md` traces the
 consequence — `writer` is doing two jobs, *who signed this* and *which chain
 does this extend*, and the code already separates them cleanly with no file
 using it for both.
@@ -510,7 +510,7 @@ using it for both.
 That trace changes finished stages (1, 3, 4, 5, 7) as well as future ones, which
 is why it is stage 7.6 rather than an edit to stage 1.
 
-The shape of that routing is settled (`CLIENTS.md`): **the client's public API is
+The shape of that routing is settled (`../design/CLIENTS.md`): **the client's public API is
 the only way in**, and every mode — in-process, one-shot CLI, attached TUI, and
 eventually a browser pointed at a server — is a transport to it. Writes go to
 the holder rather than being signed by the caller, because `seq` and `prev` come
@@ -528,7 +528,7 @@ process opening a held space is ordinary, not an error.)*
 
 ## Stage 7.6 — Append points ✅
 
-**Decided, not started.** `APPEND-POINTS.md` has the trace and the two choices;
+**Decided, not started.** `../design/APPEND-POINTS.md` has the trace and the two choices;
 this is where it lands in the order. It comes *before* the interfaces because
 it changes what they have to be.
 
@@ -585,7 +585,7 @@ both sets of events fold — with no lock, and no fork reported.
 
 ## Stage 7.8 — `deps`: permission as of what was seen ✅
 
-**Done.** `docs/DEPS.md` has the design and the measurements; this is what it
+**Done.** `docs/design/DEPS.md` has the design and the measurements; this is what it
 cost to build.
 
 The envelope gains `deps`: the ids of the events a writer had seen when signing,
@@ -618,7 +618,7 @@ against the pre-`deps` baseline, checked by rebuilding both.
 ## Stage 7.9 — Rebuild `node` on the main-space model ✅
 
 **Done.** The old server is in `archive/node/`, reference only: the shape
-changed enough (`docs/MAIN-SPACE.md`) that adapting it would have carried
+changed enough (`docs/design/MAIN-SPACE.md`) that adapting it would have carried
 assumptions that no longer hold — a peer holding many spaces, a petname index,
 a CLI resolving names against a local directory listing.
 
@@ -643,7 +643,7 @@ guards the *engine's* platform split and lives in `node` only because it reads
 files, which the package it checks cannot do; archiving it would have silently
 dropped that guard.
 
-**Not built here:** resolution (§5.3 and `docs/LOCATORS.md`) — a peer serves
+**Not built here:** resolution (§5.3 and `docs/design/LOCATORS.md`) — a peer serves
 and can be dialled, but nothing announces or answers queries yet. That is stage
 8, and it needs measurement rather than argument.
 
@@ -682,11 +682,11 @@ as text whatever the label claims.
 
 **Not built:** the share panel and the debug view of version vectors; the
 ephemeral view of connections; and editing a remote space, which needs the
-`:writers` bootstrap (`docs/MAIN-SPACE.md`).
+`:writers` bootstrap (`docs/design/MAIN-SPACE.md`).
 
 ## Stage 7.7 — The interfaces: control socket, CLI, TUI
 
-**Shape settled, details open.** `CLIENTS.md` has the reasoning.
+**Shape settled, details open.** `../design/CLIENTS.md` has the reasoning.
 
 The settled part: **the engine's client API is the only way in**, and every
 interface is a transport to it.
@@ -785,7 +785,7 @@ LEARNINGS §14.
 
 ## Stage 7.11 — A hub hosts what it links ✅
 
-**Done.** `MAIN-SPACE.md` said adding a link to a server's main space "tells it
+**Done.** `../design/MAIN-SPACE.md` said adding a link to a server's main space "tells it
 to hold another space, and it does". It did not; that sentence described an
 intention. Now it is true.
 
@@ -815,6 +815,96 @@ Three things fell out of building it:
 **Not built:** the hub only *accepts* connections about a hosted space; it never
 dials one. A space whose owner is offline stays as fetched, which is right, but
 a hub cannot go looking. That needs §5.3's resolution — stage 8.
+
+## The web client — **all eight stages built** ✅
+
+Its own build order, because it is an interface rather than a layer of the
+engine. Settled decisions are in `../design/WEB-CLIENT.md`; what it still wants is
+in `WEB-NEXT.md`.
+
+Each stage should leave a client someone can use.
+
+1. ~~**Layout: sidebar tree, preview pane, mobile breakpoint.**~~ **Done.**
+   `minmax(14rem, 22rem) 1fr`, collapsing to one pane at 40rem with selection
+   pushing the preview over the tree — the mechanism `../archive/v0/MOBILE.md`
+   arrived at by building it. `app.css` went from 615 lines to 70: the rest was
+   component CSS for components this rebuild does not have, and a global rule
+   for a component that does not exist is a rule nothing checks. It is in
+   `archive/ui/app.css` for when a panel comes back.
+2. ~~**Download, rename, delete.**~~ **Done**, plus the tree itself: folders
+   now expand in place rather than replacing the view, which is what makes it a
+   tree rather than a navigator. Recursive by snippet over `FileEntry`, with
+   expansion held as interface state — the same shape `archive/ui/Tree.svelte`
+   used. Delete is `:deleted`, which hides without unwriting (§7.2.3).
+3. ~~**Drag: re-parent within a tree, and desktop-to-tree.**~~ **Done**, plus
+   dragging a tab into a space to keep it. Dropping onto a file means *into the
+   folder containing it*; a move that would put a folder inside itself is
+   refused rather than resolved, since §3.4 would re-parent it to the root
+   deterministically and that is a baffling thing to watch happen. Internal
+   drags and file drops are distinguished by `dataTransfer.types`, so an
+   internal drag does not raise the whole-window "drop files" outline.
+4. ~~**The renderer registry**, with text, image and PDF.~~ **Done.** Type
+   parsing and the degradation chain went into the engine, since they are
+   platform-free and a terminal client wants the same fallbacks; the registry
+   and the three renderers are in `web/src/ui/renderers/`.
+5. ~~**Links: pasting a key**, for a space nobody has open.~~ **Done.** One
+   parser takes a bare key or a whole share link, since both are things people
+   copy; **not** a short code, which is derived from a key's hash and cannot be
+   reversed (§5.4). Two entry points, matching the drag: *open* puts it in a
+   tab, *link here* keeps it in the current space.
+6. ~~**Share.**~~ **Done** — the link, the key and the code, each with what it
+   guarantees, since they are not interchangeable. Joining by *pasting* landed
+   in stage 5; there is no join-by-code, because a code cannot be reversed to a
+   key (§5.4) and so cannot open anything on its own.
+7. ~~**Debug panel** — vectors, forks, peers, activity, **and storage**.~~
+   **Done.** Reached from the tab bar, closed by default: it is for when
+   something has gone wrong, and putting storage forward would suggest that
+   browsing it is ordinary. It renders outside the "a space is open" branch,
+   because the storage view is most useful exactly when nothing will open.
+
+   Six tabbed views — peers, chains, storage, blobs, ephemeral, log — rather
+   than one scrolling page, because they answer unrelated questions and only
+   one is ever being asked. Everything is a table; the log filters.
+
+   It earned its place immediately. On first run against a real browser it
+   showed **seven spaces with no tab** — every link expanded during testing,
+   held and unreachable — and the blobs view showed rows marked *referenced but
+   missing*, which is the "Fetching…" case made visible. `canEnumerate` on
+   `IdbStore` reports whether the listing is complete, so a browser without
+   `databases()` says so rather than showing a short list that looks
+   authoritative.
+
+   **A status footer sits above it, always visible.** Connectedness is not a
+   debugging concern — it decides whether anything you do reaches anyone — so
+   the peer count for the current space, its name, any fork and whether it is
+   keeping copies are on screen permanently, with the peer list as a popout.
+   Revealing that only on demand makes "nothing is syncing" look identical to
+   "everything is fine".
+
+   **One trap worth recording.** `refresh` writes `$state` and is driven by
+   `client.subscribe`, which fires on every fold. Calling it from inside an
+   `$effect` made the effect depend on its own writes and froze the tab hard
+   enough to need closing; a sync of a few hundred events also fires the
+   subscription a few hundred times, each starting an async read of storage and
+   every blob hash. It is now guarded against overlap and coalesces a trailing
+   pass, and the effect tracks only the space id.
+8. ~~**Settings** — signalling, ICE, keys.~~ **Done.** In the footer beside
+   debug, and the two are exclusive — both are panels about the client rather
+   than about a space.
+
+   Three things that are not the same kind of thing. **Signalling and ICE** are
+   how a peer is reached: addresses, disposable in the way §5.2 says locators
+   are, where a wrong value costs a failed connection. **Keys** are the
+   opposite — §5.1.1 calls key loss the largest unresolved risk in the design,
+   so the section is an export, and it is the reason the panel exists at all.
+
+   Two details worth keeping. Changes apply **on reload**, said plainly rather
+   than papered over: a `Client` reads both at construction, and reconnecting
+   every peer to apply a preference would drop live transfers to no purpose.
+   And an **empty ICE list is a real choice** — no STUN, local network only —
+   so it is stored as `[]` and never folded into "unset", which would silently
+   restore the default.
+
 
 ## Stage 8 — Resolution and the mesh
 
@@ -904,7 +994,7 @@ resolution is deterministic, and it belongs with the defensive work.
 - Reading key in the link fragment.
 - Authenticated cipher over event values and blobs, **nonce derived from
   `(writer, seq)`** (§6). **That pair is unique only because one identity has
-  one chain.** If per-process append points land first (`APPEND-POINTS.md`), the
+  one chain.** If per-process append points land first (`../design/APPEND-POINTS.md`), the
   nonce input must gain the point or two of one identity's processes reuse a
   nonce under one key — which an authenticated cipher does not survive. Check
   this before building, whichever way the core question goes.

@@ -1,7 +1,7 @@
 /**
  * Hosting linked spaces: what makes a hub a hub.
  *
- * **The link is the authorisation** (`docs/MAIN-SPACE.md`). Adding a link to
+ * **The link is the authorisation** (`docs/design/MAIN-SPACE.md`). Adding a link to
  * your own space inside a server's main space is how you ask it to host that
  * space — a far narrower rule than `acceptUnknownSpaces`, which makes a peer
  * free storage for anyone who connects. Only someone who may write the main

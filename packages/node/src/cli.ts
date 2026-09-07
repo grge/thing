@@ -3,7 +3,7 @@
  * The command-line client.
  *
  * **A peer holds one space and reaches others by following links inside it**
- * (`docs/MAIN-SPACE.md`). So every command names a space, and naming one means
+ * (`docs/design/MAIN-SPACE.md`). So every command names a space, and naming one means
  * either its key or a path of link names from the space this peer serves.
  *
  * ```
@@ -25,7 +25,7 @@
  * (§2.3.1) rather than exiting on its own append, which would say nothing about
  * whether the write arrived anywhere.
  *
- * **Administration is the CLI's alone** (`docs/MAIN-SPACE.md`). Space authority
+ * **Administration is the CLI's alone** (`docs/design/MAIN-SPACE.md`). Space authority
  * — who may write — cannot answer operator questions like *may you shut this
  * down*, and the two do not coincide: a hub's curators should not be able to
  * restart it, and its operator may hold no writing key at all. The filesystem

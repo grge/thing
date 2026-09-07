@@ -203,7 +203,7 @@ inventory, nothing else records that a space exists. A client that forgets its
 tabs has no route back to a space it made itself, so the cost is the space
 rather than a tab.
 
-**Closing a tab deletes the space** (`docs/WEB.md`). Not forced by the model —
+**Closing a tab deletes the space** (`WEB-CLIENT.md`). Not forced by the model —
 which says only that a client may hold spaces — but it follows from there being
 no inventory: with nothing recording that a space exists, a client that keeps
 closed spaces accumulates them invisibly and offers no way to remove one.
@@ -408,7 +408,7 @@ removing the event. A growth shape unlike anything else in the design, and a
 privacy shape nobody chose, since the history would sync wherever the space did.
 
 The answer proposed at the time was compaction (§9.2, unbuilt) — narrowing the
-window rather than closing it, which `LEARNINGS.md` §5 warns about in another
+window rather than closing it, which `../working/LEARNINGS.md` §5 warns about in another
 context.
 
 Separating *open* from *keep* removes the problem instead of deferring it.
@@ -431,7 +431,7 @@ attribution.** Editing a hub's main space means holding a writing key for it.
 Handing out *the space key* is wrong — it is the space's identity and root
 authority (§7.2.1). The right answer is `:writers`, which exists (stage 9). But
 a curator is then an ordinary writer who cannot admit other curators, and every
-curation is attributable to a key rather than a person (`LEARNINGS.md` §1).
+curation is attributable to a key rather than a person (`../working/LEARNINGS.md` §1).
 
 A shared hub is precisely where *who added this link* starts to matter, so this
 design puts weight on a gap it does not create.

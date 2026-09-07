@@ -34,7 +34,7 @@ const UTF8 = new TextEncoder();
  * The encoding is deliberately dull: a register holding a string, folded by the
  * same rule as `:name`. §7.4 leaves open whether membership should instead be
  * add/remove operations — see `openQuestions` in this file's tests and
- * `docs/OPEN.md` question 7.
+ * `docs/working/OPEN.md` question 7.
  */
 function parseList(value: unknown): string[] {
   if (typeof value !== 'string') return [];

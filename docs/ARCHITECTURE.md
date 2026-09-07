@@ -1299,7 +1299,7 @@ authenticated cipher; what follows is what a construction has to get right.
   is the natural nonce input. **That dependency is load-bearing and easy to
   miss:** the pair is unique *because* one key has one chain. Any change that
   lets one identity hold two chains — per-process append points, say, which
-  `APPEND-POINTS.md` traces — makes two writers produce the same nonce for
+  `design/APPEND-POINTS.md` traces — makes two writers produce the same nonce for
   different plaintexts under one key, which an authenticated cipher does not
   survive. The nonce input must gain whatever component distinguishes the
   chains, and this bullet must be revisited *before* §6 is built.
@@ -2140,7 +2140,7 @@ The design holds together only if these hold:
 ## 12. What is unresolved
 
 The open questions and the build order they suggest are tracked in
-**[OPEN.md](OPEN.md)**, which changes as questions close while this document
+**[OPEN.md](working/OPEN.md)**, which changes as questions close while this document
 changes rarely. Two of them are load-bearing enough to name here:
 
 - **Whether the vocabulary of body rules stays small** (§3.8). If it does not,

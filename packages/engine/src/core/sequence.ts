@@ -20,7 +20,7 @@
  * `(lamport, writer)` sorts first. Deterministic from the events alone, which
  * is what keeps the fold order-independent (§3.6).
  *
- * See `docs/SEQUENCE.md` for the canonical form, pinned before this was coded.
+ * See `docs/design/SEQUENCE.md` for the canonical form, pinned before this was coded.
  */
 import { compareBytes, hex, Writer as ByteWriter } from './bytes.js';
 import type { Key } from './chain.js';
@@ -253,7 +253,7 @@ export const sequence: Rule<SeqOp, SeqAcc, readonly Uint8Array[]> = {
  * **Sorted by element id, not by list position.** Two implementations may build
  * the list by different traversals and disagree about intermediate structure
  * while agreeing exactly on the set of nodes; sorting by an intrinsic key
- * removes that freedom. `docs/SEQUENCE.md` has the layout.
+ * removes that freedom. `docs/design/SEQUENCE.md` has the layout.
  *
  * Orphan deletes are deliberately excluded: they describe what a peer has
  * *received*, not what the state *is*.

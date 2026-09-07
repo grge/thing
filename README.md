@@ -8,23 +8,16 @@ with no server holding the data.
 describes the intended system whole, from no prior context. It is not what the
 code in `src/` currently does — see *Status* below.
 
-| Doc | What it is |
+| | |
 |---|---|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | **The design.** Self-contained, assumes no prior context. Every section marked Proven / Decided / Open |
-| [docs/PLAN.md](docs/PLAN.md) | **The implementation plan** — stages, what each answers, what moves to archive |
-| [docs/OPEN.md](docs/OPEN.md) | Open questions. Mutable — changes as questions close |
-| [docs/LEARNINGS.md](docs/LEARNINGS.md) | What building this taught, for whenever the design is rewritten again — plus ideas worth not losing |
-| [docs/CLIENTS.md](docs/CLIENTS.md) | How the CLI, TUI and browser relate to a running peer — the engine's API as the only way in |
-| [docs/APPEND-POINTS.md](docs/APPEND-POINTS.md) | Splitting `writer` into an identity and a per-process append point: the trace, and the decisions |
-| [docs/WEB.md](docs/WEB.md) | What the browser client should be, what the previous versions had, and the build order |
-| [docs/LOCATORS.md](docs/LOCATORS.md) | How a client finds a space — the scenarios, the mechanisms, and which are needed |
-| [docs/MAIN-SPACE.md](docs/MAIN-SPACE.md) | Proposed: a peer holds one space, and everything else is a link inside it |
-| [docs/SEQUENCE.md](docs/SEQUENCE.md) | The sequence rule's canonical form, pinned before it was coded |
-| [docs/DEPS.md](docs/DEPS.md) | Proposed: naming the heads a writer had seen, so "was this allowed when written" is answerable |
-| [docs/EQUIVOCATION.md](docs/EQUIVOCATION.md) | Literature review — why per-writer sequence numbers force one writer per key |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | **The design.** One document, section-numbered, self-contained. Every section marked Proven / Decided / Open, and everything else defers to it |
+| [docs/design/](docs/design/) | How particular decisions were reached, in more depth than a section can hold. Check each one's status line — a design record can be superseded without being wrong |
+| [docs/working/](docs/working/) | Live: the build plan, open questions, what building it taught, and what is held for later |
+| [docs/archive/](docs/archive/) | Two earlier attempts, superseded. Kept for measurements and scope decisions that should not be made twice |
 | [archive/](archive/) | The previous implementation, and the fold prototype. Not built |
-| [docs/v1/](docs/v1/) | Archived — the design that came before, and the reasoning behind it |
-| [docs/v0/](docs/v0/) | Archived — the original proof of concept |
+
+Start with `ARCHITECTURE.md`. `docs/working/LEARNINGS.md` is worth reading
+before changing anything.
 
 ## The shape of it
 
@@ -46,13 +39,16 @@ read.**
 
 ## Status
 
-**Stages 0–7.5 of [docs/PLAN.md](docs/PLAN.md) are done**: the substrate, the
-fold, storage, a space, the sync protocol, a headless peer, a browser client,
-and one shared implementation of being a peer. The previous implementation is in
+**Most of [docs/working/PLAN.md](docs/working/PLAN.md) is done**: the substrate,
+the fold, storage, spaces, the sync protocol, multi-writer, the sequence rule, a
+headless peer that hosts what its main space links to, and a browser client
+through all eight of its stages. The previous implementation is in
 [archive/](archive/), kept readable but not built, tested, or imported.
 
-Next is stage 7.6, which changes the event envelope — see
-[docs/APPEND-POINTS.md](docs/APPEND-POINTS.md).
+**Next is stage 8, resolution.** A link names a space and carries no address, so
+following one needs a way to ask *where is this* — and until that exists, a link
+expanded in a browser holds an empty space and fetches nothing. See
+[docs/design/LOCATORS.md](docs/design/LOCATORS.md) and §5.3.
 
 ```
 packages/engine/  the peer, platform-agnostic

@@ -3,7 +3,7 @@
  *
  * Supplies what `@thing/engine` is handed — a `Store` over files, a WebSocket
  * transport, a keyring — and wires them into a peer that holds one space and
- * serves it (`docs/MAIN-SPACE.md`).
+ * serves it (`docs/design/MAIN-SPACE.md`).
  */
 export { FileStore } from './filestore.js';
 export { FileInventory, FileKeyring, FileLocators, fileLocalState } from './local.js';
