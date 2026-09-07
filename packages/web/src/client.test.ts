@@ -422,6 +422,60 @@ describe('tabs', () => {
     await client.close();
   });
 
+  it('a second space named the same gets its own name', async () => {
+    // Petnames are keyed by name — one name, one space — so naming a second
+    // `untitled` would take the name from the first, which would then report a
+    // name belonging to something else.
+    const client = new Client();
+    const a = await client.create('untitled');
+    const b = await client.create('untitled');
+
+    const names = client.view().map((t) => t.name);
+    expect(names).toHaveLength(2);
+    expect(new Set(names).size).toBe(2);
+    expect(names[0]).toBe('untitled');
+    expect(a.id).not.toBe(b.id);
+    await client.close();
+  });
+
+  it('renames a space, and the name survives a reload', async () => {
+    const first = new Client();
+    const tab = await first.create('untitled');
+    await first.rename(tab.id, 'notes');
+    expect(first.view()[0]!.name).toBe('notes');
+    await first.close();
+
+    const second = new Client();
+    await second.restore();
+    expect(second.view()[0]!.name).toBe('notes');
+    await second.close();
+  });
+
+  it('renaming onto a taken name takes a free one instead', async () => {
+    const client = new Client();
+    const a = await client.create('notes');
+    const b = await client.create('other');
+
+    const taken = await client.rename(b.id, 'notes');
+
+    expect(taken).not.toBe('notes');
+    // And the first space keeps the name it had.
+    expect(client.view().find((t) => t.id === a.id)!.name).toBe('notes');
+    await client.close();
+  });
+
+  it('a space keeps its own name when opened again with another', async () => {
+    // An incoming name — from a link, say — should not silently rename a space
+    // this client has already named.
+    const client = new Client();
+    const tab = await client.create('mine');
+    await client.rename(tab.id, 'my notes');
+    await client.open(fromHexKey(tab.id), 'something else');
+
+    expect(client.view()[0]!.name).toBe('my notes');
+    await client.close();
+  });
+
   it('tells a view when something changed', async () => {
     const client = new Client();
     let redraws = 0;

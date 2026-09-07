@@ -62,6 +62,9 @@
   /** The tab being dragged, and the tab it is over. */
   let movingTab = $state<string | null>(null);
   let tabTarget = $state<string | null>(null);
+  /** The tab being renamed, and the text so far. */
+  let renaming = $state<string | null>(null);
+  let draft = $state('');
 
   const active = $derived(tabs.find((t) => t.id === activeId) ?? null);
   const writable = $derived(active?.writable === true);
@@ -160,6 +163,22 @@
 
   async function create(): Promise<void> {
     show((await client.create('untitled')).id);
+  }
+
+  /** Rename a tab: a petname, local to this client and never replicated (§5.5). */
+  function startRename(tab: Tab): void {
+    renaming = tab.id;
+    draft = tab.name ?? '';
+  }
+
+  async function commitRename(): Promise<void> {
+    const id = renaming;
+    renaming = null;
+    if (id === null) return;
+    const name = draft.trim();
+    if (name === '') return;
+    await client.rename(id, name);
+    refresh();
   }
 
   /**
@@ -421,10 +440,29 @@
           void dropTabOn(tab.id);
         }}
       >
-        <button class="label" onclick={() => show(tab.id)}>
-          {tab.name ?? tab.id.slice(0, 8)}
-          {#if tab.peers > 0}<span class="dot" title="{tab.peers} connected"></span>{/if}
-        </button>
+        {#if renaming === tab.id}
+          <!-- svelte-ignore a11y_autofocus -->
+          <input
+            class="rename"
+            bind:value={draft}
+            autofocus
+            onblur={commitRename}
+            onkeydown={(e) => {
+              if (e.key === 'Enter') void commitRename();
+              if (e.key === 'Escape') renaming = null;
+            }}
+          />
+        {:else}
+          <button
+            class="label"
+            onclick={() => show(tab.id)}
+            ondblclick={() => startRename(tab)}
+            title="Double-click to rename"
+          >
+            {tab.name ?? tab.id.slice(0, 8)}
+            {#if tab.peers > 0}<span class="dot" title="{tab.peers} connected"></span>{/if}
+          </button>
+        {/if}
         <button class="shut" onclick={() => closeTab(tab.id)} aria-label="Close tab" title="Close">
           <Icon name="x" />
         </button>
@@ -578,6 +616,14 @@
   }
   .tab.new { border: 1px dashed var(--rule); color: var(--ink-muted); }
   .shut { color: var(--ink-faint); }
+  .rename {
+    font: inherit;
+    color: inherit;
+    background: var(--canvas);
+    border: 1px solid var(--action);
+    padding: var(--space-1) var(--space-2);
+    width: 8rem;
+  }
   .dot {
     display: inline-block;
     width: 6px; height: 6px;

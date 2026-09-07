@@ -141,7 +141,17 @@ export class Client extends PeerClient {
     // — nothing replicates this — but a client that forgets what it had open
     // has no other way back to a space it made.
     await this.local.inventory.remember(id);
-    if (name !== null) await this.local.petnames.set(name, id);
+    // Only if it has none: an incoming name should not silently rename a space
+    // this client has already given one.
+    if (name !== null && this.local.petnames.nameFor(id) === null) {
+      const taken = this.local.petnames.free(name, id);
+      await this.local.petnames.set(taken, id);
+      // The tab shows what was actually taken, not what was asked for — two
+      // spaces called `untitled` would otherwise both display the same label
+      // while only one of them held the name.
+      const tab = this.tabs.find((t) => hex(t.key) === id);
+      if (tab !== undefined) tab.name = taken;
+    }
     this.changed();
     return this.tabOf(id)!;
   }
@@ -201,9 +211,28 @@ export class Client extends PeerClient {
     const space = await this.hold(key.publicKey, key);
     if (name !== undefined && name !== '') {
       // The suggested name goes on the root, written by the space key (§3.5).
+      // Distinct from the petname: this one replicates and is what the space
+      // calls *itself*, where a petname is what this client calls it (§5.5).
       await space.write(new Uint8Array(16), ':name', new TextEncoder().encode(name));
     }
     return this.open(key.publicKey, name ?? null);
+  }
+
+  /**
+   * Rename a space, for this client only.
+   *
+   * A petname is local and never replicated (§5.5) — renaming here changes
+   * nothing anyone else sees, and does not touch what the space calls itself.
+   * Returns the name actually taken, which differs if the asked-for one was in
+   * use by another space.
+   */
+  async rename(id: string, name: string): Promise<string> {
+    const taken = this.local.petnames.free(name, id);
+    await this.local.petnames.set(taken, id);
+    const tab = this.tabs.find((t) => hex(t.key) === id);
+    if (tab !== undefined) tab.name = taken;
+    this.changed();
+    return taken;
   }
 
   /* ── connections ──────────────────────────────────────────────────────── */

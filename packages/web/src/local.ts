@@ -106,10 +106,40 @@ export class LocalPetnames implements PetnameStore {
     return new Map(Object.entries(map(PETNAMES)));
   }
 
+  /**
+   * Give a space a name, taking it from whatever held it.
+   *
+   * The store is keyed by *name*, so one name points at one space — that is
+   * the contract (`PetnameStore` in the engine), and it means naming a second
+   * space `notes` moves the name rather than duplicating it. Dropping the old
+   * space's entry is what keeps `nameFor` honest: without it, that space would
+   * still report a name that now belongs to something else.
+   *
+   * A caller that does not want to take a name should ask `available` first.
+   */
   async set(name: string, space: string): Promise<void> {
     const names = map(PETNAMES);
+    for (const [existing, id] of Object.entries(names)) {
+      if (id === space && existing !== name) delete names[existing];
+    }
     names[name] = space;
     localStorage.setItem(PETNAMES, JSON.stringify(names));
+  }
+
+  /** Whether a name is free, or already this space's own. */
+  available(name: string, space: string): boolean {
+    const held = map(PETNAMES)[name];
+    return held === undefined || held === space;
+  }
+
+  /** `name`, `name 2`, `name 3` — the first that is free. */
+  free(name: string, space: string): string {
+    if (this.available(name, space)) return name;
+    for (let n = 2; n < 1000; n++) {
+      const candidate = `${name} ${n}`;
+      if (this.available(candidate, space)) return candidate;
+    }
+    return `${name} ${space.slice(0, 6)}`;
   }
 
   async remove(name: string): Promise<void> {
