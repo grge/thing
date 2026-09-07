@@ -11,18 +11,22 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import {
+    entry,
     hex,
     isLink,
     links,
-    list,
     makeFile,
     makeFolder,
+    read,
+    remove,
+    rename,
     ROOT,
     type FileEntry,
     type Uuid,
   } from '@thing/engine';
   import { Client, parseShareLink, type Tab } from '../client.js';
   import Preview from './Preview.svelte';
+  import Tree from './Tree.svelte';
 
   const client = new Client({
     signallingUrl: import.meta.env['VITE_SIGNALLING'] ?? undefined,
@@ -30,16 +34,33 @@
 
   let tabs = $state<Tab[]>([]);
   let activeId = $state<string | null>(null);
-  let path = $state<Uuid[]>([]);
+  /** Which folders are open, by hex id. Interface state, in no log. */
+  let expanded = $state<Set<string>>(new Set());
   let selected = $state<Uuid | null>(null);
   let error = $state<string | null>(null);
   let dragging = $state(false);
   let fileInput = $state<HTMLInputElement | null>(null);
 
   const active = $derived(tabs.find((t) => t.id === activeId) ?? null);
-  const here = $derived<Uuid>(path.length === 0 ? ROOT : path[path.length - 1]!);
-  const entries = $derived<FileEntry[]>(active === null ? [] : list(active.state, here));
   const writable = $derived(active?.writable === true);
+  const chosen = $derived<FileEntry | null>(
+    active === null || selected === null ? null : entry(active.state, selected),
+  );
+
+  /**
+   * Where a new file lands: inside the selected folder, else beside the
+   * selection, else the root. Dropping onto a tree should put things where you
+   * are looking, and "where you are looking" is the selection now that folders
+   * expand in place rather than being navigated into.
+   */
+  const here = $derived<Uuid>(
+    chosen === null ? ROOT : chosen.isFolder ? chosen.id : (parentOf(chosen) ?? ROOT),
+  );
+
+  function parentOf(e: FileEntry): Uuid | null {
+    const p = e.object.attrs.get(':parent')?.value;
+    return p instanceof Uint8Array ? p : null;
+  }
 
   function refresh(): void {
     tabs = client.view();
@@ -70,7 +91,7 @@
 
   function show(id: string): void {
     activeId = id;
-    path = [];
+    expanded = new Set();
     selected = null;
   }
 
@@ -85,7 +106,7 @@
     await client.closeTab(id);
     if (activeId === id) {
       activeId = null;
-      path = [];
+      expanded = new Set();
       selected = null;
     }
     refresh();
@@ -95,17 +116,18 @@
     show((await client.create('untitled')).id);
   }
 
-  function enter(e: FileEntry): void {
+  /** Selecting a link offers to follow it; everything else just selects. */
+  function choose(e: FileEntry): void {
+    selected = e.id;
     if (isLink(e)) void follow(e.name);
-    else if (e.isFolder) {
-      path = [...path, e.id];
-      selected = null;
-    } else selected = e.id;
   }
 
-  function up(): void {
-    path = path.slice(0, -1);
-    selected = null;
+  function toggle(id: Uuid): void {
+    const key = hex(id);
+    const next = new Set(expanded);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    expanded = next;
   }
 
   /**
@@ -145,6 +167,46 @@
       return;
     }
     await makeFolder(space, 'untitled', here);
+  }
+
+  async function renameChosen(): Promise<void> {
+    const space = activeId === null ? null : client.space(activeId);
+    if (space === null || chosen === null) return;
+    const next = prompt('New name', chosen.name);
+    if (next === null || next === '' || next === chosen.name) return;
+    await rename(space, chosen.id, next);
+  }
+
+  /**
+   * Delete: `:deleted`, which hides rather than unwrites (§7.2.3's shape).
+   * The events stay in the log and a peer that already has them keeps them.
+   */
+  async function deleteChosen(): Promise<void> {
+    const space = activeId === null ? null : client.space(activeId);
+    if (space === null || chosen === null) return;
+    if (!confirm(`Delete ${chosen.name}?`)) return;
+    await remove(space, chosen.id);
+    selected = null;
+  }
+
+  /**
+   * Download, which is the honest fallback for anything nothing can render —
+   * and the only way to get bytes back out of a space.
+   */
+  async function downloadChosen(): Promise<void> {
+    const space = activeId === null ? null : client.space(activeId);
+    if (space === null || chosen === null) return;
+    const bytes = await read(space, chosen.id);
+    if (bytes === null) {
+      error = 'those bytes are not held here yet';
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([bytes as BlobPart]));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = chosen.name;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   function fromHex(s: string): Uint8Array {
@@ -202,12 +264,18 @@
         </header>
 
         <div class="bar">
-          {#if path.length > 0}
-            <button onclick={up}>← up</button>
-          {/if}
           {#if writable}
             <button onclick={() => fileInput?.click()}>+ file</button>
             <button onclick={newFolder}>+ folder</button>
+          {/if}
+          {#if chosen !== null}
+            {#if !chosen.isFolder && !isLink(chosen)}
+              <button onclick={downloadChosen}>download</button>
+            {/if}
+            {#if writable}
+              <button onclick={renameChosen}>rename</button>
+              <button onclick={deleteChosen}>delete</button>
+            {/if}
           {/if}
         </div>
         <input
@@ -218,24 +286,13 @@
           hidden
         />
 
-        <ul class="tree">
-          {#each entries as e (hex(e.id))}
-            <li>
-              <button
-                class="entry"
-                class:selected={selected !== null && hex(selected) === hex(e.id)}
-                onclick={() => enter(e)}
-              >
-                <span class="glyph">{isLink(e) ? '→' : e.isFolder ? '▸' : ''}</span>
-                <span class="name">{e.name}</span>
-              </button>
-            </li>
-          {:else}
-            <li class="muted pad">
-              {writable ? 'Empty — drop a file in.' : 'Empty.'}
-            </li>
-          {/each}
-        </ul>
+        <Tree
+          state={active.state}
+          {expanded}
+          {selected}
+          onSelect={choose}
+          onToggle={toggle}
+        />
 
         {#if links(active.state).length > 0}
           <p class="muted pad small">
@@ -344,24 +401,6 @@
     cursor: pointer;
   }
   .bar button:hover { color: var(--ink); border-color: var(--rule-strong); }
-
-  .tree { list-style: none; padding: 0; margin: 0; }
-  .entry {
-    display: flex;
-    gap: var(--space-2);
-    width: 100%;
-    text-align: left;
-    background: none;
-    border: none;
-    color: inherit;
-    font: inherit;
-    padding: var(--space-1) var(--space-2);
-    cursor: pointer;
-  }
-  .entry:hover { background: var(--canvas-raised); }
-  .entry.selected { background: var(--canvas-sunken); }
-  .glyph { width: 1em; color: var(--ink-faint); }
-  .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .empty { padding: var(--space-6); }
   .muted { color: var(--ink-muted); }

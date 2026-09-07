@@ -142,8 +142,11 @@ Each stage should leave a client someone can use.
    component CSS for components this rebuild does not have, and a global rule
    for a component that does not exist is a rule nothing checks. It is in
    `archive/ui/app.css` for when a panel comes back.
-2. **Download, rename, delete.** The tree is not usable without them, and they
-   are small.
+2. ~~**Download, rename, delete.**~~ **Done**, plus the tree itself: folders
+   now expand in place rather than replacing the view, which is what makes it a
+   tree rather than a navigator. Recursive by snippet over `FileEntry`, with
+   expansion held as interface state — the same shape `archive/ui/Tree.svelte`
+   used. Delete is `:deleted`, which hides without unwriting (§7.2.3).
 3. **Drag: re-parent within a tree, and desktop-to-tree.** `archive/ui/Tree.svelte`
    has a working implementation to read.
 4. **The renderer registry**, with text, image and PDF. Ports mostly whole.

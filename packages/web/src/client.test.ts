@@ -22,6 +22,9 @@ import {
   makeFolder,
   makeLink,
   read,
+  remove,
+  rename,
+  ROOT,
 } from '@thing/engine';
 
 import { Client } from './client.js';
@@ -198,6 +201,55 @@ describe('tabs', () => {
     expect(contentHash(space.state, id)).not.toBeNull();
     expect(await read(space, id)).toBeNull();
 
+    await client.close();
+  });
+
+  it('nests folders, so a tree can show depth', async () => {
+    // The tree expands in place rather than navigating, so it needs the whole
+    // shape available at once — `list` per parent, at any depth.
+    const client = new Client();
+    const tab = await client.create('mine');
+    const space = client.space(tab.id)!;
+
+    const outer = await makeFolder(space, 'outer');
+    const inner = await makeFolder(space, 'inner', outer);
+    await makeFile(space, 'deep.txt', new TextEncoder().encode('x'), { parent: inner });
+
+    expect(list(space.state).map((e) => e.name)).toEqual(['outer']);
+    expect(list(space.state, outer).map((e) => e.name)).toEqual(['inner']);
+    expect(list(space.state, inner).map((e) => e.name)).toEqual(['deep.txt']);
+    await client.close();
+  });
+
+  it('renames in place, keeping the same object', async () => {
+    const client = new Client();
+    const tab = await client.create('mine');
+    const space = client.space(tab.id)!;
+    await makeFile(space, 'before.txt', new TextEncoder().encode('x'));
+    const id = list(space.state)[0]!.id;
+
+    await rename(space, id, 'after.txt');
+
+    expect(list(space.state).map((e) => e.name)).toEqual(['after.txt']);
+    expect(hex(list(space.state)[0]!.id)).toBe(hex(id)); // same object
+    await client.close();
+  });
+
+  it('deleting hides without unwriting (§7.2.3)', async () => {
+    // The events stay in the log. A peer that already has them keeps them, and
+    // nothing about the past is rewritten.
+    const client = new Client();
+    const tab = await client.create('mine');
+    const space = client.space(tab.id)!;
+    await makeFile(space, 'gone.txt', new TextEncoder().encode('x'));
+    const id = list(space.state)[0]!.id;
+
+    await remove(space, id);
+
+    expect(list(space.state)).toEqual([]);
+    expect(list(space.state, ROOT, { includeDeleted: true }).map((e) => e.name)).toEqual([
+      'gone.txt',
+    ]);
     await client.close();
   });
 
