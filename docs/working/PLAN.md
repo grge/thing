@@ -942,6 +942,33 @@ network and there is not one yet. And dialling a `{via, peer}` locator: a
 browser can *say* where it is, and nothing yet turns that back into a WebRTC
 meeting.
 
+## Stage 8.1 — A connection carries many spaces
+
+**Designed, not built.** `../design/CONNECTIONS.md` has the reasoning.
+
+Stage 8 left one thing that does not work, and it is the case the whole hosting
+story is for: **a hub cannot fetch a space held only by a browser.** It resolves
+it correctly — the browser answers *I have that, reach me here* — and then
+cannot open a session for it, because a connection is bound to the first space
+it heard about and every control message except `HELLO` is implicitly about that
+one space.
+
+There is no way round it. A browser cannot be dialled (§5.6), so a second
+connection is unavailable by construction; if one connection cannot carry a
+second space, a hub can only host spaces owned by peers that already have
+addresses, which excludes every browser.
+
+**The change:** every control frame names its space, and a receiver routes by
+it. No version bump — nothing is deployed that must interoperate across one.
+
+**Decide while building:** refusal becomes per space rather than per connection,
+so `onRefused` changes shape and a connection survives a refusal unless it has
+nothing left.
+
+**Done when:** a space created in a browser, linked into a hub's space, is held
+and served by that hub — and a second browser that has never met the first can
+read it.
+
 ## Stage 8 — the original plan
 
 §5.3, which the archived tree never had.
