@@ -102,6 +102,16 @@ export class Client extends PeerClient {
    */
   async restore(): Promise<void> {
     const remembered = await this.local.inventory.all();
+
+    // Drop names for spaces that are not in the inventory. Closing a tab used
+    // to leave its petname behind, where nothing could read it and it went on
+    // holding the name against a future space. Anyone who closed a few tabs
+    // before this was fixed has a handful of them.
+    const held = new Set(remembered);
+    for (const [name, id] of await this.local.petnames.all()) {
+      if (!held.has(id)) await this.local.petnames.remove(name);
+    }
+
     for (const id of remembered) {
       const name = this.local.petnames.nameFor(id);
       try {
@@ -161,6 +171,12 @@ export class Client extends PeerClient {
     const at = this.tabs.findIndex((t) => hex(t.key) === id);
     if (at !== -1) this.tabs.splice(at, 1);
     await this.local.inventory.forget(id);
+    // The petname goes too. Nothing can read it back — `restore` iterates the
+    // inventory, so a name for a space that is not in it is unreachable — and
+    // leaving it behind means the name stays *taken*, so a later space cannot
+    // have it. That is how `untitled 8` happens with no other untitled open.
+    const name = this.local.petnames.nameFor(id);
+    if (name !== null) await this.local.petnames.remove(name);
     await this.release(id);
     this.changed();
   }

@@ -31,6 +31,7 @@ import {
 } from '@thing/engine';
 
 import { Client } from './client.js';
+import { browserLocalState } from './local.js';
 
 /** Enough `localStorage` for the keyring. */
 class MemoryStorage {
@@ -473,6 +474,38 @@ describe('tabs', () => {
     await client.open(fromHexKey(tab.id), 'something else');
 
     expect(client.view()[0]!.name).toBe('my notes');
+    await client.close();
+  });
+
+  it('closing a tab frees its name', async () => {
+    // Otherwise a closed space goes on holding `untitled`, and the next one is
+    // `untitled 2` with nothing else named `untitled` anywhere in sight.
+    const client = new Client();
+    const first = await client.create('untitled');
+    await client.closeTab(first.id);
+    const second = await client.create('untitled');
+
+    expect(second.name).toBe('untitled');
+    await client.close();
+  });
+
+  it('restore clears a name left behind by an older version', async () => {
+    // Closing used to forget the inventory entry and keep the petname, where
+    // nothing could read it and it went on holding the name. Anyone who closed
+    // a tab before that was fixed has one; this sweeps them.
+    //
+    // The orphan is made directly rather than through `closeTab`, which now
+    // cleans up — so this tests the sweep rather than the fix that made it
+    // unnecessary going forward.
+    const local = browserLocalState();
+    await local.petnames.set('untitled', '11'.repeat(32));
+
+    const client = new Client();
+    await client.restore();
+
+    expect([...(await local.petnames.all())]).toEqual([]);
+    // And the freed name is available.
+    expect((await client.create('untitled')).name).toBe('untitled');
     await client.close();
   });
 
