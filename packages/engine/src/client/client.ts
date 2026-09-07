@@ -384,9 +384,14 @@ export class Client {
         // Tell the other peers, so anyone who asked while this was still in
         // flight learns the answer has changed. A relay that stays silent
         // leaves them on a `NO_BLOB` they have no reason to retry.
+        let told = 0;
         for (const [peer, s] of held.sessions) {
-          if (peer !== conn.peer && !s.isClosed) s.announceBlob(key);
+          if (peer !== conn.peer && !s.isClosed) {
+            s.announceBlob(key);
+            told += 1;
+          }
         }
+        if (told > 0) this.note('ephemeral', id, `HAVE ${key.slice(0, 8)} → ${told} peer(s)`);
         for (const o of this.observers) o.onBlob?.(id, key, bytes.length);
       },
       onNoBlob: (hash) => {
@@ -403,6 +408,10 @@ export class Client {
         for (const o of this.observers) o.onNoBlob?.(id, hash, conn.peer);
       },
       onHave: (hashes) => {
+        // The ephemeral channel had a name in `Activity` and nothing ever
+        // wrote to it, so traffic that expires and is never stored was also
+        // the traffic nobody could see. It is exactly what wants a log.
+        this.note('ephemeral', id, `HAVE ${hashes.length} blob(s) from ${conn.peer}`);
         // A peer announced what it holds. Anything refused earlier and still
         // wanted is worth asking again — this is the retry that closes the
         // race between a client asking and a relay still fetching.

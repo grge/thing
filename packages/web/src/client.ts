@@ -32,6 +32,7 @@ import {
   hex,
   type KeyPair,
   links,
+  referencedBlobs,
   type PeerKind,
   type PeerStatus,
   type PublicKey,
@@ -46,6 +47,15 @@ import { connectVia, type RtcConnection, type RtcOptions } from './webrtc.js';
 export type { Activity, PeerKind, PeerStatus };
 
 /** One open space, as a view sees it. */
+/** One blob, and whether the space's content still points at it. */
+export interface BlobRow {
+  readonly hash: string;
+  /** Some object's body names this hash. */
+  readonly referenced: boolean;
+  /** The bytes are in this browser. */
+  readonly held: boolean;
+}
+
 /** One space in this browser's storage (`docs/WEB.md`, the storage view). */
 export interface StoredSpace {
   readonly id: string;
@@ -376,6 +386,33 @@ export class Client extends PeerClient {
     await this.local.inventory.forget(id);
     await this.forget(id);
     this.changed();
+  }
+
+  /**
+   * The blobs one space holds, and which of them its content refers to.
+   *
+   * Two sets that are not the same, and the difference is worth seeing:
+   * **referenced but absent** is a file whose bytes have not arrived — the
+   * "Fetching…" case — and **held but unreferenced** is content whose object
+   * was deleted, which nothing collects yet (§2.4 blobs are a cache; §9 has
+   * the compaction that would reclaim them).
+   */
+  async blobs(id: string): Promise<BlobRow[]> {
+    const held = this.entry(id);
+    if (held === undefined) return [];
+
+    const referenced = referencedBlobs(held.space.state);
+    const stored = new Set<string>();
+    for await (const h of held.store.blobHashes()) stored.add(hex(h));
+
+    const rows: BlobRow[] = [];
+    for (const [key] of referenced) {
+      rows.push({ hash: key, referenced: true, held: stored.has(key) });
+    }
+    for (const key of stored) {
+      if (!referenced.has(key)) rows.push({ hash: key, referenced: false, held: true });
+    }
+    return rows.sort((a, b) => (a.hash < b.hash ? -1 : 1));
   }
 
   /* ── spaces of one's own ──────────────────────────────────────────────── */

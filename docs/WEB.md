@@ -234,12 +234,32 @@ Each stage should leave a client someone can use.
    browsing it is ordinary. It renders outside the "a space is open" branch,
    because the storage view is most useful exactly when nothing will open.
 
+   Six tabbed views — peers, chains, storage, blobs, ephemeral, log — rather
+   than one scrolling page, because they answer unrelated questions and only
+   one is ever being asked. Everything is a table; the log filters.
+
    It earned its place immediately. On first run against a real browser it
    showed **seven spaces with no tab** — every link expanded during testing,
-   held and unreachable, which is precisely the class of thing this exists to
-   surface. `canEnumerate` on `IdbStore` reports whether the listing is
-   complete, so a browser without `databases()` says so rather than showing a
-   short list that looks authoritative.
+   held and unreachable — and the blobs view showed rows marked *referenced but
+   missing*, which is the "Fetching…" case made visible. `canEnumerate` on
+   `IdbStore` reports whether the listing is complete, so a browser without
+   `databases()` says so rather than showing a short list that looks
+   authoritative.
+
+   **A status footer sits above it, always visible.** Connectedness is not a
+   debugging concern — it decides whether anything you do reaches anyone — so
+   the peer count for the current space, its name, any fork and whether it is
+   keeping copies are on screen permanently, with the peer list as a popout.
+   Revealing that only on demand makes "nothing is syncing" look identical to
+   "everything is fine".
+
+   **One trap worth recording.** `refresh` writes `$state` and is driven by
+   `client.subscribe`, which fires on every fold. Calling it from inside an
+   `$effect` made the effect depend on its own writes and froze the tab hard
+   enough to need closing; a sync of a few hundred events also fires the
+   subscription a few hundred times, each starting an async read of storage and
+   every blob hash. It is now guarded against overlap and coalesces a trailing
+   pass, and the effect tracks only the space id.
 8. **Settings** — signalling, ICE, keys.
 
 **1–3 are the ones that make it a client.** 5 is the one that makes it *this*

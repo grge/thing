@@ -33,6 +33,7 @@
   import Preview from './Preview.svelte';
   import Debug from './Debug.svelte';
   import Share from './Share.svelte';
+  import Status from './Status.svelte';
   import Tree from './Tree.svelte';
 
   const client = new Client({
@@ -563,14 +564,6 @@
     >
       <Icon name="clipboard" /> open
     </button>
-    <button
-      class="tab new debug-toggle"
-      class:on={debugging}
-      onclick={() => (debugging = !debugging)}
-      title="Peers, chains, storage and activity"
-    >
-      <Icon name="activity" />
-    </button>
   </nav>
 
   {#if pasting !== null}
@@ -738,10 +731,21 @@
     <Debug
       {client}
       tabs={tabs}
+      active={active ?? null}
       onclose={() => (debugging = false)}
       onrestored={(id) => show(id)}
     />
   {/if}
+
+  <!-- Always visible. Connectedness is not a debugging concern: it decides
+       whether anything you do reaches anyone, and revealing it only on demand
+       makes "nothing is syncing" look identical to "everything is fine". -->
+  <Status
+    {client}
+    tab={active ?? null}
+    {debugging}
+    ondebug={() => (debugging = !debugging)}
+  />
 </div>
 
 <style>
@@ -837,8 +841,6 @@
   }
   .share-toggle:first-of-type { margin-left: auto; }
   .share-toggle:hover { color: var(--ink); }
-  /* On, rather than merely hovered: a panel that is open is a state. */
-  .debug-toggle.on { color: var(--ink); }
   /* On, rather than merely hovered: this one is a state, not an action. */
   .share-toggle.on { color: var(--ink); }
 
