@@ -277,6 +277,40 @@ Each stage should leave a client someone can use.
    so it is stored as `[]` and never folded into "unset", which would silently
    restore the default.
 
+### Settings wants a refresh — **noted, not designed**
+
+Built as one panel of three sections with a paragraph of prose above each. The
+prose is doing work the interface should do, and two of the three sections are
+in the wrong place.
+
+- **Cut the explanations.** They were written to justify the settings to
+  someone reading the code, and that is not who is looking at the panel. The
+  reasoning belongs here and in §5.1.1; the panel needs labels.
+- **Keys belong to a space, not to the client.** A key is per-space (§5.1), so
+  listing every space's key under a global panel is organising by where the
+  code lives rather than by what the thing is. They want a per-space settings
+  view — reachable from the space, alongside its other per-space choices.
+- **That view is also where sync depth goes.** "Keep a copy of this space"
+  (`mirrorBlobs`) is currently a toolbar icon with no explanation and no
+  neighbours; it is a per-space policy and belongs beside the key.
+
+**The substantive change is import, not layout.** Today a key can only be
+copied *out*. §5.1.1 lists "an explicit export the user is prompted to keep"
+among the candidate answers to key loss — and an export nobody can restore is
+half a mechanism. A per-space settings view should let a **missing key be
+supplied**: paste the seed for a space that currently opens read-only, and it
+becomes writable again.
+
+Two things that need care when it is built, both from §5.1.1:
+
+- **A supplied key must be checked against the space id**, since a space is its
+  public key. Accepting a seed whose public key is not this space would present
+  a different space wearing its name, which is the exact failure the read-only
+  fallback exists to prevent.
+- **It is the recovery path, so it is also an attack surface.** Pasting a seed
+  is handing over write access to whoever produced it; the view should say what
+  is being granted rather than treating it as a preference.
+
 ### The debug panel wants rethinking — **noted, not designed**
 
 Built as a global panel, and most of what is in it is not global. Peers,
