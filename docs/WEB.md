@@ -159,6 +159,39 @@ that is not a tab is cached** — and cached spaces are disposable because losin
 one costs a fetch. The one-hop check from open tabs is what stops a shared space
 vanishing while something still shows it.
 
+### The storage view, and why it is needed
+
+Deferred to stage 7 rather than built now, but it is not optional.
+
+With closing-deletes and no inventory, **a space in storage that no tab points
+at is unreachable**: nothing lists it, nothing can open it, and nothing can
+remove it. That should not happen — closing sweeps, and `restore` reopens what
+was open — but "should not happen" is exactly the class of thing that wants a
+way to look.
+
+Three cases it covers:
+
+- **A bug leaves a space behind.** Every cleanup path here is code that can be
+  wrong, and this is the only way to see that it was.
+- **A partial write.** A tab closed mid-delete, a browser killed during
+  `restore` — the sweep runs on next start, but seeing what it found beats
+  trusting that it ran.
+- **Recovering a space whose tab was lost.** If the tab list and the storage
+  ever disagree, this is the only route back to the data.
+
+So: list what `IdbStore.list()` reports, alongside which are open. Restore one
+to a tab, or delete it outright. It belongs in the debug panel rather than the
+main interface — it is for when something has gone wrong, and putting it
+forward would suggest that browsing storage is an ordinary thing to do.
+
+**One caveat for whoever builds it.** `IdbStore.list()` uses
+`indexedDB.databases()`, which is not available everywhere; its own comment says
+the caller's record is the answer where it is missing. So this view is
+best-effort, and on a browser without that API it can only show what the
+inventory already knows — which is precisely the case it is least useful in.
+Worth saying in the panel rather than showing an empty list that looks
+authoritative.
+
 ## Build order
 
 Each stage should leave a client someone can use.
@@ -189,7 +222,9 @@ Each stage should leave a client someone can use.
 5. **Links: pasting a key**, for a space nobody has open. The drag gesture
    landed in stage 3.
 6. **Share and join**, including a pasted code rather than only a URL.
-7. **Debug panel** — vectors, forks, peers, activity.
+7. **Debug panel** — vectors, forks, peers, activity, **and storage**: every
+   space this browser holds, whether or not a tab shows it, with a way to
+   delete one or restore it to a tab. See below.
 8. **Settings** — signalling, ICE, keys.
 
 **1–3 are the ones that make it a client.** 5 is the one that makes it *this*
