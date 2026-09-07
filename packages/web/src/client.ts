@@ -473,6 +473,31 @@ export interface ShareLink {
   readonly locator: string | null;
 }
 
+/**
+ * A space key from whatever someone pasted.
+ *
+ * Accepts a bare 64-character key or a full share link, since both are things
+ * people copy and neither is distinguishable by asking. **Not a short code**:
+ * that is derived from the hash of a key and cannot be reversed (§5.4) — it
+ * narrows where to look, and a client that has never seen the space has nothing
+ * to look through.
+ *
+ * Returns the key and whatever else the paste carried, so a caller can dial the
+ * hint or wait at the token.
+ */
+export function parsePasted(text: string): ShareLink | null {
+  const trimmed = text.trim();
+  if (trimmed === '') return null;
+
+  const hash = trimmed.indexOf('#');
+  if (hash !== -1) return parseShareLink(trimmed.slice(hash));
+
+  if (/^[0-9a-f]{64}$/i.test(trimmed)) {
+    return { key: trimmed.toLowerCase(), name: null, token: null, locator: null };
+  }
+  return null;
+}
+
 export function parseShareLink(fragment: string): ShareLink | null {
   const params = new URLSearchParams(fragment.replace(/^#/, ''));
   const key = params.get('k');

@@ -30,7 +30,7 @@ import {
   targetOf,
 } from '@thing/engine';
 
-import { Client } from './client.js';
+import { Client, parsePasted } from './client.js';
 import { IdbStore } from './idbstore.js';
 import { browserLocalState } from './local.js';
 
@@ -580,6 +580,43 @@ describe('tabs', () => {
     expect(redraws).toBeGreaterThan(0);
     off();
     await client.close();
+  });
+});
+
+describe('parsePasted', () => {
+  const key = 'ab'.repeat(32);
+
+  it('takes a bare key', () => {
+    expect(parsePasted(key)).toMatchObject({ key, locator: null, token: null });
+  });
+
+  it('lowercases, so a key copied from anywhere works', () => {
+    expect(parsePasted(key.toUpperCase())?.key).toBe(key);
+  });
+
+  it('ignores surrounding whitespace, which a paste often carries', () => {
+    expect(parsePasted(`  ${key}\n`)?.key).toBe(key);
+  });
+
+  it('takes a whole share link, with its hint and token', () => {
+    const link = parsePasted(`https://example.com/#k=${key}&n=notes&t=abcd&l=ws://x:1`);
+    expect(link).toMatchObject({ key, name: 'notes', token: 'abcd', locator: 'ws://x:1' });
+  });
+
+  it('takes a bare fragment too', () => {
+    expect(parsePasted(`#k=${key}`)?.key).toBe(key);
+  });
+
+  it('refuses a short code, which cannot be reversed to a key (§5.4)', () => {
+    // A code is derived from the hash of a key: it narrows *where to look*,
+    // and a client that has never seen the space has nothing to look through.
+    expect(parsePasted('4sektg4g')).toBeNull();
+  });
+
+  it('refuses anything that is not a key', () => {
+    for (const bad of ['', '   ', 'hello', key.slice(0, 63), `${key}ab`, 'zz'.repeat(32)]) {
+      expect(parsePasted(bad)).toBeNull();
+    }
   });
 });
 

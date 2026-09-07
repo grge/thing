@@ -4,7 +4,14 @@
  * Supplies what `@thing/engine` is handed — IndexedDB, WebRTC, a keyring — and
  * a client that opens spaces as tabs (`docs/MAIN-SPACE.md`).
  */
-export { Client, type ClientOptions, parseShareLink, type ShareLink, type Tab } from './client.js';
+export {
+  Client,
+  type ClientOptions,
+  parsePasted,
+  parseShareLink,
+  type ShareLink,
+  type Tab,
+} from './client.js';
 export { IdbStore } from './idbstore.js';
 export {
   browserLocalState,

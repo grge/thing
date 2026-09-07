@@ -219,8 +219,11 @@ Each stage should leave a client someone can use.
    parsing and the degradation chain went into the engine, since they are
    platform-free and a terminal client wants the same fallbacks; the registry
    and the three renderers are in `web/src/ui/renderers/`.
-5. **Links: pasting a key**, for a space nobody has open. The drag gesture
-   landed in stage 3.
+5. ~~**Links: pasting a key**, for a space nobody has open.~~ **Done.** One
+   parser takes a bare key or a whole share link, since both are things people
+   copy; **not** a short code, which is derived from a key's hash and cannot be
+   reversed (§5.4). Two entry points, matching the drag: *open* puts it in a
+   tab, *link here* keeps it in the current space.
 6. **Share and join**, including a pasted code rather than only a URL.
 7. **Debug panel** — vectors, forks, peers, activity, **and storage**: every
    space this browser holds, whether or not a tab shows it, with a way to

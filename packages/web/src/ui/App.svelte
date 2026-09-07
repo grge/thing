@@ -28,7 +28,7 @@
     type State,
     type Uuid,
   } from '@thing/engine';
-  import { Client, parseShareLink, type Tab } from '../client.js';
+  import { Client, parsePasted, parseShareLink, type Tab } from '../client.js';
   import Icon from './Icon.svelte';
   import Preview from './Preview.svelte';
   import Tree from './Tree.svelte';
@@ -65,6 +65,9 @@
   /** The tab being renamed, and the text so far. */
   let renaming = $state<string | null>(null);
   let draft = $state('');
+  /** A pasted key or share link, and what to do with it. */
+  let pasting = $state<'open' | 'link' | null>(null);
+  let pasted = $state('');
 
   const active = $derived(tabs.find((t) => t.id === activeId) ?? null);
   const writable = $derived(active?.writable === true);
@@ -175,6 +178,52 @@
 
   async function create(): Promise<void> {
     show((await client.create('untitled')).id);
+  }
+
+  /**
+   * Open or link a space from a pasted key.
+   *
+   * The fallback for a space nobody has open, where the drag gesture cannot
+   * reach. `open` puts it in a tab; `link` keeps it in the current space —
+   * the same distinction the drag makes, since pasting should not quietly do
+   * something the gesture would not.
+   */
+  async function commitPaste(): Promise<void> {
+    const intent = pasting;
+    const text = pasted;
+    pasting = null;
+    pasted = '';
+    if (intent === null) return;
+
+    const link = parsePasted(text);
+    if (link === null) {
+      error = 'That is not a space key or a share link.';
+      return;
+    }
+    error = null;
+    const key = fromHex(link.key);
+
+    try {
+      if (intent === 'open') {
+        const tab = await client.open(key, link.name);
+        show(tab.id);
+        if (link.locator !== null) await client.connect(tab.id, link.locator);
+        else if (link.token !== null) await client.meetAt(tab.id, link.token);
+      } else {
+        const space = activeId === null ? null : client.space(activeId);
+        if (space === null || !space.writable) {
+          error = 'this space is read-only here';
+          return;
+        }
+        if (links(space.state).some((l) => hex(l.target) === link.key)) {
+          error = 'that space is already linked here';
+          return;
+        }
+        await makeLink(space, link.name ?? link.key.slice(0, 8), key);
+      }
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'could not open that space';
+    }
   }
 
   /** Rename a tab: a petname, local to this client and never replicated (§5.5). */
@@ -483,7 +532,39 @@
     <button class="tab new" onclick={create} title="New space">
       <Icon name="plus" /> space
     </button>
+    <button
+      class="tab new"
+      onclick={() => {
+        pasting = 'open';
+        pasted = '';
+      }}
+      title="Open a space from a key or share link"
+    >
+      <Icon name="clipboard" /> open
+    </button>
   </nav>
+
+  {#if pasting !== null}
+    <form
+      class="paste"
+      onsubmit={(e) => {
+        e.preventDefault();
+        void commitPaste();
+      }}
+    >
+      <!-- svelte-ignore a11y_autofocus -->
+      <input
+        bind:value={pasted}
+        autofocus
+        placeholder="Paste a space key or share link"
+        onkeydown={(e) => {
+          if (e.key === 'Escape') pasting = null;
+        }}
+      />
+      <button type="submit">{pasting === 'open' ? 'Open' : 'Link here'}</button>
+      <button type="button" onclick={() => (pasting = null)}>Cancel</button>
+    </form>
+  {/if}
 
   {#if error !== null}
     <p class="error" role="alert">{error}</p>
@@ -517,6 +598,16 @@
             </button>
             <button onclick={newFolder} aria-label="New folder" title="New folder">
               <Icon name="folderPlus" />
+            </button>
+            <button
+              onclick={() => {
+                pasting = 'link';
+                pasted = '';
+              }}
+              aria-label="Link a space by key"
+              title="Link a space by key"
+            >
+              <Icon name="link" />
             </button>
           {/if}
           {#if chosen !== null}
@@ -694,6 +785,31 @@
   .muted { color: var(--ink-muted); }
   .pad { padding: var(--space-2); }
   .error { color: var(--danger); padding: var(--space-2) var(--space-3); margin: 0; }
+  .paste {
+    display: flex;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--rule);
+  }
+  .paste input {
+    flex: 1;
+    font: inherit;
+    font-family: var(--font-data);
+    font-size: var(--text--1);
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--rule);
+    background: var(--canvas);
+    color: inherit;
+  }
+  .paste button {
+    font: inherit;
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--rule);
+    background: none;
+    color: var(--ink-muted);
+    cursor: pointer;
+  }
+  .paste button:hover { color: var(--ink); border-color: var(--rule-strong); }
   .inline {
     background: none; border: none; color: var(--link);
     text-decoration: underline; cursor: pointer; font: inherit; padding: 0;
