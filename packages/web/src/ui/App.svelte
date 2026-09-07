@@ -193,11 +193,10 @@
   /**
    * The fold of a linked space, if this client holds it.
    *
-   * Rebuilt whenever the client changes, so the tree re-reads it. A plain
-   * function would not: nothing in it is reactive, so Svelte has no reason to
-   * call it again, and `void epoch` inside one is optimised away rather than
-   * registering as a dependency. Deriving the *function* is what makes the
-   * dependency real.
+   * Reading `epoch` is what matters: `client.space()` is not reactive, so
+   * without it Svelte has no reason to call this again and a link expanded
+   * before its space arrived stayed on "Fetching…" until something unrelated
+   * forced a redraw.
    */
   const lookup = $derived.by(() => {
     void epoch;

@@ -244,7 +244,24 @@ same pattern: a rule whose dependency is stated once, in passing.
 in the same breath. Both of these did explain themselves, but far enough from
 the rule that the rule could be read alone and misjudged.
 
-## 11. Small verification failures are silent
+## 11. A grep that truncates is a grep that lies
+
+While fixing a Svelte reactivity bug I checked whether `void epoch` inside a
+closure compiled to a real reactive read, using `grep -o 'epoch[^;]*'`. That
+pattern stops at the first `;` — so the line `void $.get(epoch);` printed as the
+bare word `epoch`, and I concluded the read had been optimised away.
+
+It had not. The fix I already had was correct; I replaced it with a more
+elaborate one on the strength of a measurement that had cut off the evidence.
+Both work, and the user found the first one working while I was explaining why
+it could not.
+
+**Carry forward:** when a check contradicts something that ought to work, suspect
+the check. This is the same family as §12 below — the difference between "found
+nothing" and "could not have found it" is invisible in the output, and both cost
+real time here.
+
+## 12. Small verification failures are silent
 
 `grep` reports nothing on `fold.ts` because it contains an intentional `\0` as a
 map-key separator, which makes grep treat it as binary. A claim central to
