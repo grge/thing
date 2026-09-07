@@ -729,6 +729,16 @@ trip. Ship the fold.
 have to go through the holder, so the socket carries administration and the view
 model because that is what is *left*, not because editing was excluded from it.
 
+**And what that opened.** A writer that no longer goes through the holder also
+no longer learns whether the holder got its write — it appends locally and
+exits. §2.3.1 settles the question that closes this: *is your version vector at
+least as recent as mine?*, answered by one peer about itself. It needs a
+request/response pair on the wire (`HELLO` carries a vector only at open, and
+this asks about a moment after the handshake), and then the exit condition for a
+one-shot write is "the holder covers what I wrote" rather than "my own append
+returned". Both the CLI and the web client want it, so it belongs here rather
+than in either.
+
 ## Stage 8 — Resolution and the mesh
 
 §5.3, which the archived tree never had.

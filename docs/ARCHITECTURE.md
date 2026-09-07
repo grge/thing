@@ -117,7 +117,8 @@ The substrate stores and replicates events. It never reads a value.
 
 Signed events, per-writer chains, version-vector reconciliation and chunked blob
 transfer with resume and backpressure are all implemented and working. This is
-the part of the design with the least risk attached.
+the part of the design with the least risk attached. The one exception is
+§2.3.1, which is settled on paper and has no code.
 
 ### 2.1 Events
 
@@ -268,6 +269,64 @@ one writer's chain, and every other writer reconciles normally.
 change to this vocabulary and the two share a shape: both need a peer to say
 something about a range it cannot simply serve. Building either alone would mean
 revising the wire format twice.
+
+### 2.3.1 What a writer can learn about a peer — **Decided, not built**
+
+Reconciliation says how two peers converge. It does not say how a writer learns
+that its write reached anywhere, and every client so far has quietly assumed it
+did. A CLI writing to a space a server holds exits when its *local* append
+returns; a web client shows a new link the moment its own fold has it. Both look
+identical whether the connection was live or dead.
+
+The question that closes this is deliberately small:
+
+> **Is your version vector at least as recent as mine?**
+
+If yes, that peer is not relying on me for anything I hold. I can disconnect,
+exit, or close the tab, and it is missing nothing of mine.
+
+**Why this question and not a stronger one.** The tempting primitive is
+"confirmed" or "durable", and neither is answerable. A space may be held by
+several holders and the model privileges none of them (§5.7) — the peer you
+dialled is a replica, not an authority. A single peer therefore cannot claim
+durability for the space, only for itself. What it *can* answer, from data it
+already computes, is whether its vector covers yours. That claim is true, cheap,
+and enough: it is exactly the condition under which a writer is free to go away.
+
+It also composes. Asking three peers gives three independent answers with no
+coordination, so "how widely has this spread" is this question asked repeatedly
+rather than a different mechanism. Starting here forecloses nothing.
+
+**Coverage, not equality.** A peer that has been running longer holds writes
+from others, so its vector is *ahead* of the asker's on chains the asker never
+had. Equality would never hold and the check would never pass. The test is
+domination on the chains the asker names: for each, the peer's frontier is at
+least the asker's, on the same tip. Chains only the peer holds are irrelevant to
+the question and are ignored.
+
+**Against a snapshot, not the present.** A writer that keeps writing while
+waiting never settles, because its own vector advances as fast as the peer
+catches up. So the comparison is against the vector as it stood when the writer
+finished the work it cares about — a value captured and then asked about, not a
+moving target.
+
+**Mismatched tips are not lagging.** If the peer's frontier meets the asker's
+but the tips differ, the chain has forked (§2.3) and no amount of waiting will
+resolve it. That is the `FORKED` case and must be reported as such rather than
+polled forever.
+
+**Why it needs the wire and not just `HELLO`.** `HELLO` carries a vector once,
+at open. A writer that connects, writes, and wants to know whether the write
+landed is asking about a moment strictly after the handshake, and the protocol
+currently has no way to re-ask. The addition is one request naming a vector and
+one response saying whether it is covered — no new state on either side, since
+both already maintain the vector this compares.
+
+**What it does not say.** Not that the events are durable; a peer may hold them
+only in memory. Not that anyone else has them. Not that they were *folded* —
+storage admits events the fold may still reject (§7.2.1), so a covered vector
+means received, never accepted. A client that needs to know its change took
+effect must read the state back, and that is a different question from this one.
 
 The substrate verifies three things and no others:
 
