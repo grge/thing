@@ -19,6 +19,7 @@
     type State,
     type Uuid,
   } from '@thing/engine';
+  import Icon from './Icon.svelte';
 
   interface Props {
     state: State;
@@ -121,7 +122,13 @@
         {canOpen ? (isOpen ? '▾' : '▸') : ''}
       </button>
       <button class="name" onclick={() => onSelect(e)}>
-        {#if isLink(e)}<span class="glyph" title="a link to another space">→</span>{/if}
+        <span class="glyph">
+          {#if target !== null}
+            <Icon name="link" />
+          {:else if canOpen}
+            <Icon name="files" />
+          {/if}
+        </span>
         {e.name}
       </button>
     </div>
@@ -173,12 +180,20 @@
   }
   .twisty:disabled { cursor: default; }
   .name {
+    display: flex; align-items: center;
     flex: 1; text-align: left;
     background: none; border: none; color: inherit; font: inherit;
     padding: var(--space-1) var(--space-1);
     cursor: pointer;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .glyph { color: var(--ink-faint); margin-right: var(--space-1); }
+  .glyph {
+    display: inline-flex;
+    align-items: center;
+    width: 1rem;
+    color: var(--ink-faint);
+    margin-right: var(--space-1);
+    flex: none;
+  }
   .empty { color: var(--ink-muted); padding: var(--space-2); }
 </style>

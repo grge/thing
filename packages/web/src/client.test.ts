@@ -16,6 +16,7 @@ import {
   entry,
   generateKeyPair,
   hex,
+  isLink,
   links,
   list,
   makeFile,
@@ -26,6 +27,7 @@ import {
   remove,
   rename,
   ROOT,
+  targetOf,
 } from '@thing/engine';
 
 import { Client } from './client.js';
@@ -331,6 +333,24 @@ describe('tabs', () => {
 
     expect(second.view().map((t) => t.id)).toEqual([a.id]);
     await second.close();
+  });
+
+  it('a link has no blob to fetch, however its body looks', async () => {
+    // A link's body is a 32-byte key, and `contentHash` returns any Uint8Array
+    // body — so a preview that asked `contentHash` treated a link as a file
+    // whose bytes were missing, and offered to fetch a blob that never existed.
+    const client = new Client();
+    const tab = await client.create('mine');
+    const space = client.space(tab.id)!;
+    const target = await generateKeyPair();
+    const id = await makeLink(space, 'theirs', target.publicKey);
+
+    // The body is there, and it is a key rather than a hash.
+    expect(contentHash(space.state, id)).not.toBeNull();
+    expect(hex(targetOf(space.state, id)!)).toBe(hex(target.publicKey));
+    // Which is what a caller must distinguish before treating it as content.
+    expect(isLink(entry(space.state, id)!)).toBe(true);
+    await client.close();
   });
 
   it('tells a view when something changed', async () => {

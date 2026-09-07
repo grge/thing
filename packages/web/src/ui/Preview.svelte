@@ -17,7 +17,17 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { contentHash, entry, isTextual, read, type Space, type Uuid } from '@thing/engine';
+  import {
+    contentHash,
+    entry,
+    hex,
+    isLink,
+    isTextual,
+    read,
+    targetOf,
+    type Space,
+    type Uuid,
+  } from '@thing/engine';
   import type { Client } from '../client.js';
 
   interface Props {
@@ -35,7 +45,16 @@
   let asked = $state(false);
 
   const item = $derived(entry(space.state, id));
-  const hash = $derived(contentHash(space.state, id));
+  const link = $derived(item !== null && isLink(item) ? targetOf(space.state, id) : null);
+
+  /**
+   * The blob this object's body names, if it has one.
+   *
+   * **A link's body is a key, not a hash.** `contentHash` returns any
+   * `Uint8Array` body, so without this a link looks like a file whose bytes are
+   * missing — and the preview offered to fetch a blob that does not exist.
+   */
+  const hash = $derived(link !== null ? null : contentHash(space.state, id));
 
   async function load(): Promise<void> {
     loading = true;
@@ -121,16 +140,18 @@
 <section class="preview">
   <h2>{item?.name ?? 'file'}</h2>
 
-  {#if bytes === null}
+  {#if link !== null}
+    <p class="note">A link to another space.</p>
+    <p class="key">{hex(link)}</p>
+  {:else if bytes === null}
     {#if hash === null}
-      <p class="note">This object has no content.</p>
+      <p class="note">This item has no content.</p>
     {:else if peers === 0}
       <p class="note">
-        Not held here, and nothing is connected. Events replicate; bytes are
-        fetched from whoever has them (§2.4).
+        The content is stored elsewhere. Connect to a peer that has it to see it.
       </p>
     {:else}
-      <p class="note">Asking {peers} peer(s) for the content…</p>
+      <p class="note">Fetching…</p>
     {/if}
   {:else if text !== null}
     <pre>{text}</pre>
@@ -147,5 +168,12 @@
   pre { margin: 0; white-space: pre-wrap; word-break: break-word; max-height: 22rem;
         overflow: auto; font: inherit; opacity: 0.9; }
   img { max-width: 100%; max-height: 22rem; }
-  .note { opacity: 0.6; font-size: 0.9em; }
+  .note { color: var(--ink-muted); font-size: var(--text--1); }
+  .key {
+    font-family: var(--font-data);
+    font-size: var(--text--2);
+    color: var(--ink-faint);
+    word-break: break-all;
+    margin: var(--space-1) 0 0 0;
+  }
 </style>

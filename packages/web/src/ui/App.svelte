@@ -29,6 +29,7 @@
     type Uuid,
   } from '@thing/engine';
   import { Client, parseShareLink, type Tab } from '../client.js';
+  import Icon from './Icon.svelte';
   import Preview from './Preview.svelte';
   import Tree from './Tree.svelte';
 
@@ -372,10 +373,14 @@
           {tab.name ?? tab.id.slice(0, 8)}
           {#if tab.peers > 0}<span class="dot" title="{tab.peers} connected"></span>{/if}
         </button>
-        <button class="shut" onclick={() => closeTab(tab.id)} title="close">×</button>
+        <button class="shut" onclick={() => closeTab(tab.id)} aria-label="Close tab" title="Close">
+          <Icon name="x" />
+        </button>
       </span>
     {/each}
-    <button class="tab new" onclick={create}>+ space</button>
+    <button class="tab new" onclick={create} title="New space">
+      <Icon name="plus" /> space
+    </button>
   </nav>
 
   {#if error !== null}
@@ -386,7 +391,7 @@
     <div class="empty">
       <p>Nothing open.</p>
       <p class="muted">
-        Open a space with a share link, or
+        Open one with a share link, or
         <button class="inline" onclick={create}>make one of your own</button>.
       </p>
     </div>
@@ -397,24 +402,42 @@
           <span class="id" title={active.id}>{active.id.slice(0, 8)}</span>
           {#if !writable}<span class="tag">read-only</span>{/if}
           {#if active.forks.length > 0}
-            <span class="tag warn">{active.forks.length} fork(s)</span>
+            <span class="tag warn" title="Two versions of this history disagree">
+              conflict
+            </span>
           {/if}
         </header>
 
         <div class="bar">
           {#if writable}
-            <button onclick={() => fileInput?.click()}>+ file</button>
-            <button onclick={newFolder}>+ folder</button>
+            <button onclick={() => fileInput?.click()} aria-label="Add files" title="Add files">
+              <Icon name="upload" />
+            </button>
+            <button onclick={newFolder} aria-label="New folder" title="New folder">
+              <Icon name="folderPlus" />
+            </button>
           {/if}
           {#if chosen !== null}
             {#if isLink(chosen)}
-              <button onclick={() => void follow(chosen.name)}>open in tab</button>
+              <button
+                onclick={() => void follow(chosen.name)}
+                aria-label="Open in a tab"
+                title="Open in a tab"
+              >
+                <Icon name="link" />
+              </button>
             {:else if !chosen.isFolder}
-              <button onclick={downloadChosen}>download</button>
+              <button onclick={downloadChosen} aria-label="Download" title="Download">
+                <Icon name="download" />
+              </button>
             {/if}
             {#if writable}
-              <button onclick={renameChosen}>rename</button>
-              <button onclick={deleteChosen}>delete</button>
+              <button onclick={renameChosen} aria-label="Rename" title="Rename">
+                <Icon name="clipboard" />
+              </button>
+              <button onclick={deleteChosen} aria-label="Delete" title="Delete">
+                <Icon name="trash" />
+              </button>
             {/if}
           {/if}
         </div>
@@ -441,16 +464,13 @@
           onDropOn={(id) => void dropOnRow(id)}
         />
 
-        {#if links(active.state).length > 0}
-          <p class="muted pad small">
-            {links(active.state).length} link(s) — following one opens a tab.
-          </p>
-        {/if}
       </section>
 
       <section class="pane-preview">
         {#if selected !== null}
-          <button class="back" onclick={() => (selected = null)}>← files</button>
+          <button class="back" onclick={() => (selected = null)}>
+            <Icon name="arrowLeft" /> files
+          </button>
           <Preview
             {client}
             space={client.space(active.id)!}
@@ -540,20 +560,23 @@
 
   .bar { display: flex; gap: var(--space-2); padding: var(--space-2) 0; }
   .bar button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: none;
     border: 1px solid var(--rule);
     color: var(--ink-muted);
     font: inherit;
-    font-size: var(--text--1);
-    padding: var(--space-1) var(--space-2);
+    padding: var(--space-1);
     cursor: pointer;
   }
   .bar button:hover { color: var(--ink); border-color: var(--rule-strong); }
+  .tab .label, .tab.new, .back { display: inline-flex; align-items: center; gap: var(--space-1); }
+  .shut { display: inline-flex; align-items: center; }
 
   .empty { padding: var(--space-6); }
   .muted { color: var(--ink-muted); }
   .pad { padding: var(--space-2); }
-  .small { font-size: var(--text--1); }
   .error { color: var(--danger); padding: var(--space-2) var(--space-3); margin: 0; }
   .inline {
     background: none; border: none; color: var(--link);
