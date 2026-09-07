@@ -294,8 +294,19 @@
    * tab list.
    */
   async function expandLink(_e: FileEntry, target: PublicKey): Promise<void> {
+    const id = hex(target);
     try {
+      // Hold it first, so the tree can show *something* immediately — an empty
+      // space with a spinner beats nothing while resolution runs.
       await client.hold(target);
+      refresh();
+      // Then go and find it (§5.3). A link names a space and carries no
+      // address, deliberately, so expanding one means asking the peers already
+      // connected where it is. Without this the space stays empty forever and
+      // the tree says "Empty, or not yet synced" with no way forward.
+      const reached = await client.reach(id);
+      if (!reached) error = 'nobody connected knows where that space is';
+      refresh();
     } catch {
       error = 'could not open that space';
     }

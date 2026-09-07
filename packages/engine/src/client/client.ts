@@ -23,7 +23,7 @@ import { type Event, hex, type KeyPair, type PublicKey } from '../core/index.js'
 import { Session } from '../net/session.js';
 import type { Coverage, Divergence } from '../net/sync.js';
 import type { Answer } from '../net/ephemeral.js';
-import { type Locator, locatorKey, parseLocator } from '../net/locator.js';
+import { formatLocator, type Locator, locatorKey, parseLocator } from '../net/locator.js';
 import type { Resolved } from '../net/protocol.js';
 import { vvToWire } from '../net/wire.js';
 import type { SpaceId, SpaceStore } from '../store/index.js';
@@ -61,7 +61,20 @@ export interface Held {
   readonly sessions: Map<string, Session>;
   readonly connections: Map<
     string,
-    { close(): void; kind: PeerKind; since: number; state: 'connecting' | 'open' | 'failed'; detail?: string }
+    {
+      close(): void;
+      /**
+       * The connection itself, kept so a second space can be reached over it.
+       * One transport carries one session per space (§5.3's "reach me on this
+       * connection"), and that needs the `Connection`, not just a way to close
+       * it.
+       */
+      raw: Connection;
+      kind: PeerKind;
+      since: number;
+      state: 'connecting' | 'open' | 'failed';
+      detail?: string;
+    }
   >;
   readonly lock: WriteLock;
   forks: Divergence[];
@@ -481,6 +494,7 @@ export class Client {
     held.sessions.set(conn.peer, session);
     held.connections.set(conn.peer, {
       close: () => conn.close(),
+      raw: conn,
       kind,
       since: Date.now(),
       state: 'open',
@@ -568,6 +582,15 @@ export class Client {
       // one, which §6.1 calls an ordinary way to participate.
       await this.hold(key);
       await this.setMirror(id, true);
+      // **Go and find it.** Holding a linked space and waiting for its owner to
+      // turn up makes hosting useless whenever they are offline — the hub has
+      // the space, mirrors its blobs, and has never heard a word of it. This
+      // is the same gap as a browser expanding a link: the link names a space
+      // and carries no address, so something has to ask (§5.3).
+      void this.reach(id).catch(() => {
+        // Not reachable now is ordinary. The announcement half will find it
+        // when its owner next connects to anyone this peer is talking to.
+      });
     }
     return [...wanted].sort();
   }
@@ -701,6 +724,95 @@ export class Client {
       viaPeers,
       ...(lastSeen === undefined ? {} : { lastSeen }),
     };
+  }
+
+  /**
+   * Find a space and connect to it (§5.3).
+   *
+   * The whole of resolution, from a caller's point of view: ask, try what comes
+   * back, and remember what worked. **Idempotent and cheap to call again** — a
+   * space already connected returns immediately, because the commonest reason
+   * to call this is a link expanded twice.
+   *
+   * Candidates are tried in order and the first success wins. Order comes from
+   * `resolve`, which puts the cache first: it is the only source that knows
+   * what worked *on this client*, which is the per-client fact that made a
+   * replicated locator list wrong.
+   *
+   * **`viaPeers` is tried before dialling anything.** A peer that says it
+   * serves the space and offers no address is offering the connection you
+   * already have — asking it directly costs nothing and works for a browser,
+   * which has no address to dial.
+   */
+  async reach(space: SpaceId, options: { timeoutMs?: number } = {}): Promise<boolean> {
+    const entry = this.held.get(space);
+    if (entry !== undefined && entry.sessions.size > 0) return true;
+
+    const found = await this.resolve(space, options);
+
+    // A peer already connected that serves this space: ask it to talk about
+    // this space too. No dial, and it is the only route to a browser.
+    for (const peer of found.viaPeers) {
+      const conn = this.connectionTo(peer);
+      if (conn === undefined) continue;
+      try {
+        const k = keyFromId(space);
+        if (k === null) continue;
+        await this.hold(k);
+        await this.attach(conn, space, 'introduced');
+        this.note('signalling', space, `reached via ${peer}`);
+        return true;
+      } catch {
+        // Another candidate may work; a failure here is not the end.
+      }
+    }
+
+    const dial = this.capabilities.dial;
+    if (dial === undefined) return false;
+
+    // Hold it before dialling: `join` attaches a session to a space this
+    // client holds, and reaching a space is exactly the case where it does not
+    // hold it yet. Holding is cheap and writes nothing — an empty store and a
+    // fold over no events.
+    const key = keyFromId(space);
+    if (key === null) return false;
+    await this.hold(key);
+
+    for (const locator of found.at) {
+      try {
+        const conn = await dial(locator);
+        await this.join(space, conn);
+        this.capabilities.locators?.succeeded(space, locator);
+        this.note('connection', space, `reached at ${formatLocator(locator)}`);
+        return true;
+      } catch {
+        // A stale locator is the expected case, not an error (§5.3). Sinking
+        // it is how the cache learns; it is dropped only once it has never
+        // worked at all.
+        this.capabilities.locators?.failed(space, locator);
+      }
+    }
+
+    if (!found.known) this.note('signalling', space, 'nobody knows where this is');
+    else if (found.lastSeen !== undefined) {
+      this.note('signalling', space, `nobody is serving it; last seen ${new Date(found.lastSeen).toISOString()}`);
+    }
+    return false;
+  }
+
+  /**
+   * A live connection to a named peer, whichever space it was opened for.
+   *
+   * One connection carries one space today, so reaching a second space through
+   * a peer means a second session over the same transport — which `attach`
+   * supports, since a session is per space rather than per connection.
+   */
+  private connectionTo(peer: string): Connection | undefined {
+    for (const entry of this.held.values()) {
+      const conn = entry.connections.get(peer);
+      if (conn !== undefined) return conn.raw;
+    }
+    return undefined;
   }
 
   /**

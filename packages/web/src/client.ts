@@ -32,6 +32,8 @@ import {
   hex,
   type KeyPair,
   links,
+  type Locator,
+  parseLocator,
   referencedBlobs,
   type PeerKind,
   type PeerStatus,
@@ -126,6 +128,21 @@ export class Client extends PeerClient {
     super({
       store,
       keys: { keyFor: (id) => this.local.keys.keyFor(id) },
+      // Through a facade: `local` is a field, so it is not initialised when
+      // this object is built for `super`. The engine only ever calls these.
+      locators: {
+        get: (id) => this.local.locators.get(id),
+        remember: (id, l) => this.local.locators.remember(id, l),
+        succeeded: (id, l) => this.local.locators.succeeded(id, l),
+        failed: (id, l) => this.local.locators.failed(id, l),
+        forget: (id) => this.local.locators.forget(id),
+      },
+      // A browser has no address of its own. When it is meeting through a
+      // signalling server it can name that session, which is §5.2's second
+      // locator shape and the only way a browser is reachable by someone it
+      // has not already met.
+      locatorsOfSelf: () => this.selfLocators(),
+      dial: (locator) => this.dialLocator(locator),
       // No lock. Two tabs sharing a key mint separate append points and extend
       // separate chains (§2.1), so there is nothing to contend for — which is
       // what `writelock.ts` existed to prevent and no longer can happen.
@@ -167,6 +184,43 @@ export class Client extends PeerClient {
       }
     }
     this.changed();
+  }
+
+  /**
+   * How this browser can be reached (§5.2).
+   *
+   * Only while it is meeting through a signalling server: `{via, peer}` names
+   * that session, and dies with it. A browser not currently meeting has no
+   * locator at all, which is the ordinary case — it is reached on connections
+   * it opened, which is what an announcement with no address means.
+   */
+  private selfLocators(): readonly Locator[] {
+    const url = this.browser.signallingUrl;
+    const id = this.signalling?.id;
+    if (url === undefined || id === undefined || id === '') return [];
+    return [{ kind: 'via', url, peer: id }];
+  }
+
+  /**
+   * Open a connection to a locator.
+   *
+   * A direct address is a socket. A session is a meeting: the same path
+   * `meetAt` takes, since being told "reach me through this signalling server
+   * at this session" is what a short code turns into.
+   */
+  private async dialLocator(locator: Locator): Promise<Connection> {
+    if (locator.kind === 'ws') {
+      const socket = new WebSocket(locator.url);
+      socket.binaryType = 'arraybuffer';
+      await new Promise<void>((resolve, reject) => {
+        socket.addEventListener('open', () => resolve(), { once: true });
+        socket.addEventListener('error', () => reject(new Error(`could not reach ${locator.url}`)), {
+          once: true,
+        });
+      });
+      return socketConnection(socket, `ws:${locator.url}`);
+    }
+    throw new Error('dialling a session locator is not wired yet');
   }
 
   /** Subscribe to any change worth redrawing for. Returns an unsubscribe. */
@@ -517,6 +571,14 @@ export class Client extends PeerClient {
     const conn = socketConnection(socket, `ws:${url}`);
     conn.onFrame(() => this.retries.delete(url));
     await this.join(id, conn);
+    // Remember it, and that it worked. A locator typed or pasted by a person
+    // is the same kind of thing as one a peer announced, and this is how
+    // reopening a tab stops meaning pasting an address again (§5.3).
+    const locator = parseLocator(url);
+    if (locator !== null) {
+      this.local.locators.remember(id, locator);
+      this.local.locators.succeeded(id, locator);
+    }
 
     socket.addEventListener('close', () => {
       this.note('connection', id, `${url} closed`);

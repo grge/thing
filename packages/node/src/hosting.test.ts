@@ -135,6 +135,40 @@ describe('a hub hosts what its main space links to', () => {
     await waitFor(async () => (await server.blobOf(hex(mine.key.publicKey), hash)) !== null);
   });
 
+  it('goes and finds a linked space rather than waiting (§5.3)', async () => {
+    // Hosting a space and waiting for its owner to turn up makes hosting
+    // useless whenever they are offline: the hub holds the space, mirrors its
+    // blobs, and has never heard a word of it. A link names a space and
+    // carries no address, so something has to ask.
+    const { server, url } = await hub();
+    const mine = await owner();
+    const mineId = hex(mine.key.publicKey);
+
+    // The owner is listening at a known address and holds content. Its server
+    // reuses the *same* directory, so it finds the key that `owner()` minted —
+    // a fresh directory would hold the space read-only.
+    const ownerServer = new Server({
+      dir: mine.dir,
+      space: mine.key.publicKey,
+      listen: { port: 0, host: '127.0.0.1' },
+    });
+    cleanup.push(() => ownerServer.close());
+    await ownerServer.start();
+    await makeFile(ownerServer.space!, 'found-me.txt', new TextEncoder().encode('reached'));
+
+    // The hub is told where it is, as a share link or a person would.
+    server.remember(mineId, `ws://127.0.0.1:${ownerServer.port}`);
+
+    // Linking is the whole instruction: no address, no admin verb.
+    await makeLink(server.space!, 'theirs', mine.key.publicKey);
+
+    await waitFor(() => {
+      const held = server.spaceOf(mineId);
+      return held !== null && list(held.state).some((e) => e.name === 'found-me.txt');
+    });
+    void url;
+  });
+
   it('refuses a space it was never linked (§the model)', async () => {
     // The narrowness is the point: a hub hosts what its curators chose, not
     // whatever a stranger offers.

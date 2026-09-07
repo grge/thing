@@ -23,11 +23,14 @@ import {
   hex,
   type KeyPair,
   type PublicKey,
+  type Locator,
+  type LocatorCache,
+  parseLocator,
   type Space,
 } from '@thing/engine';
 
 import { FileStore } from './filestore.js';
-import { FileKeyring } from './local.js';
+import { FileKeyring, FileLocators } from './local.js';
 import { dial, PeerServer } from './transport.js';
 
 export interface ServerOptions {
@@ -64,6 +67,7 @@ const DEFAULT_HOST_DEPTH = 1;
 export class Server {
   private readonly client: Client;
   private readonly keyring: FileKeyring;
+  private locators: LocatorCache | undefined;
   private listener: PeerServer | null = null;
   private held: Space | null = null;
   private hosted: readonly string[] = [];
@@ -86,6 +90,29 @@ export class Server {
         // exchange content at all if here keeps none of it. A browser tab
         // defaults the other way — see `mirrorBlobs` in `client/types.ts`.
         mirrorBlobs: true,
+        // Where this peer can be reached, if it listens. A dial-only peer
+        // (§5.6's NAT case) supplies nothing and is reached on connections it
+        // opened — which is what an announcement with no address means.
+        locatorsOfSelf: () => this.selfLocators(),
+        // Read through a wrapper because the cache is loaded in `start` while
+        // capabilities are built in the constructor. The engine only ever
+        // calls these, so a facade is enough and avoids a two-phase client.
+        locators: {
+          get: (id) => this.locators?.get(id) ?? [],
+          remember: (id, l) => this.locators?.remember(id, l),
+          succeeded: (id, l) => this.locators?.succeeded(id, l),
+          failed: (id, l) => this.locators?.failed(id, l),
+          forget: (id) => this.locators?.forget(id),
+        },
+        dial: async (locator) => {
+          if (locator.kind !== 'ws') {
+            // A `{via, peer}` locator needs a signalling server and WebRTC,
+            // which a headless peer does not have. Refusing is honest: the
+            // caller tries the next candidate.
+            throw new Error('this peer can only dial ws locators');
+          }
+          return dial(locator.url);
+        },
       },
       options.observer ?? {},
     );
@@ -99,6 +126,7 @@ export class Server {
    * participate, and it is what a hub mirroring someone else's space does.
    */
   async start(): Promise<void> {
+    this.locators = await FileLocators.load(this.options.dir);
     const writer = await this.keyring.keyFor(hex(this.options.space));
     this.held = await this.client.hold(
       this.options.space,
@@ -195,6 +223,23 @@ export class Server {
     space.onChange(() => void this.rehost());
   }
 
+  /**
+   * Tell this peer where a space can be reached (§5.3).
+   *
+   * The out-of-band half: a share link, a pasted address, an operator who
+   * knows. Everything else — announce, query — moves knowledge between peers
+   * already in contact, and something has to start that.
+   */
+  remember(space: string, locator: string): void {
+    const parsed = parseLocator(locator);
+    if (parsed !== null) this.locators?.remember(space, parsed);
+  }
+
+  /** Any space this peer holds, by id. Null if it holds none such. */
+  spaceOf(space: string): Space | null {
+    return this.client.entry(space)?.space ?? null;
+  }
+
   /** Every space this peer holds: its main space and whatever it hosts. */
   get hosting(): readonly string[] {
     return this.hosted;
@@ -208,6 +253,25 @@ export class Server {
    */
   async blobOf(space: string, hash: Uint8Array): Promise<Uint8Array | null> {
     return (await this.client.entry(space)?.space.getBlob(hash)) ?? null;
+  }
+
+  /**
+   * How this peer says it can be reached (§5.2).
+   *
+   * Empty until it is listening, and empty forever if it never does — which is
+   * correct rather than a gap: a peer behind NAT dials out and is reached on
+   * the connection it opened.
+   *
+   * The host is what it was *told* to bind, so `0.0.0.0` becomes nothing: it
+   * is a bind address, not somewhere anyone can dial. An operator who wants a
+   * dialable address supplies one.
+   */
+  private selfLocators(): readonly Locator[] {
+    const listen = this.options.listen;
+    if (listen === undefined || this.listener === null) return [];
+    const host = listen.host;
+    if (host === undefined || host === '0.0.0.0' || host === '::') return [];
+    return [{ kind: 'ws', url: `ws://${host}:${this.listener.port}` }];
   }
 
   /** The space this peer serves. Null before `start`. */

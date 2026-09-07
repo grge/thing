@@ -511,6 +511,113 @@ describe('Client', () => {
     await seeker.close();
   });
 
+  it('reaches a space by dialling what resolution found', async () => {
+    // The whole point, from a caller's view: a link names a space and carries
+    // no address, so expanding one means asking, dialling, and remembering.
+    const key = await generateKeyPair();
+    const id = hex(key.publicKey);
+    const shared = await generateKeyPair();
+    const sharedId = hex(shared.publicKey);
+    const locators = new MemoryLocators();
+
+    const host = new Client(
+      { store: new MemoryStore(), locatorsOfSelf: () => [{ kind: 'ws', url: 'ws://host:1' }] },
+      {},
+    );
+    await host.hold(key.publicKey, key);
+    await host.hold(shared.publicKey);
+
+    // The dial is faked: what matters is that `reach` asked, chose the right
+    // candidate, and wired the connection it was given.
+    let dialled: string | null = null;
+    const seeker = new Client(
+      {
+        store: new MemoryStore(),
+        locators,
+        dial: async (l) => {
+          dialled = l.kind === 'ws' ? l.url : 'via';
+          // The far end has to be listening *before* the near end is handed
+          // back, or the caller's own join races the answering one.
+          const [near, far] = pair('dialled', 'answering');
+          await host.join(id, far);
+          return near;
+        },
+      },
+      {},
+    );
+    await seeker.hold(shared.publicKey);
+
+    const [x, y] = pair();
+    await seeker.join(sharedId, x);
+    await host.join(sharedId, y);
+    await until(() => seeker.peers().length > 0);
+
+    expect(await seeker.reach(id, { timeoutMs: 400 })).toBe(true);
+    expect(dialled).toBe('ws://host:1');
+    // And it is remembered as having worked, so next time is one dial.
+    expect(locators.get(id)).toContainEqual({ kind: 'ws', url: 'ws://host:1' });
+
+    await host.close();
+    await seeker.close();
+  });
+
+  it('sinks a locator that failed, and tries the next', async () => {
+    // §5.3: a stale locator is expected, not an error. What matters is that
+    // the cache learns, so a dead address is not tried first forever.
+    const key = await generateKeyPair();
+    const id = hex(key.publicKey);
+    const locators = new MemoryLocators();
+    locators.remember(id, { kind: 'ws', url: 'ws://dead:1' });
+    locators.remember(id, { kind: 'ws', url: 'ws://alive:2' });
+
+    const tried: string[] = [];
+    const client = new Client(
+      {
+        store: new MemoryStore(),
+        locators,
+        dial: async (l) => {
+          const url = l.kind === 'ws' ? l.url : 'via';
+          tried.push(url);
+          throw new Error('unreachable');
+        },
+      },
+      {},
+    );
+
+    expect(await client.reach(id, { timeoutMs: 100 })).toBe(false);
+    expect(tried).toHaveLength(2);
+    // Both had never worked, so both are dropped after enough failures.
+    for (let i = 0; i < 3; i++) await client.reach(id, { timeoutMs: 50 });
+    expect(locators.get(id)).toEqual([]);
+    await client.close();
+  });
+
+  it('returns true immediately for a space already connected', async () => {
+    // Cheap to call again, because the commonest reason to call it is a link
+    // expanded twice.
+    const key = await generateKeyPair();
+    const id = hex(key.publicKey);
+    const a = new Client({ store: new MemoryStore() }, {});
+    const b = new Client({ store: new MemoryStore() }, {});
+    await a.hold(key.publicKey, key);
+    await b.hold(key.publicKey);
+    const [x, y] = pair();
+    await a.join(id, x);
+    await b.join(id, y);
+
+    let dialled = false;
+    expect(await a.reach(id)).toBe(true);
+    expect(dialled).toBe(false);
+    await a.close();
+    await b.close();
+  });
+
+  it('reports failure rather than hanging when nobody knows', async () => {
+    const client = new Client({ store: new MemoryStore() }, {});
+    expect(await client.reach('ab'.repeat(32), { timeoutMs: 100 })).toBe(false);
+    await client.close();
+  });
+
   it('refuses an adopted connection for a space it does not hold', async () => {
     const key = await generateKeyPair();
     const a = new Client({ store: new MemoryStore() });

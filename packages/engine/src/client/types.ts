@@ -160,6 +160,18 @@ export interface ClientCapabilities {
    * supplies one so its announcements are dialable by peers it has never met.
    */
   readonly locatorsOfSelf?: () => readonly Locator[];
+  /**
+   * Open a connection to a locator (§5.2).
+   *
+   * Supplied rather than built here, because dialling is the one thing the
+   * engine cannot do: a browser opens a `WebSocket` or negotiates WebRTC
+   * through a signalling server, a server opens a socket, and neither is
+   * available to platform-free code.
+   *
+   * Rejecting is ordinary — a locator is stale by default (§5.3), and a failed
+   * dial is what tells the cache to sink it.
+   */
+  readonly dial?: (locator: Locator) => Promise<Connection>;
 }
 
 /** A space id is its public key in hex, so the key is recoverable from it. */
