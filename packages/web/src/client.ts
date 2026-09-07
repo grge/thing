@@ -67,8 +67,17 @@ export interface ClientOptions {
 export class Client extends PeerClient {
   private readonly listeners = new Set<() => void>();
   private readonly local = browserLocalState();
-  /** Open tabs, in the order they were opened. Interface state, in no log. */
-  private readonly tabs: { key: PublicKey; name: string | null }[] = [];
+  /**
+   * Open tabs, in the order they were opened.
+   *
+   * Interface state — in no log, and never replicated. But it *is* persisted:
+   * with no inventory (`docs/MAIN-SPACE.md`), a lost tab list means a space
+   * you made yourself becomes unfindable, since nothing else records that it
+   * exists. `docs/WEB.md` called this "a UI question, deliberately not a design
+   * one, since losing it costs reopening a tab" — which was wrong. It costs
+   * the space.
+   */
+  private tabs: { key: PublicKey; name: string | null }[] = [];
   private signalling: WebSocketSignalling | null = null;
   /** Failed addresses, for backing off. */
   private readonly retries = new Map<string, number>();
@@ -82,6 +91,28 @@ export class Client extends PeerClient {
       // what `writelock.ts` existed to prevent and no longer can happen.
     });
     this.observe({ onChange: () => this.changed() });
+  }
+
+  /**
+   * Reopen what was open last time.
+   *
+   * Call once on start. Spaces themselves live in IndexedDB and survive a
+   * reload on their own; what needs restoring is which were open and what this
+   * client called them.
+   */
+  async restore(): Promise<void> {
+    const remembered = await this.local.inventory.all();
+    for (const id of remembered) {
+      const name = this.local.petnames.nameFor(id);
+      try {
+        await this.open(fromHex(id), name);
+      } catch {
+        // A space whose store will not open is one this client cannot show.
+        // Dropping it from the list beats failing the whole restore.
+        await this.local.inventory.forget(id);
+      }
+    }
+    this.changed();
   }
 
   /** Subscribe to any change worth redrawing for. Returns an unsubscribe. */
@@ -106,6 +137,11 @@ export class Client extends PeerClient {
     const id = hex(key);
     if (!this.tabs.some((t) => hex(t.key) === id)) this.tabs.push({ key, name });
     await this.hold(key);
+    // Remembered so a reload reopens it. Not an inventory in the model's sense
+    // — nothing replicates this — but a client that forgets what it had open
+    // has no other way back to a space it made.
+    await this.local.inventory.remember(id);
+    if (name !== null) await this.local.petnames.set(name, id);
     this.changed();
     return this.tabOf(id)!;
   }
@@ -114,6 +150,7 @@ export class Client extends PeerClient {
   async closeTab(id: string): Promise<void> {
     const at = this.tabs.findIndex((t) => hex(t.key) === id);
     if (at !== -1) this.tabs.splice(at, 1);
+    await this.local.inventory.forget(id);
     await this.release(id);
     this.changed();
   }
@@ -356,4 +393,10 @@ export function parseShareLink(fragment: string): ShareLink | null {
     token: params.get('t'),
     locator: params.get('l'),
   };
+}
+
+function fromHex(s: string): Uint8Array {
+  const out = new Uint8Array(s.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = Number.parseInt(s.slice(i * 2, i * 2 + 2), 16);
+  return out;
 }

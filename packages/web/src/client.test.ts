@@ -302,6 +302,37 @@ describe('tabs', () => {
     await client.close();
   });
 
+  it('reopens what was open, across a reload', async () => {
+    // With no inventory (docs/MAIN-SPACE.md), a lost tab list means a space you
+    // made yourself is unfindable — nothing else records that it exists. So the
+    // list is persisted even though it is interface state.
+    const first = new Client();
+    const mine = await first.create('mine');
+    await first.close();
+
+    // A fresh client over the same storage: what a reload is.
+    const second = new Client();
+    await second.restore();
+
+    expect(second.view().map((t) => t.id)).toEqual([mine.id]);
+    expect(second.view()[0]!.name).toBe('mine');
+    await second.close();
+  });
+
+  it('forgets a tab that was closed on purpose', async () => {
+    const first = new Client();
+    const a = await first.create('keep');
+    const b = await first.create('drop');
+    await first.closeTab(b.id);
+    await first.close();
+
+    const second = new Client();
+    await second.restore();
+
+    expect(second.view().map((t) => t.id)).toEqual([a.id]);
+    await second.close();
+  });
+
   it('tells a view when something changed', async () => {
     const client = new Client();
     let redraws = 0;

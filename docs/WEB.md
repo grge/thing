@@ -104,8 +104,13 @@ and it worked.
 
 **The tree.** A folder listing with drag to re-parent, drag from the desktop to
 add, and links marked as links. Rename in place; delete to `:deleted` (§7.2.3's
-shape — hidden, not unwritten). Selecting a file shows it; selecting a link
-offers to follow it, which opens a tab.
+shape — hidden, not unwritten).
+
+**Links expand like folders**, showing what is inside the space they point at.
+Expanding is *looking inside*; opening in a tab is *going there*, and they are
+different acts — a tree that yanked you into another space every time you
+opened a link would be unusable for browsing a hub. Expanding a link this
+client does not hold yet fetches it first.
 
 **The preview.** A renderer chosen by media type through the registry, with the
 degradation chain. Text, image and PDF to start. Every file gets a **download**

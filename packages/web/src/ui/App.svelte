@@ -24,6 +24,7 @@
     rename,
     ROOT,
     type FileEntry,
+    type PublicKey,
     type State,
     type Uuid,
   } from '@thing/engine';
@@ -82,6 +83,9 @@
     // A share link is the one locator source that works before you know
     // anybody (`docs/LOCATORS.md`), so it is how a browser gets started.
     const link = parseShareLink(location.hash);
+    // Reopen what was open last time. A share link takes precedence, since
+    // arriving by one means being sent somewhere specific.
+    if (link === null) void client.restore();
     if (link !== null) {
       void (async () => {
         try {
@@ -125,10 +129,30 @@
     show((await client.create('untitled')).id);
   }
 
-  /** Selecting a link offers to follow it; everything else just selects. */
+  /**
+   * Selecting is just selecting, including for a link.
+   *
+   * A link expands in the tree like a folder, so selecting one should not
+   * yank the view into another tab. Opening a linked space in its own tab is
+   * a separate action, offered in the bar when a link is selected.
+   */
   function choose(e: FileEntry): void {
     selected = e.id;
-    if (isLink(e)) void follow(e.name);
+  }
+
+  /**
+   * Hold a linked space so its contents can be shown in place.
+   *
+   * Opening it as a tab would be the wrong effect — expanding a link is
+   * looking inside, not switching to it — so this holds without adding to the
+   * tab list.
+   */
+  async function expandLink(_e: FileEntry, target: PublicKey): Promise<void> {
+    try {
+      await client.hold(target);
+    } catch {
+      error = 'could not open that space';
+    }
   }
 
   function toggle(id: Uuid): void {
@@ -383,7 +407,9 @@
             <button onclick={newFolder}>+ folder</button>
           {/if}
           {#if chosen !== null}
-            {#if !chosen.isFolder && !isLink(chosen)}
+            {#if isLink(chosen)}
+              <button onclick={() => void follow(chosen.name)}>open in tab</button>
+            {:else if !chosen.isFolder}
               <button onclick={downloadChosen}>download</button>
             {/if}
             {#if writable}
@@ -402,12 +428,14 @@
 
         <Tree
           state={active.state}
+          linked={(target) => client.space(hex(target))?.state ?? null}
           {expanded}
           {selected}
           {writable}
           {dropTarget}
           onSelect={choose}
           onToggle={toggle}
+          onExpandLink={(e, target) => void expandLink(e, target)}
           onDragStart={(id) => (moving = id)}
           onDragOver={(id) => (dropTarget = id === null ? null : hex(id))}
           onDropOn={(id) => void dropOnRow(id)}

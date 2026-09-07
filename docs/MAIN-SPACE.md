@@ -196,8 +196,16 @@ Four interfaces become one interface and two lists of keys, one of which is
 secret. That is the shape the Keystore split was reaching for, arrived at from
 the other direction.
 
-Whether the open-tab list survives a reload is a UI question and deliberately
-not a design one. Losing it costs reopening a tab.
+**The open-tab list has to be persisted**, and this document first said the
+opposite — that it was "a UI question, deliberately not a design one", since
+losing it costs reopening a tab. That was wrong, and the model is why: with no
+inventory, nothing else records that a space exists. A client that forgets its
+tabs has no route back to a space it made itself, so the cost is the space
+rather than a tab.
+
+It is still not an inventory in this document's sense — it is per-client, never
+replicated, and holds only what someone had open. But it is durable, which
+makes it the third thing in the local-state list rather than a detail below it.
 
 ## What each program is
 

@@ -9,10 +9,27 @@
   passed down rather than computed, so indentation costs nothing.
 -->
 <script lang="ts">
-  import { hex, isLink, list, type FileEntry, type State, type Uuid } from '@thing/engine';
+  import {
+    hex,
+    isLink,
+    list,
+    targetOf,
+    type FileEntry,
+    type PublicKey,
+    type State,
+    type Uuid,
+  } from '@thing/engine';
 
   interface Props {
     state: State;
+    /**
+     * The state of a linked space, if this client holds it.
+     *
+     * A link expands like a folder — showing what is *inside* the space it
+     * points at — which needs that space's fold. Absent means not held yet, so
+     * the row offers to open it instead.
+     */
+    linked: (target: PublicKey) => State | null;
     expanded: Set<string>;
     selected: Uuid | null;
     writable: boolean;
@@ -20,6 +37,8 @@
     dropTarget: string | null;
     onSelect: (e: FileEntry) => void;
     onToggle: (id: Uuid) => void;
+    /** Fetch a linked space so it can be expanded in place. */
+    onExpandLink: (e: FileEntry, target: PublicKey) => void;
     onDragStart: (id: Uuid) => void;
     onDragOver: (id: Uuid | null) => void;
     onDropOn: (id: Uuid) => void;
@@ -27,12 +46,14 @@
 
   const {
     state,
+    linked,
     expanded,
     selected,
     writable,
     dropTarget,
     onSelect,
     onToggle,
+    onExpandLink,
     onDragStart,
     onDragOver,
     onDropOn,
@@ -46,9 +67,11 @@
   }
 </script>
 
-{#snippet row(e: FileEntry, depth: number)}
+{#snippet row(e: FileEntry, depth: number, from: State)}
   {@const key = hex(e.id)}
-  {@const canOpen = opens(state, e)}
+  {@const target = isLink(e) ? targetOf(from, e.id) : null}
+  {@const inside = target === null ? null : linked(target)}
+  {@const canOpen = target !== null || opens(from, e)}
   {@const isOpen = expanded.has(key)}
   <li>
     <div
@@ -87,7 +110,13 @@
         aria-expanded={canOpen ? isOpen : undefined}
         disabled={!canOpen}
         style="margin-left: calc({depth} * var(--space-3))"
-        onclick={() => canOpen && onToggle(e.id)}
+        onclick={() => {
+          if (!canOpen) return;
+          // A link this client does not hold yet has nothing to show, so
+          // expanding it fetches first.
+          if (target !== null && inside === null) onExpandLink(e, target);
+          onToggle(e.id);
+        }}
       >
         {canOpen ? (isOpen ? '▾' : '▸') : ''}
       </button>
@@ -99,9 +128,25 @@
 
     {#if canOpen && isOpen}
       <ul>
-        {#each list(state, e.id) as child (hex(child.id))}
-          {@render row(child, depth + 1)}
-        {/each}
+        {#if target !== null}
+          {#if inside === null}
+            <li class="empty" style="padding-left: calc({depth + 1} * var(--space-3))">
+              Fetching…
+            </li>
+          {:else}
+            {#each list(inside) as child (hex(child.id))}
+              {@render row(child, depth + 1, inside)}
+            {:else}
+              <li class="empty" style="padding-left: calc({depth + 1} * var(--space-3))">
+                Empty, or not yet synced.
+              </li>
+            {/each}
+          {/if}
+        {:else}
+          {#each list(from, e.id) as child (hex(child.id))}
+            {@render row(child, depth + 1, from)}
+          {/each}
+        {/if}
       </ul>
     {/if}
   </li>
@@ -109,7 +154,7 @@
 
 <ul class="tree" role="tree">
   {#each roots as e (hex(e.id))}
-    {@render row(e, 0)}
+    {@render row(e, 0, state)}
   {:else}
     <li class="empty">Empty.</li>
   {/each}
