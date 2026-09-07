@@ -224,7 +224,10 @@ Each stage should leave a client someone can use.
    copy; **not** a short code, which is derived from a key's hash and cannot be
    reversed (§5.4). Two entry points, matching the drag: *open* puts it in a
    tab, *link here* keeps it in the current space.
-6. **Share and join**, including a pasted code rather than only a URL.
+6. ~~**Share.**~~ **Done** — the link, the key and the code, each with what it
+   guarantees, since they are not interchangeable. Joining by *pasting* landed
+   in stage 5; there is no join-by-code, because a code cannot be reversed to a
+   key (§5.4) and so cannot open anything on its own.
 7. **Debug panel** — vectors, forks, peers, activity, **and storage**: every
    space this browser holds, whether or not a tab shows it, with a way to
    delete one or restore it to a tab. See below.

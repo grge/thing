@@ -12,6 +12,7 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  codeFor,
   contentHash,
   entry,
   generateKeyPair,
@@ -580,6 +581,29 @@ describe('tabs', () => {
     expect(redraws).toBeGreaterThan(0);
     off();
     await client.close();
+  });
+});
+
+describe('share links', () => {
+  it('round-trips: what shareLink makes, parsePasted reads', () => {
+    // The two halves have to agree, and they are written far apart.
+    const key = 'cd'.repeat(32);
+    const made = `https://example.com/#k=${key}&n=notes&t=abcd&l=ws://h:1`;
+    expect(parsePasted(made)).toMatchObject({
+      key,
+      name: 'notes',
+      token: 'abcd',
+      locator: 'ws://h:1',
+    });
+  });
+
+  it('the token is the space\'s own code, so two people meet without agreeing', () => {
+    // Deterministic from the key: nobody has to choose a rendezvous, and it
+    // being guessable costs nothing, since an impostor who answers still
+    // cannot produce events that verify (§5.4).
+    const key = new Uint8Array(32).fill(0xcd);
+    expect(codeFor(key)).toBe(codeFor(key));
+    expect(codeFor(key)).toHaveLength(8);
   });
 });
 

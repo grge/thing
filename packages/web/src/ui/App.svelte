@@ -31,6 +31,7 @@
   import { Client, parsePasted, parseShareLink, type Tab } from '../client.js';
   import Icon from './Icon.svelte';
   import Preview from './Preview.svelte';
+  import Share from './Share.svelte';
   import Tree from './Tree.svelte';
 
   const client = new Client({
@@ -68,6 +69,8 @@
   /** A pasted key or share link, and what to do with it. */
   let pasting = $state<'open' | 'link' | null>(null);
   let pasted = $state('');
+  /** Whether the share panel is showing, for the active tab. */
+  let sharing = $state(false);
 
   const active = $derived(tabs.find((t) => t.id === activeId) ?? null);
   const writable = $derived(active?.writable === true);
@@ -142,6 +145,7 @@
   });
 
   function show(id: string): void {
+    sharing = false;
     activeId = id;
     expanded = new Set();
     selected = null;
@@ -589,7 +593,19 @@
               conflict
             </span>
           {/if}
+          <button
+            class="share-toggle"
+            onclick={() => (sharing = !sharing)}
+            aria-label="Share this space"
+            title="Share this space"
+          >
+            <Icon name="share" />
+          </button>
         </header>
+
+        {#if sharing}
+          <Share {client} tab={active} onclose={() => (sharing = false)} />
+        {/if}
 
         <div class="bar">
           {#if writable}
@@ -764,6 +780,12 @@
   .id { font-family: var(--font-data); font-size: var(--text--1); color: var(--ink-faint); }
   .tag { font-size: var(--text--2); color: var(--ink-muted); }
   .tag.warn { color: var(--danger); }
+  .share-toggle {
+    margin-left: auto;
+    background: none; border: none; color: var(--ink-muted);
+    cursor: pointer; display: inline-flex; padding: 0;
+  }
+  .share-toggle:hover { color: var(--ink); }
 
   .bar { display: flex; gap: var(--space-2); padding: var(--space-2) 0; }
   .bar button {

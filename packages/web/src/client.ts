@@ -26,6 +26,7 @@
 import {
   type Activity,
   Client as PeerClient,
+  codeFor,
   type Connection,
   type Divergence,
   hex,
@@ -407,6 +408,40 @@ export class Client extends PeerClient {
         this.note('connection', id, `${url} still unreachable`);
       });
     }, delay);
+  }
+
+  /**
+   * A link that introduces someone to a space (§5.4).
+   *
+   * **The key is in the fragment**, so it never reaches a server — which is
+   * what lets a link be shared through anything without the host of that
+   * anything learning what was shared.
+   *
+   * `t` is the space's short code, used as the rendezvous token. Deterministic
+   * from the key, so two people holding the same link wait in the same place
+   * without agreeing on one first; and safe to be guessable, because an
+   * impostor who answers still cannot produce events that verify (§5.4).
+   *
+   * `l` is optional and is the one locator source that works before you know
+   * anybody (`docs/LOCATORS.md`). It belongs in a *share* link and never in a
+   * stored one: a share link's staleness is fixed by resharing it, where a
+   * rotted address inside a space propagates to everyone holding it.
+   */
+  shareLink(id: string, options: { locator?: string } = {}): string {
+    const entry = this.entry(id);
+    if (entry === undefined) throw new Error('that space is not open');
+
+    const name = entry.space.state.root.get(':name')?.value;
+    const params = new URLSearchParams();
+    params.set('k', id);
+    if (typeof name === 'string' && name !== '') params.set('n', name);
+    params.set('t', codeFor(entry.key));
+    if (options.locator !== undefined && options.locator !== '') {
+      params.set('l', options.locator);
+    }
+
+    const base = `${location.origin}${location.pathname}`;
+    return `${base}#${params.toString()}`;
   }
 
   override async close(): Promise<void> {
