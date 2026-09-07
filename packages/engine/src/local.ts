@@ -46,6 +46,24 @@ export type { PetnameStore } from './store/naming.js';
 export interface Keyring {
   /** A fresh keypair, stored. The public key becomes a space's id. */
   mint(): Promise<KeyPair>;
+  /**
+   * A fresh writing key **for a space this client does not own**.
+   *
+   * `mint` files a key under its own public key, so it can only ever produce
+   * the key that *is* a space (§5.1). Joining someone else's space needs the
+   * other thing: an identity to sign with, filed under the space it is for.
+   * The two are different keys with different jobs, and the engine has always
+   * kept them apart — `Space.open` takes `key` and `writer` separately, and
+   * multi-writer convergence is tested on exactly that split.
+   *
+   * Idempotent: a client that already has an identity here keeps it, because a
+   * second key would be a second writer wearing the same person's name and
+   * would leave the first one's events orphaned.
+   *
+   * §5.1: identity is per-space rather than global — "we create new writer ids
+   * for every space we touch" — so this mints rather than reusing anything.
+   */
+  mintFor(space: SpaceId): Promise<KeyPair>;
   /** This client's writing key for a space, or null if it holds none. */
   keyFor(space: SpaceId): Promise<KeyPair | null>;
   /** Destroy a key. Irreversible, and §5.1.1 is why that matters. */

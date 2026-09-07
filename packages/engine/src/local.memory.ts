@@ -22,6 +22,18 @@ export class MemoryKeyring implements Keyring {
     return key;
   }
 
+  async mintFor(space: SpaceId): Promise<KeyPair> {
+    // Idempotent, which also protects a space this client owns: the key filed
+    // under that id is the space's own identity (§5.1.1).
+    const existing = this.keys.get(space);
+    if (existing !== undefined) return existing;
+
+    // Filed under the space it is *for*, not under its own public key.
+    const key = await generateKeyPair();
+    this.keys.set(space, key);
+    return key;
+  }
+
   async keyFor(space: SpaceId): Promise<KeyPair | null> {
     return this.keys.get(space) ?? null;
   }

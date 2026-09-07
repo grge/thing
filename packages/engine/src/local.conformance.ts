@@ -65,6 +65,56 @@ export function localConformanceTests(name: string, make: LocalBackends): void {
       await after();
     });
 
+    it('mints a writing key for a space it does not own', async () => {
+      // The join case (§5.1). The key must be findable under the *space's* id
+      // while being a different key from the space itself — that split is what
+      // `Space.open`'s `key`/`writer` pair has always expected.
+      const keys = await make.keys();
+      const someone = '11'.repeat(32);
+
+      const writer = await keys.mintFor(someone);
+      expect(hex(writer.publicKey)).not.toBe(someone);
+
+      const found = await keys.keyFor(someone);
+      expect(found).not.toBeNull();
+      expect(hex(found!.publicKey)).toBe(hex(writer.publicKey));
+      await after();
+    });
+
+    it('mintFor is idempotent: a second call keeps the first identity', async () => {
+      // A second key would be a second writer wearing the same person's name,
+      // and would orphan everything the first one signed.
+      const keys = await make.keys();
+      const someone = '22'.repeat(32);
+
+      const first = await keys.mintFor(someone);
+      const second = await keys.mintFor(someone);
+      expect(hex(second.publicKey)).toBe(hex(first.publicKey));
+      await after();
+    });
+
+    it('mints a different identity per space', async () => {
+      // §5.1: identity is per-space, not global.
+      const keys = await make.keys();
+      const a = await keys.mintFor('33'.repeat(32));
+      const b = await keys.mintFor('44'.repeat(32));
+      expect(hex(a.publicKey)).not.toBe(hex(b.publicKey));
+      await after();
+    });
+
+    it('mintFor does not disturb a key the client already owns', async () => {
+      // Calling it on your *own* space must not replace the key that is that
+      // space's identity — that would be §5.1.1's unrecoverable loss.
+      const keys = await make.keys();
+      const own = await keys.mint();
+      const id = hex(own.publicKey);
+
+      const same = await keys.mintFor(id);
+      expect(hex(same.publicKey)).toBe(id);
+      expect(hex((await keys.keyFor(id))!.privateKey)).toBe(hex(own.privateKey));
+      await after();
+    });
+
     it('round-trips a key through storage, not just through memory', async () => {
       // The private half has to survive: a keyring that returns a public key
       // and a broken private one fails only when something tries to sign.

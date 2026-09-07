@@ -48,6 +48,20 @@ export class LocalKeyring implements Keyring {
     return key;
   }
 
+  async mintFor(space: string): Promise<KeyPair> {
+    // Idempotent, and deliberately so: this is also what protects a client's
+    // *own* space, where the key filed under the space id is the space's
+    // identity and replacing it would be §5.1.1's unrecoverable loss.
+    const existing = await this.keyFor(space);
+    if (existing !== null) return existing;
+
+    const key = await generateKeyPair();
+    // Filed under the space it is *for*, not under its own public key: this is
+    // an identity within someone else's space, not a space of its own.
+    localStorage.setItem(KEY_PREFIX + space, hexOf(key.privateKey));
+    return key;
+  }
+
   async keyFor(space: string): Promise<KeyPair | null> {
     const seed = localStorage.getItem(KEY_PREFIX + space);
     if (seed === null) return null;

@@ -63,7 +63,47 @@ describe('tabs', () => {
     const tab = await client.open(someone.publicKey);
 
     expect(tab.id).toBe(hex(someone.publicKey));
-    expect(tab.writable).toBe(false); // no key for it, so read-only
+    // Nothing in the space: the log is empty, and the writing identity minted
+    // for it lives only in local storage.
+    expect(client.space(tab.id)?.state.root.size ?? 0).toBe(0);
+    await client.close();
+  });
+
+  it('a space someone else made is still writable (§5.1)', async () => {
+    // This used to assert the opposite, and the opposite was a limitation
+    // rather than a decision: the keyring could only produce a key that *was*
+    // a space, so a space you joined had no identity to sign with and opened
+    // read-only. The engine never required that — `Space.open` takes `key` and
+    // `writer` separately, and multi-writer convergence is tested on exactly
+    // that split. `mintFor` is the missing piece.
+    const client = new Client();
+    const someone = await generateKeyPair();
+
+    const tab = await client.open(someone.publicKey);
+    expect(tab.writable).toBe(true);
+
+    // And the identity is *not* the space's own key: this client cannot write
+    // the root, which stays the space key's alone (§7.2.1).
+    const writer = await client.keyFor(tab.id);
+    expect(hex(writer!.publicKey)).not.toBe(hex(someone.publicKey));
+    await client.close();
+  });
+
+  it('keeps one identity per space across reopens', async () => {
+    // A second key would be a second writer wearing the same person's name,
+    // orphaning everything the first one signed.
+    const client = new Client();
+    const someone = await generateKeyPair();
+
+    await client.open(someone.publicKey);
+    const first = await client.keyFor(hex(someone.publicKey));
+    await client.closeTab(hex(someone.publicKey));
+
+    await client.open(someone.publicKey);
+    const second = await client.keyFor(hex(someone.publicKey));
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+    expect(hex(second!.publicKey)).toBe(hex(first!.publicKey));
     await client.close();
   });
 

@@ -52,6 +52,21 @@ export class FileKeyring implements Keyring {
     return key;
   }
 
+  async mintFor(space: SpaceId): Promise<KeyPair> {
+    // Idempotent, and deliberately so: this is also what protects a client's
+    // *own* space, where the key filed under the space id is the space's
+    // identity and replacing it would be §5.1.1's unrecoverable loss.
+    const existing = await this.keyFor(space);
+    if (existing !== null) return existing;
+
+    const key = await generateKeyPair();
+    await mkdir(this.dir, { recursive: true });
+    // Filed under the space it is *for*, not under its own public key: this is
+    // an identity within someone else's space, not a space of its own.
+    await writeFile(this.path(space), key.privateKey, { mode: 0o600 });
+    return key;
+  }
+
   async keyFor(space: SpaceId): Promise<KeyPair | null> {
     try {
       const seed = await readFile(this.path(space));

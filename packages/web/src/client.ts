@@ -147,7 +147,20 @@ export class Client extends PeerClient {
   async open(key: PublicKey, name: string | null = null): Promise<Tab> {
     const id = hex(key);
     if (!this.tabs.some((t) => hex(t.key) === id)) this.tabs.push({ key, name });
-    await this.hold(key);
+    // A writing identity for this space, minted if there is none (§5.1:
+    // identity is per-space, and we make a new writer id for every space we
+    // touch). Idempotent, so a space this client *owns* keeps the key that is
+    // its own identity rather than gaining a second one.
+    //
+    // **This writes nothing to the space.** The key lives in local storage and
+    // never replicates; the identity becomes visible to anyone else only when
+    // this client actually signs something. So `open` still writes nothing,
+    // which is what makes a tab free — and the alternative, minting lazily on
+    // first write, would mean reopening the space, since `Space` takes its
+    // writer at open (`space.ts`) and every control asking `writable` would
+    // show read-only until then.
+    const writer = await this.local.keys.mintFor(id);
+    await this.hold(key, writer);
     // Remembered so a reload reopens it. Not an inventory in the model's sense
     // — nothing replicates this — but a client that forgets what it had open
     // has no other way back to a space it made.
@@ -196,6 +209,13 @@ export class Client extends PeerClient {
     const name = this.local.petnames.nameFor(id);
     if (name !== null) await this.local.petnames.remove(name);
 
+    // **The writing key stays.** Closing a tab discards a local copy, and
+    // §5.1.1 is unambiguous that a discarded key cannot be recovered: reopening
+    // the space later would make this client a stranger to its own past
+    // events, which stay in the log under an identity it can no longer extend.
+    // Keeping it costs one seed in local storage and nothing in any space —
+    // the key never replicates, and an identity nobody has written under is
+    // invisible to everyone else.
     await this.forget(id);
     await this.dropUnreferenced();
     this.changed();
