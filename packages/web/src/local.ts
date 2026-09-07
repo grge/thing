@@ -40,6 +40,41 @@ const KEY_PREFIX = 'thing:key:';
 const SPACES = 'thing:spaces';
 const PETNAMES = 'thing:petnames';
 const LOCATORS = 'thing:locators';
+const SETTINGS = 'thing:settings';
+
+/**
+ * What this browser has been configured to do (`docs/WEB.md`, stage 8).
+ *
+ * Local, like everything else here, and for the same reason: it is about this
+ * client rather than any space, so it is in no log and replicates nowhere.
+ * Absent fields mean "use the default" rather than "empty" — the difference
+ * matters for ICE, where an empty list is a legitimate choice (no STUN, local
+ * network only) and must not be confused with never having been set.
+ */
+export interface Settings {
+  /** Where to meet peers by short code (§5.4). Absent uses the build default. */
+  readonly signallingUrl?: string;
+  /** STUN/TURN servers. Absent uses the default; empty is a real choice. */
+  readonly iceServers?: readonly RTCIceServer[];
+}
+
+export function readSettings(): Settings {
+  try {
+    const raw = localStorage.getItem(SETTINGS);
+    if (raw === null) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return {};
+    return parsed as Settings;
+  } catch {
+    // Unreadable settings are settings this browser does not have. Failing to
+    // start because a preference is corrupt would be the worse outcome.
+    return {};
+  }
+}
+
+export function writeSettings(next: Settings): void {
+  localStorage.setItem(SETTINGS, JSON.stringify(next));
+}
 
 export class LocalKeyring implements Keyring {
   async mint(): Promise<KeyPair> {

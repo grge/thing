@@ -19,9 +19,11 @@
     tab: Tab | null;
     debugging: boolean;
     ondebug: () => void;
+    settingsOpen: boolean;
+    onsettings: () => void;
   }
 
-  const { client, tab, debugging, ondebug }: Props = $props();
+  const { client, tab, debugging, ondebug, settingsOpen, onsettings }: Props = $props();
 
   let showPeers = $state(false);
 
@@ -57,6 +59,9 @@
 
   <button class="debug" class:on={debugging} onclick={ondebug} title="Debug">
     <Icon name="activity" />
+  </button>
+  <button class="trailing" class:on={settingsOpen} onclick={onsettings} title="Settings">
+    <Icon name="settings" />
   </button>
 
   {#if showPeers}
@@ -103,8 +108,9 @@
     background: var(--ink-muted); opacity: 0.4;
   }
   .dot.live { background: var(--ink); opacity: 1; }
+  /* The first trailing control pushes the group right; the rest sit beside it. */
   .debug { margin-left: auto; }
-  .debug.on { color: var(--ink); }
+  .debug.on, .trailing.on { color: var(--ink); }
   .warn { color: var(--ink); }
   .muted { color: var(--ink-muted); }
   .popout {

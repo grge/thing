@@ -29,15 +29,22 @@
     type Uuid,
   } from '@thing/engine';
   import { Client, parsePasted, parseShareLink, type Tab } from '../client.js';
+  import { readSettings } from '../local.js';
   import Icon from './Icon.svelte';
   import Preview from './Preview.svelte';
   import Debug from './Debug.svelte';
   import Share from './Share.svelte';
   import Status from './Status.svelte';
+  import Settings from './Settings.svelte';
   import Tree from './Tree.svelte';
 
+  // Settings are read here, once, because a `Client` takes them at
+  // construction — which is why changing them asks for a reload rather than
+  // pretending to apply live (`client.saveSettings`).
+  const saved = readSettings();
   const client = new Client({
-    signallingUrl: import.meta.env['VITE_SIGNALLING'] ?? undefined,
+    signallingUrl: saved.signallingUrl ?? import.meta.env['VITE_SIGNALLING'] ?? undefined,
+    ...(saved.iceServers === undefined ? {} : { iceServers: saved.iceServers }),
   });
 
   let tabs = $state<Tab[]>([]);
@@ -81,6 +88,8 @@
    * ordinary way to browse (`docs/WEB.md`).
    */
   let debugging = $state(false);
+  /** Settings, alongside the debug panel and shown the same way. */
+  let settingsOpen = $state(false);
 
   const active = $derived(tabs.find((t) => t.id === activeId) ?? null);
   const writable = $derived(active?.writable === true);
@@ -740,11 +749,23 @@
   <!-- Always visible. Connectedness is not a debugging concern: it decides
        whether anything you do reaches anyone, and revealing it only on demand
        makes "nothing is syncing" look identical to "everything is fine". -->
+  {#if settingsOpen}
+    <Settings {client} tabs={tabs} onclose={() => (settingsOpen = false)} />
+  {/if}
+
   <Status
     {client}
     tab={active ?? null}
     {debugging}
-    ondebug={() => (debugging = !debugging)}
+    ondebug={() => {
+      debugging = !debugging;
+      if (debugging) settingsOpen = false;
+    }}
+    {settingsOpen}
+    onsettings={() => {
+      settingsOpen = !settingsOpen;
+      if (settingsOpen) debugging = false;
+    }}
   />
 </div>
 

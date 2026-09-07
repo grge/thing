@@ -260,10 +260,53 @@ Each stage should leave a client someone can use.
    subscription a few hundred times, each starting an async read of storage and
    every blob hash. It is now guarded against overlap and coalesces a trailing
    pass, and the effect tracks only the space id.
-8. **Settings** — signalling, ICE, keys.
+8. ~~**Settings** — signalling, ICE, keys.~~ **Done.** In the footer beside
+   debug, and the two are exclusive — both are panels about the client rather
+   than about a space.
+
+   Three things that are not the same kind of thing. **Signalling and ICE** are
+   how a peer is reached: addresses, disposable in the way §5.2 says locators
+   are, where a wrong value costs a failed connection. **Keys** are the
+   opposite — §5.1.1 calls key loss the largest unresolved risk in the design,
+   so the section is an export, and it is the reason the panel exists at all.
+
+   Two details worth keeping. Changes apply **on reload**, said plainly rather
+   than papered over: a `Client` reads both at construction, and reconnecting
+   every peer to apply a preference would drop live transfers to no purpose.
+   And an **empty ICE list is a real choice** — no STUN, local network only —
+   so it is stored as `[]` and never folded into "unset", which would silently
+   restore the default.
+
+### The debug panel wants rethinking — **noted, not designed**
+
+Built as a global panel, and most of what is in it is not global. Peers,
+chains, blobs and much of the log are **facts about one space**, and a person
+looking at them is almost always asking about the space in front of them. That
+suggests a debug *view per space* rather than one panel with a space column —
+which would also make it a way to navigate: pick a space, see its peers, its
+chains, what content it is missing.
+
+Two things stop that being a simple change:
+
+- **Links complicate it.** A tab's space is not the only space it touches: an
+  expanded link is a second space this client holds, cached to show what is
+  inside it. A per-space view has to decide whether those are part of the space
+  you are looking at or separate subjects of their own — and the answer differs
+  between "a link I expanded once" and "a hub whose contents I browse".
+- **Storage is genuinely not per-space.** It is a view *across* spaces, and its
+  whole purpose is to show the ones no tab points at (above) — the spaces a
+  per-space view could never reach, because there is no space to hang them off.
+  So even a fully per-space debug view leaves storage somewhere else.
+
+Left as-is for now. The current panel works and shows the right facts; what is
+wrong is the axis it organises them on.
 
 **1–3 are the ones that make it a client.** 5 is the one that makes it *this*
 client rather than a generic file browser.
+
+**All eight are built.** What remains is not on this list: the debug panel's
+organising axis (below), and the resolution work that would let an expanded
+link actually fetch anything (§5.3, stage 8 of `PLAN.md`).
 
 ## What is deliberately not here
 

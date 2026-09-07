@@ -716,6 +716,59 @@ describe('connecting', () => {
   it.skip('dialling wires frame delivery — see the note above', () => {});
 });
 
+describe('settings', () => {
+  it('starts empty, meaning "use the defaults"', async () => {
+    const client = new Client();
+    expect(client.settings()).toEqual({});
+    await client.close();
+  });
+
+  it('round-trips through storage', async () => {
+    const client = new Client();
+    client.saveSettings({ signallingUrl: 'wss://example.test' });
+    expect(client.settings().signallingUrl).toBe('wss://example.test');
+    await client.close();
+  });
+
+  it('keeps an empty ICE list distinct from an unset one', async () => {
+    // An empty list is a real choice — no STUN, local network only — and
+    // folding it into "unset" would silently restore the default.
+    const client = new Client();
+    client.saveSettings({ iceServers: [] });
+    expect(client.settings().iceServers).toEqual([]);
+
+    client.saveSettings({});
+    expect(client.settings().iceServers).toBeUndefined();
+    await client.close();
+  });
+
+  it('survives unreadable settings rather than failing to start', async () => {
+    // A corrupt preference must not stop the client: losing a setting is a
+    // smaller failure than losing the app.
+    localStorage.setItem('thing:settings', 'not json');
+    const client = new Client();
+    expect(client.settings()).toEqual({});
+    await client.close();
+  });
+
+  it('exports the writing key for a space it made', async () => {
+    // §5.1.1: key loss is the largest unresolved risk, and a client with no
+    // way to export is one where clearing site data is unrecoverable.
+    const client = new Client();
+    const tab = await client.create('mine');
+    const seed = client.exportKey(tab.id);
+    expect(seed).not.toBeNull();
+    expect(seed).toMatch(/^[0-9a-f]+$/);
+    await client.close();
+  });
+
+  it('exports nothing for a space it holds no key for', async () => {
+    const client = new Client();
+    expect(client.exportKey('00'.repeat(32))).toBeNull();
+    await client.close();
+  });
+});
+
 describe('the storage view', () => {
   it('lists a space that is open in a tab', async () => {
     const client = new Client();

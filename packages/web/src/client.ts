@@ -40,7 +40,7 @@ import {
 } from '@thing/engine';
 
 import { IdbStore } from './idbstore.js';
-import { browserLocalState } from './local.js';
+import { browserLocalState, readSettings, type Settings, writeSettings } from './local.js';
 import { WebSocketSignalling } from './signalling.js';
 import { connectVia, type RtcConnection, type RtcOptions } from './webrtc.js';
 
@@ -323,6 +323,44 @@ export class Client extends PeerClient {
     const found = links(held.space.state).find((l) => l.entry.name === linkName);
     if (found === undefined) return null;
     return this.open(found.target, found.entry.name);
+  }
+
+  /* ── settings ─────────────────────────────────────────────────────────── */
+
+  /**
+   * What this browser is configured to do.
+   *
+   * Read from storage rather than held in a field, so a second tab that
+   * changed them is not overwritten by this one's stale copy.
+   */
+  settings(): Settings {
+    return readSettings();
+  }
+
+  /**
+   * Change them.
+   *
+   * **Takes effect on reload**, and says so rather than pretending otherwise.
+   * The signalling URL is read when a meeting starts and the ICE list when a
+   * peer connection is built, so existing connections keep whatever they were
+   * made with — reconnecting everything to apply a preference would drop live
+   * transfers to no purpose.
+   */
+  saveSettings(next: Settings): void {
+    writeSettings(next);
+    this.changed();
+  }
+
+  /**
+   * This client's writing key for a space, as a hex seed.
+   *
+   * **The one operation that deliberately hands out a secret**, which is why
+   * it is here rather than on `Keyring`: §5.1.1 calls key loss the largest
+   * unresolved risk in the design, and a client with no way to export is one
+   * where clearing site data is unrecoverable by construction.
+   */
+  exportKey(id: string): string | null {
+    return this.local.keys.exportKey(id);
   }
 
   /* ── what is actually in storage ──────────────────────────────────────── */
