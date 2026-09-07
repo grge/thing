@@ -147,6 +147,31 @@ export function contentHash(state: State, id: Uuid): Hash | null {
   return value instanceof Uint8Array ? value : null;
 }
 
+/**
+ * Every blob this space's state refers to (§2.4).
+ *
+ * The set both peers can name without a new index: a blob body holds its hash,
+ * so walking the objects yields exactly what the space's content *is*, whoever
+ * happens to hold the bytes. Deleted objects are included deliberately —
+ * §2.1's tombstones mean a deleted file can be restored, and a mirror that
+ * dropped its bytes would make that restore a name with nothing behind it.
+ *
+ * Keyed by hex so identical content stored twice counts once, which is also
+ * how the blob store addresses it.
+ */
+export function referencedBlobs(state: State): Map<string, Hash> {
+  const out = new Map<string, Hash>();
+  const walk = (parent: Uuid): void => {
+    for (const e of list(state, parent, { includeDeleted: true })) {
+      const hash = contentHash(state, e.id);
+      if (hash !== null) out.set(hex(hash), hash);
+      walk(e.id);
+    }
+  };
+  walk(ROOT);
+  return out;
+}
+
 /** Read a file's bytes, or null if the blob is not held locally. */
 export async function read(space: Space, id: Uuid): Promise<Uint8Array | null> {
   const hash = contentHash(space.state, id);

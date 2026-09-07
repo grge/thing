@@ -751,6 +751,37 @@ Four notes:
   no `--at`. That remains a restart, and it is the same notification gap — `--at`
   routes around it rather than closing it. Closing it needs the control socket,
   which is the rest of this stage.
+- **`synced` covers events, not content.** A file's bytes travel by §2.4's
+  separate path, so a covered vector means the names arrived. §2.3.2 records
+  what is missing and why it is a UI problem rather than a protocol one.
+
+## Stage 7.10 — Blobs across a relay ✅
+
+**Done.** Two browsers reaching each other only through a server could see each
+other's files and never open them.
+
+Three things were wrong, and only the first was the obvious one:
+
+- **Nothing mirrored.** §2.4 makes blobs pull-only, so the server folded the
+  events, listed the file, and had never fetched the bytes. `mirrorBlobs` is
+  now a per-space policy — on for `serve`, off for a browser tab, with a
+  toggle — because "keep a copy" is a decision about *why a peer exists*, not
+  about what kind of program it is.
+- **`NO_BLOB` went nowhere.** The message existed, cancelled the transfer, and
+  told no one, so a refusal was indistinguishable from slowness and the preview
+  said "Fetching…" forever. It now reaches the client and the view.
+- **A refusal was permanent.** The event arrives before the bytes, so a client
+  asking a relay usually asks *while the relay is still fetching* — it gets a
+  truthful "no" and, before this, never asked again. A peer now announces a
+  blob it acquires (`HAVE`, which existed and had no production caller) and a
+  refused-but-still-wanted blob is re-requested. Reproduced deterministically
+  with a 400 KB payload, where the race is wide enough to lose every time.
+
+**A test that could not fail.** The first version of the retry test used three
+clients on a fake wire and passed with the retry removed, because the relay's
+own in-flight transfer reached the reader regardless. Moved down to `Session`,
+where one message is tested against one behaviour; both mutants now fail.
+LEARNINGS §14.
 
 ## Stage 8 — Resolution and the mesh
 

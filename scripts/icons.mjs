@@ -18,6 +18,16 @@ const WANTED = {
   copy: 'copy',
   download: 'download',
   upload: 'upload',
+  // "Keep a copy of this space": mirroring blobs (§2.4).
+  database: 'database',
+  // These five were added to the generated file by hand and never to this
+  // list, so the next regeneration silently dropped them. Anything the app
+  // imports belongs here.
+  arrowLeft: 'arrow-left',
+  clipboard: 'clipboard',
+  files: 'files',
+  folder: 'folder',
+  settings: 'settings',
   eye: 'eye',
   eyeOff: 'eye-off',
   link: 'link',

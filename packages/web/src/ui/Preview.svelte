@@ -36,13 +36,23 @@
     spaceId: string;
     id: Uuid;
     peers: number;
+    /** Whether this space keeps copies of content it names (§2.4). */
+    mirrors: boolean;
   }
 
-  const { client, space, spaceId, id, peers }: Props = $props();
+  const { client, space, spaceId, id, peers, mirrors }: Props = $props();
 
   let bytes = $state<Uint8Array | null>(null);
   let loading = $state(false);
   let asked = $state(false);
+  /**
+   * Peers that answered "I do not hold that" (§2.4).
+   *
+   * Counted rather than flagged, because a refusal is per peer: one peer
+   * saying no while another is still transferring is not the same as everyone
+   * having said no, and only the second is worth telling a person about.
+   */
+  let refusedBy = $state(0);
 
   const item = $derived(entry(space.state, id));
   const link = $derived(item !== null && isLink(item) ? targetOf(space.state, id) : null);
@@ -65,6 +75,7 @@
   function fetchFromPeers(): void {
     if (hash === null) return;
     asked = true;
+    refusedBy = 0;
     if (peers === 0) return;
     client.requestBlob(spaceId, hash);
   }
@@ -74,19 +85,38 @@
     void id;
     bytes = null;
     asked = false;
+    refusedBy = 0;
     void (async () => {
       await load();
       if (bytes === null && hash !== null) fetchFromPeers();
     })();
   });
 
-  onMount(() =>
-    client.subscribe(() => {
+  onMount(() => {
+    const off = client.subscribe(() => {
       // A blob may have landed. Only re-read while something is missing, so a
       // file already shown is not re-read on every unrelated change.
       if (bytes === null && hash !== null && !loading) void load();
-    }),
-  );
+    });
+    // A peer saying it does not hold these bytes is an answer, and used to be
+    // silently swallowed — the view could only ever say "fetching", so a blob
+    // nobody had looked identical to one still arriving.
+    const offRefused = client.observe({
+      onNoBlob: (s, h) => {
+        if (s === spaceId && hash !== null && h === hex(hash)) refusedBy += 1;
+      },
+      // A retry may follow a refusal (the peer was still fetching it itself),
+      // so an arrival clears the count rather than leaving a stale "nobody
+      // has this" over content that is now here.
+      onBlob: (s, h) => {
+        if (s === spaceId && hash !== null && h === hex(hash)) refusedBy = 0;
+      },
+    });
+    return () => {
+      off();
+      offRefused();
+    };
+  });
 
   $effect(() => {
     // Ask again when a peer appears. Selecting a file before a connection is up
@@ -138,6 +168,14 @@
     {:else if peers === 0}
       <p class="note">
         The content is stored elsewhere. Connect to a peer that has it to see it.
+      </p>
+    {:else if refusedBy >= peers}
+      <p class="note">
+        No connected peer holds this content.
+        {#if !mirrors}
+          Turning on <strong>keep a copy</strong> for this space makes it fetch
+          content as it arrives, rather than only when asked.
+        {/if}
       </p>
     {:else}
       <p class="note">Fetching…</p>

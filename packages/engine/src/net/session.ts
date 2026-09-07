@@ -44,6 +44,25 @@ export interface SessionOptions {
   readonly onEvents?: (events: readonly Event[]) => void;
   /** Called when a blob finished transferring and verified. */
   readonly onBlob?: (hash: Uint8Array, bytes: Uint8Array) => void;
+  /**
+   * Called when a peer says it does not hold a blob (§2.4).
+   *
+   * Without this a refusal is indistinguishable from slowness: the transfer is
+   * cancelled and nothing else happens, so a caller waits forever on bytes
+   * that are never coming. That is the exact failure `NO_BLOB` was added to
+   * the protocol to prevent, and it was only half-wired — the message arrived
+   * and stopped there.
+   */
+  readonly onNoBlob?: (hash: string) => void;
+  /**
+   * Called when a peer announces blobs it holds (§2.4, §10).
+   *
+   * `HAVE` was recorded in ephemeral state and nothing acted on it, which left
+   * the announcement useful only for a caller that went looking. The case that
+   * needs it is a retry: a blob refused a moment ago because the peer was
+   * still fetching it.
+   */
+  readonly onHave?: (hashes: readonly string[]) => void;
   readonly now?: () => number;
 }
 
@@ -118,6 +137,7 @@ export class Session {
         return true;
       case 'ephemeral':
         this.ephemeral.receive(this.options.peer, frame.msg);
+        if (frame.msg.type === 'HAVE') this.options.onHave?.(frame.msg.hashes);
         return true;
       case 'chunk': {
         const result = await this.blobs.accept(frame.chunk);
@@ -193,6 +213,7 @@ export class Session {
 
       case 'NO_BLOB': {
         this.blobs.cancel(msg.hash);
+        this.options.onNoBlob?.(msg.hash);
         return;
       }
 
@@ -380,6 +401,19 @@ export class Session {
   requestBlob(hash: Uint8Array): void {
     const h = hex(hash);
     this.send({ type: 'WANT_BLOB', hash: h, fromChunk: this.blobs.resumeFrom(h) });
+  }
+
+  /**
+   * Tell the peer we now hold one blob (§2.4).
+   *
+   * The arrival half of `HAVE`. Without it a peer that asked too early — while
+   * this one was still fetching the bytes itself — gets `NO_BLOB` and has no
+   * way to learn the answer changed. That is a real race rather than a
+   * theoretical one: a relay mirrors a blob and the client asking through it
+   * usually asks first, because the event arrives before the bytes do.
+   */
+  announceBlob(hash: string): void {
+    this.sendEphemeral(haveMessage([hash]));
   }
 
   /** Tell the peer what blobs we hold (§2.4). */

@@ -319,6 +319,37 @@ be stalled. What the CLI test proves is the other half, that an absent holder
 yields a non-zero exit. Better a narrow true claim than a broad one that passes
 for the wrong reason.
 
+## 14. A reproduction that differs from the real setup proves nothing
+
+Investigating why a browser could not fetch a blob, I built a probe with the
+writer and the holder in separate temporary directories, watched `thing put
+--at` exit 0 while the holder had no bytes, and reported that the CLI lies about
+uploads.
+
+The user pointed out that the files were readable in practice. The reason: their
+CLI and their server share `$THING_DIR`, so `putBlob` writes into the directory
+the server serves from. **The bytes arrived through the filesystem and the blob
+protocol was never involved.** My probe had removed the one property that made
+the real setup work, and I presented the result as a finding about the real
+setup.
+
+The claim was not false — a genuinely remote `--at` does exit 0 without shipping
+bytes, and that is worth fixing. But it was *evidence about a different system*,
+and I did not say so. It cost a round trip and would have cost more if it had
+been believed.
+
+**Before trusting a reproduction, name what differs between it and the reported
+case.** Here the difference was one shared directory, which is exactly the kind
+of thing a temp-dir harness erases by construction.
+
+A second instance in the same session: the three-peer test for the blob retry
+passed with the retry mutated out, because on a fake wire the relay's own
+in-flight transfer reached the reader anyway. The test was measuring the
+harness. Moving the assertion down to `Session`, where one message could be
+tested against one behaviour, made both mutants fail as they should. Same
+lesson as §13 from the other direction — a test whose subject can be reached by
+a path you did not intend is not testing what its name says.
+
 ## The nuclear revoke
 
 **The problem it answers.** `deps` (see `DEPS.md`) narrows backdating without

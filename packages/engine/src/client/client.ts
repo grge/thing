@@ -24,6 +24,7 @@ import { Session } from '../net/session.js';
 import type { Coverage, Divergence } from '../net/sync.js';
 import { vvToWire } from '../net/wire.js';
 import type { SpaceId, SpaceStore } from '../store/index.js';
+import { referencedBlobs } from '../fs/files.js';
 import { Space } from '../space.js';
 import {
   type Activity,
@@ -60,6 +61,25 @@ export interface Held {
   >;
   readonly lock: WriteLock;
   forks: Divergence[];
+  /**
+   * Whether to fetch blobs this space folds but does not hold (§2.4).
+   *
+   * Per space rather than per client, because "keep a copy of this" is a
+   * decision about one space: a browser may mirror the hub it contributes to
+   * and browse everything else without spending disk on it. Defaults to the
+   * client-wide capability.
+   */
+  mirrorBlobs: boolean;
+  /** Blobs already asked for, so a refold does not re-ask on every event. */
+  readonly asked: Set<string>;
+  /**
+   * Blobs a peer refused that this client still wants.
+   *
+   * `NO_BLOB` answers about *now*: a relay that is itself still fetching says
+   * no and holds the bytes moments later. Keeping the want is what lets a
+   * later `HAVE` turn into a retry rather than being ignored.
+   */
+  readonly wanted: Set<string>;
 }
 
 const ACTIVITY_LIMIT = 200;
@@ -161,6 +181,9 @@ export class Client {
       connections: new Map(),
       lock,
       forks: [],
+      mirrorBlobs: this.capabilities.mirrorBlobs ?? false,
+      asked: new Set(),
+      wanted: new Set(),
     };
     this.held.set(id, entry);
 
@@ -217,6 +240,11 @@ export class Client {
     conn.onFrame((data) => void session.receive(data));
     conn.onClose(() => this.dropped(conn.peer));
     await session.start();
+    // Blobs missed while there was nobody to ask. `onEvents` only fires for
+    // *new* events, so without this a peer that folded a `:body` while
+    // disconnected would never fetch its bytes — the gap is invisible,
+    // because the file is listed and only its content is absent.
+    void this.mirror(id);
     this.changed();
     return session;
   }
@@ -256,6 +284,10 @@ export class Client {
             return;
           }
           for (const o of this.observers) o.onConnect?.(id, conn.peer);
+          // As in `join`: a peer that folded a `:body` with nobody to ask now
+          // has somebody. This is the path a *server* takes, where mirroring
+          // is on by default, so it is the one that matters most.
+          void this.mirror(id);
           this.changed();
         }
 
@@ -316,11 +348,48 @@ export class Client {
         held.space.absorb(events);
         this.note('log', id, `${events.length} event(s) from ${conn.peer}`);
         for (const o of this.observers) o.onEvents?.(id, events);
+        // A folded `:body` may name bytes this peer does not have. Whether to
+        // go and get them is policy (§2.4), so it is asked here rather than
+        // assumed.
+        void this.mirror(id);
         onProgress?.();
       },
       onBlob: (hash, bytes) => {
-        this.note('blob', id, `${hex(hash).slice(0, 8)} — ${bytes.length} bytes`);
-        for (const o of this.observers) o.onBlob?.(id, hex(hash), bytes.length);
+        const key = hex(hash);
+        held.asked.delete(key);
+        held.wanted.delete(key);
+        this.note('blob', id, `${key.slice(0, 8)} — ${bytes.length} bytes`);
+        // Tell the other peers, so anyone who asked while this was still in
+        // flight learns the answer has changed. A relay that stays silent
+        // leaves them on a `NO_BLOB` they have no reason to retry.
+        for (const [peer, s] of held.sessions) {
+          if (peer !== conn.peer && !s.isClosed) s.announceBlob(key);
+        }
+        for (const o of this.observers) o.onBlob?.(id, key, bytes.length);
+      },
+      onNoBlob: (hash) => {
+        // Report it rather than swallowing it: a caller waiting on these bytes
+        // needs to know they are not coming from *this* peer, and the UI
+        // needs to stop saying "fetching".
+        //
+        // Remembered as *wanted*, because "no" is an answer about this moment:
+        // a relay still fetching the bytes says no and holds them a second
+        // later. `onHave` is what turns that into a retry.
+        held.asked.delete(hash);
+        held.wanted.add(hash);
+        this.note('blob', id, `${hash.slice(0, 8)} — not held by ${conn.peer}`);
+        for (const o of this.observers) o.onNoBlob?.(id, hash, conn.peer);
+      },
+      onHave: (hashes) => {
+        // A peer announced what it holds. Anything refused earlier and still
+        // wanted is worth asking again — this is the retry that closes the
+        // race between a client asking and a relay still fetching.
+        for (const hash of hashes) {
+          if (!held.wanted.has(hash)) continue;
+          held.wanted.delete(hash);
+          const bytes = hexToBytes32(hash);
+          if (bytes !== null) this.requestBlob(id, bytes);
+        }
       },
     });
 
@@ -362,6 +431,51 @@ export class Client {
     for await (const e of entry.store.readAll()) events.push(e);
     for (const session of entry.sessions.values()) {
       if (!session.isClosed) session.push(events);
+    }
+  }
+
+  /**
+   * Whether this space fetches blobs it folds but does not hold.
+   *
+   * Per space, so "keep a copy of this one" is a decision a person makes about
+   * a space rather than about their whole client.
+   */
+  mirrors(id: SpaceId): boolean {
+    return this.held.get(id)?.mirrorBlobs ?? false;
+  }
+
+  /** Turn mirroring on or off for one space, fetching what is missing if on. */
+  async setMirror(id: SpaceId, on: boolean): Promise<void> {
+    const entry = this.held.get(id);
+    if (entry === undefined || entry.mirrorBlobs === on) return;
+    entry.mirrorBlobs = on;
+    if (on) await this.mirror(id);
+    this.changed();
+  }
+
+  /**
+   * Fetch blobs this space refers to and does not hold (§2.4).
+   *
+   * **Only when asked to.** A peer that mirrors everything spends disk on
+   * content it may never read, which is why §2.4 makes blobs pull-only — but a
+   * relay that holds a file's event and not its bytes is a poor relay, and two
+   * peers that can reach each other only through a hub cannot exchange content
+   * at all unless the hub keeps some.
+   *
+   * Asks every connected peer, as `requestBlob` does: a peer need not know
+   * which one holds it, and the ones that do not answer `NO_BLOB` cheaply.
+   */
+  protected async mirror(id: SpaceId): Promise<void> {
+    const entry = this.held.get(id);
+    if (entry === undefined || !entry.mirrorBlobs || entry.sessions.size === 0) return;
+
+    for (const [key, hash] of referencedBlobs(entry.space.state)) {
+      // Asked once per blob per client: a refold runs this on every batch of
+      // events, and re-requesting an in-flight transfer would restart it.
+      if (entry.asked.has(key)) continue;
+      if (await entry.store.hasBlob(hash)) continue;
+      entry.asked.add(key);
+      this.requestBlob(id, hash);
     }
   }
 
@@ -514,4 +628,12 @@ function withDeadline(
     setTimeout(() => finish({ kind: 'behind', chains }), ms);
     void answer.then(finish);
   });
+}
+
+/** A 32-byte hash from hex, or null if it is not one. */
+function hexToBytes32(s: string): Uint8Array | null {
+  if (s.length !== 64 || !/^[0-9a-f]+$/.test(s)) return null;
+  const out = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) out[i] = Number.parseInt(s.slice(i * 2, i * 2 + 2), 16);
+  return out;
 }

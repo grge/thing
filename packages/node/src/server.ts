@@ -55,6 +55,14 @@ export class Server {
         // No lock. Per-process append points mean two processes writing one
         // space extend separate chains and never contend (§2.1), so a lock
         // would prevent something that is no longer a hazard.
+        //
+        // **Blobs are mirrored, and that is what makes this a relay.** §2.4
+        // makes blobs pull-only, so a peer holds a file's event and not its
+        // bytes unless it goes and gets them. For a server that is the whole
+        // job: two clients that can reach each other only through here cannot
+        // exchange content at all if here keeps none of it. A browser tab
+        // defaults the other way — see `mirrorBlobs` in `client/types.ts`.
+        mirrorBlobs: true,
       },
       options.observer ?? {},
     );

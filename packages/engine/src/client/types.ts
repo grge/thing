@@ -81,6 +81,14 @@ export interface ClientObserver {
   /** A connection refused because this client will not hold that space. */
   readonly onRefused?: (space: SpaceId, peer: string) => void;
   readonly onBlob?: (space: SpaceId, hash: string, bytes: number) => void;
+  /**
+   * A peer said it does not hold a blob (§2.4).
+   *
+   * The counterpart to `onBlob`, and its absence was a bug: a refusal looked
+   * exactly like a slow transfer, so a view could only ever show "fetching"
+   * and never "nobody here has this".
+   */
+  readonly onNoBlob?: (space: SpaceId, hash: string, peer: string) => void;
 }
 
 /**
@@ -114,6 +122,26 @@ export interface ClientCapabilities {
    * wants, so it can hold a space nobody has introduced it to yet.
    */
   readonly acceptUnknownSpaces?: boolean;
+  /**
+   * Fetch blobs this peer folds but does not hold (§2.4).
+   *
+   * **A policy, not a protocol rule, and that is why it is a flag.** §2.4 says
+   * blobs are pulled by whoever wants them: a peer that mirrors everything is
+   * choosing to spend disk on content it may never read. The right answer
+   * differs by *why the peer exists* rather than by what kind of program it is:
+   *
+   * - A **hub** exists to serve others. Holding a file's event but not its
+   *   bytes makes it a poor relay — the case this was added for, where two
+   *   browsers reach each other only through a server and neither can fetch
+   *   what the other wrote.
+   * - A **browser tab** holds a space to look at it. Mirroring every blob in a
+   *   space opened once would be a surprise, and an expensive one on a phone.
+   *
+   * So it is off by default and turned on by the peer that wants it. A client
+   * may vary it per space, which is what a "keep a copy of this space" control
+   * means.
+   */
+  readonly mirrorBlobs?: boolean;
 }
 
 /** A space id is its public key in hex, so the key is recoverable from it. */

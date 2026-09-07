@@ -57,6 +57,15 @@ export interface Tab {
   readonly forks: readonly Divergence[];
   /** How this tab's space is being reached, if at all. */
   readonly peers: number;
+  /**
+   * Whether this space keeps a copy of the content it names (§2.4).
+   *
+   * Off by default: a tab is for looking, and mirroring every blob in a space
+   * opened once would be an expensive surprise on a phone. Turning it on is
+   * what "keep a copy of this" means, and it is also what makes this client
+   * able to serve the content to someone else.
+   */
+  readonly mirrors: boolean;
 }
 
 export interface ClientOptions {
@@ -264,6 +273,7 @@ export class Client extends PeerClient {
       writable: held.space.writable,
       forks: held.forks,
       peers: held.connections.size,
+      mirrors: this.mirrors(id),
     };
   }
 

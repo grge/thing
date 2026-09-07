@@ -384,6 +384,84 @@ describe('asking whether a peer is caught up (§2.3.1)', () => {
   });
 });
 
+describe('a blob a peer does not have (§2.4)', () => {
+  it('reports the refusal rather than swallowing it', async () => {
+    // `NO_BLOB` existed and stopped at cancelling the transfer, so a refusal
+    // was indistinguishable from slowness and a caller waited forever on bytes
+    // that were never coming. That is the failure the message was added to
+    // prevent, half-wired.
+    const space = await keyPairFromSeed(labelled('space', SEED_LEN));
+    const a = await makePeer(space, space);
+    const b = await makePeer(space, space);
+
+    const refused: string[] = [];
+    const wire = channelPair();
+    wire.a = new Session(a.store, wire.channelFor('a'), {
+      peer: 'b',
+      onNoBlob: (hash) => refused.push(hash),
+    });
+    wire.b = new Session(b.store, wire.channelFor('b'), { peer: 'a' });
+
+    const missing = new Uint8Array(32).fill(7);
+    wire.a.requestBlob(missing);
+    await wire.settle();
+
+    expect(refused).toEqual([hex(missing)]);
+  });
+
+  it('announces a blob it has just acquired', async () => {
+    // The other half of the race: a relay that fetches bytes after refusing
+    // them has to say so, or the peer it refused has no reason to ask again.
+    const space = await keyPairFromSeed(labelled('space', SEED_LEN));
+    const a = await makePeer(space, space);
+    const b = await makePeer(space, space);
+
+    const announced: string[][] = [];
+    const wire = channelPair();
+    wire.a = new Session(a.store, wire.channelFor('a'), { peer: 'b' });
+    wire.b = new Session(b.store, wire.channelFor('b'), {
+      peer: 'a',
+      onHave: (hashes) => announced.push([...hashes]),
+    });
+
+    const bytes = UTF8.encode('freshly acquired');
+    const hash = await a.store.putBlob(bytes);
+    wire.a.announceBlob(hex(hash));
+    await wire.settle();
+
+    expect(announced).toEqual([[hex(hash)]]);
+  });
+
+  it('serves a blob it does have', async () => {
+    // The control: the same request against a peer that holds the bytes must
+    // transfer them, so the refusal test above is about absence and not about
+    // the request being broken.
+    const space = await keyPairFromSeed(labelled('space', SEED_LEN));
+    const a = await makePeer(space, space);
+    const b = await makePeer(space, space);
+
+    const bytes = UTF8.encode('the actual content');
+    const hash = await b.store.putBlob(bytes);
+
+    let got: Uint8Array | null = null;
+    const refused: string[] = [];
+    const wire = channelPair();
+    wire.a = new Session(a.store, wire.channelFor('a'), {
+      peer: 'b',
+      onBlob: (_h, received) => (got = received),
+      onNoBlob: (h) => refused.push(h),
+    });
+    wire.b = new Session(b.store, wire.channelFor('b'), { peer: 'a' });
+
+    wire.a.requestBlob(hash);
+    await wire.settle();
+
+    expect(refused).toEqual([]);
+    expect(got).not.toBeNull();
+    expect(hex(got!)).toBe(hex(bytes));
+  });
+});
+
 describe('the connection', () => {
   it('closes on a protocol mismatch', async () => {
     const space = await keyPairFromSeed(labelled('space', SEED_LEN));

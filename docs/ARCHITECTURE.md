@@ -31,6 +31,10 @@ who takes them for solved will plan badly:
 - **Compaction is understood but unbuilt** (§9). Discarding events safely needs
   wire concepts that do not exist yet, so snapshots are for now a cache that
   never discards anything (§9.1).
+- **Nothing tells a person when content has finished arriving** (§2.3.2). A
+  peer can be asked whether it holds your events; whether it holds the *bytes*
+  those events name is answerable with what exists and is not surfaced
+  anywhere, so an upload looks complete when only its names have replicated.
 
 There is also one **constraint on operating the system** that it cannot enforce
 itself: **a private key is held by one device at a time.** Two devices sharing a
@@ -321,8 +325,11 @@ currently has no way to re-ask. The addition is one request naming a vector and
 one response saying whether it is covered — no new state on either side, since
 both already maintain the vector this compares.
 
-**What it does not say.** Not that the events are durable; a peer may hold them
-only in memory. Not that anyone else has them. Not that they were *folded* —
+**What it does not say.** Not that a file's *content* arrived: blobs travel by
+their own path (§2.4) and a covered vector means the names are there and the
+bytes may not be — §2.3.2 is that gap, and it is open. Not that the events are
+durable; a peer may hold them only in memory. Not that anyone else has them.
+Not that they were *folded* —
 storage admits events the fold may still reject (§7.2.1), so a covered vector
 means received, never accepted. A client that needs to know its change took
 effect must read the state back, and that is a different question from this one.
@@ -335,6 +342,50 @@ it went nowhere — but it means a caller cannot tell "still catching up" from
 before the message existed. Distinguishing the two needs a capability in the
 handshake, which is not worth a protocol version on its own and should be
 carried by whatever next changes `HELLO`.
+
+### 2.3.2 Knowing when content has arrived — **Open**
+
+§2.3.1 answers *do you have my events*. For someone uploading a file that is
+the wrong question, and the difference is not academic: events replicate to
+everyone and blobs are pulled by whoever wants them (§2.4), so a covered vector
+means the *names* arrived and says nothing about the bytes.
+
+A client that treats §2.3.1 as "the upload finished" will disconnect on a file
+that is a name with no content anywhere reachable. This is not hypothetical —
+the first `--at` implementation did exactly that, and only worked in testing
+because the CLI happened to share a directory with the peer it was talking to,
+so the blob reached the store through the filesystem rather than the wire.
+
+**The mechanism is not what is missing.** Blob presence is answerable today:
+`referencedBlobs` names the set from the fold, `hasBlob` answers per hash, and
+`HAVE` already carries availability. A client that wanted to poll a peer until
+it held every blob could do so with what exists.
+
+**What is missing is how a person knows.** Three things make this a design
+problem rather than a loop:
+
+- **There is no natural completion point.** A version vector has one — a
+  frontier is reached or it is not. Blob transfer is a set with no order and no
+  total, and a peer may legitimately never fetch some of it: mirroring is
+  policy (§2.4), so "not yet" and "never, by choice" are the same observation.
+- **The honest unit is bytes, and nobody wants to read bytes.** "3 of 7 blobs"
+  is meaningless when one is a video and six are text files. Progress that is
+  truthful about time is progress weighted by size, which needs sizes the
+  fold does not carry.
+- **It is per peer, and a person thinks in terms of the space.** "The hub has
+  it" is answerable; "it is safe to close this laptop" is what is being asked,
+  and those differ once more than one peer holds the space.
+
+**Where it bites.** A web or TUI client editing a hub: you drag a file in, it
+appears immediately in your own tree, and nothing distinguishes *the hub has
+your file* from *the hub has its name*. Closing the tab in the second state
+loses the content — and closing a tab deletes the local copy, so the only
+holder of those bytes goes with it.
+
+**Not designed here**, deliberately: the shape of the answer depends on what a
+client shows for it, and no client shows anything yet. Recorded so the gap is
+not mistaken for solved by §2.3.1, which covers half of it and reads as though
+it covers all of it.
 
 The substrate verifies three things and no others:
 
@@ -352,6 +403,23 @@ not have — or a space it cannot read (Section 6).
 Large content does not travel in the log. A blob-kinded object's body holds the
 SHA-256 hash of a blob, and the blob is fetched on demand from any peer that has
 it.
+
+**Pull-only has a consequence worth naming: a relay holds names it cannot
+serve.** Two peers that can reach each other only through a hub cannot exchange
+content at all if the hub keeps none of it — it folds the events, so it lists
+the file, and it never fetched the bytes, so it refuses every request for them.
+Whether to keep a copy is therefore **policy, chosen by the peer**: a hub
+mirrors because serving is its whole purpose, and a browser tab does not,
+because mirroring every blob in a space opened once is an expensive surprise.
+Neither is the protocol's business, which is why it is a setting rather than a
+rule.
+
+**A refusal is about the present moment.** A peer that answers "I do not hold
+that" may be fetching it as it answers — the event arrives before the bytes, so
+a client asking a relay usually asks while the relay is still filling in. So
+`NO_BLOB` must be reported rather than treated as final, and a peer that
+acquires a blob announces it (`HAVE`), which is what turns the refusal into a
+retry instead of a permanent gap.
 
 - **Content-addressed** by full SHA-256 of the bytes **as stored and
   transferred**, so integrity is verified by rehashing the reassembly. Identical

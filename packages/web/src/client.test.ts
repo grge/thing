@@ -69,6 +69,34 @@ describe('tabs', () => {
     await client.close();
   });
 
+  it('does not keep copies of content by default (§2.4)', async () => {
+    // A tab is for looking. Mirroring every blob in a space opened once would
+    // be an expensive surprise, especially on a phone — so it is opt-in, and
+    // the opposite of a server, which mirrors because serving is its job.
+    const client = new Client();
+    const someone = await generateKeyPair();
+    const tab = await client.open(someone.publicKey);
+    expect(tab.mirrors).toBe(false);
+    await client.close();
+  });
+
+  it('keeps copies once told to, per space', async () => {
+    // Per space rather than per client: someone may mirror the hub they
+    // contribute to and browse everything else without spending disk on it.
+    const client = new Client();
+    const a = await generateKeyPair();
+    const b = await generateKeyPair();
+    const tabA = await client.open(a.publicKey);
+    await client.open(b.publicKey);
+
+    await client.setMirror(tabA.id, true);
+
+    const view = client.view();
+    expect(view.find((t) => t.id === tabA.id)?.mirrors).toBe(true);
+    expect(view.find((t) => t.id === hex(b.publicKey))?.mirrors).toBe(false);
+    await client.close();
+  });
+
   it('a space someone else made is still writable (§5.1)', async () => {
     // This used to assert the opposite, and the opposite was a limitation
     // rather than a decision: the keyring could only produce a key that *was*

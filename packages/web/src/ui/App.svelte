@@ -603,6 +603,17 @@
           {/if}
           <button
             class="share-toggle"
+            class:on={active.mirrors}
+            onclick={() => void client.setMirror(active.id, !active.mirrors)}
+            aria-label={active.mirrors ? 'Stop keeping a copy' : 'Keep a copy'}
+            title={active.mirrors
+              ? 'Keeping a copy: content is fetched as it arrives'
+              : 'Keep a copy: fetch content as it arrives, so this browser can serve it'}
+          >
+            <Icon name="database" />
+          </button>
+          <button
+            class="share-toggle"
             onclick={() => (sharing = !sharing)}
             aria-label="Share this space"
             title="Share this space"
@@ -695,6 +706,7 @@
             spaceId={selectedIn!}
             id={selected}
             peers={active.peers}
+            mirrors={active.mirrors}
           />
         {:else}
           <p class="muted pad">Select a file.</p>
@@ -788,12 +800,17 @@
   .id { font-family: var(--font-data); font-size: var(--text--1); color: var(--ink-faint); }
   .tag { font-size: var(--text--2); color: var(--ink-muted); }
   .tag.warn { color: var(--danger); }
+  /* The first of the trailing controls pushes the group right; the rest sit
+     beside it, so adding another does not split them across the header. */
   .share-toggle {
-    margin-left: auto;
     background: none; border: none; color: var(--ink-muted);
     cursor: pointer; display: inline-flex; padding: 0;
+    margin-left: var(--space-2);
   }
+  .share-toggle:first-of-type { margin-left: auto; }
   .share-toggle:hover { color: var(--ink); }
+  /* On, rather than merely hovered: this one is a state, not an action. */
+  .share-toggle.on { color: var(--ink); }
 
   .bar { display: flex; gap: var(--space-2); padding: var(--space-2) 0; }
   .bar button {

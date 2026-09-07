@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { generateKeyPair, hex, ROOT } from '../core/index.js';
+import { list, makeFile } from '../fs/files.js';
 import { MemoryStore } from '../store/index.js';
 import { connectionPair as pair, until } from '../net/testwire.js';
 import { Client } from './client.js';
@@ -199,6 +200,91 @@ describe('Client', () => {
     await a.close();
     await b.close();
     await c.close();
+  });
+
+  it('does not fetch blobs it folds unless told to (§2.4)', async () => {
+    // The default. Blobs are pull-only, so a peer that mirrors everything is
+    // spending disk on content it may never read — a browser tab opening a
+    // space to look at it should not.
+    const key = await generateKeyPair();
+    const id = hex(key.publicKey);
+    const a = new Client({ store: new MemoryStore() }, {});
+    const b = new Client({ store: new MemoryStore() }, {});
+
+    const spA = await a.hold(key.publicKey, key);
+    await b.hold(key.publicKey);
+    const [x, y] = pair();
+    await a.join(id, x);
+    await b.join(id, y);
+    await until(() => b.space(id) !== null);
+
+    const { hash } = await makeFile(spA, 'f.txt', new TextEncoder().encode('bytes'));
+    await until(() => list(b.space(id)!.state).some((e) => e.name === 'f.txt'));
+
+    expect(b.mirrors(id)).toBe(false);
+    expect(await b.space(id)!.getBlob(hash)).toBeNull();
+    await a.close();
+    await b.close();
+  });
+
+  it('fetches blobs it folds when mirroring is on', async () => {
+    // What makes a relay a relay: holding a file's event and not its bytes is
+    // no use to a peer that can only reach the writer through here.
+    const key = await generateKeyPair();
+    const id = hex(key.publicKey);
+    const a = new Client({ store: new MemoryStore() }, {});
+    const b = new Client({ store: new MemoryStore(), mirrorBlobs: true }, {});
+
+    const spA = await a.hold(key.publicKey, key);
+    await b.hold(key.publicKey);
+    const [x, y] = pair();
+    await a.join(id, x);
+    await b.join(id, y);
+    await until(() => b.space(id) !== null);
+
+    const { hash } = await makeFile(spA, 'f.txt', new TextEncoder().encode('bytes'));
+    await until(async () => (await b.space(id)!.getBlob(hash)) !== null);
+
+    expect(b.mirrors(id)).toBe(true);
+    await a.close();
+    await b.close();
+  });
+
+  it('re-asks for a blob a peer refused once it announces having it', async () => {
+    // The race that hung a browser: the event arrives before the bytes, so a
+    // client asking a relay usually asks while the relay is still fetching.
+    // `NO_BLOB` answers about *now*, and without this the "no" was permanent.
+    //
+    // Driven through the observer rather than a three-peer wire, because on a
+    // fake transport the relay's own in-flight transfer reaches the reader
+    // regardless and the retry cannot be isolated.
+    const key = await generateKeyPair();
+    const id = hex(key.publicKey);
+    const client = new Client({ store: new MemoryStore() }, {});
+    await client.hold(key.publicKey, key);
+
+    const [x, y] = pair();
+    await client.join(id, x);
+    const other = new Client({ store: new MemoryStore() }, {});
+    await other.hold(key.publicKey);
+    await other.join(id, y);
+    await until(() => other.space(id) !== null);
+
+    const asked: string[] = [];
+    const missing = new Uint8Array(32).fill(9);
+    // The peer does not have it, so this refusal is genuine.
+    client.requestBlob(id, missing);
+    await until(() => client.recent().some((a) => a.text.includes('not held by')));
+
+    client.observe({ onBlob: (_s, h) => asked.push(h) });
+    // The peer now says it has it. That must produce a fresh request rather
+    // than being ignored, which is what `wanted` exists for.
+    await other.entry(id)!.store.putBlob(new Uint8Array(4).fill(1));
+    for (const s of other.entry(id)!.sessions.values()) s.announceBlob(hex(missing));
+    await until(() => client.recent().filter((a) => a.channel === 'blob').length > 1);
+
+    await client.close();
+    await other.close();
   });
 
   it('refuses an adopted connection for a space it does not hold', async () => {

@@ -217,9 +217,15 @@ export function connectionPair(
  * A fixed count passes on a fast machine and fails on a slow one, which is the
  * kind of test that fails once a fortnight and gets rerun rather than read.
  */
-export async function until(condition: () => boolean, ms = 2000): Promise<void> {
+export async function until(
+  // Async predicates are allowed and *must* be awaited: a `Promise` is truthy,
+  // so a condition returning one would satisfy the loop on its first turn and
+  // the wait would assert nothing at all.
+  condition: () => boolean | Promise<boolean>,
+  ms = 2000,
+): Promise<void> {
   const deadline = Date.now() + ms;
-  while (!condition()) {
+  while (!(await condition())) {
     if (Date.now() > deadline) throw new Error('timed out waiting for the exchange to settle');
     await new Promise<void>((resolve) => setTimeout(() => resolve(), 1));
   }
