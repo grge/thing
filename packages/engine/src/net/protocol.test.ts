@@ -69,7 +69,7 @@ describe('framing', () => {
   it('round-trips a chunk with its header', () => {
     const hash = hex(labelled('h', 32));
     const payload = UTF8.encode('some bytes');
-    const frame = encodeChunk(hash, 2, 5, 1234, payload);
+    const frame = encodeChunk(SPACE, hash, 2, 5, 1234, payload);
 
     expect(frame[0]).toBe(TAG_CHUNK);
     expect(frame.length).toBe(CHUNK_HEADER_BYTES + payload.length);
@@ -77,6 +77,7 @@ describe('framing', () => {
     const decoded = decodeFrame(frame);
     expect(decoded?.kind).toBe('chunk');
     if (decoded?.kind !== 'chunk') return;
+    expect(decoded.chunk.space).toBe(SPACE);
     expect(decoded.chunk.hash).toBe(hash);
     expect(decoded.chunk.index).toBe(2);
     expect(decoded.chunk.chunks).toBe(5);

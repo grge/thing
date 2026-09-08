@@ -306,8 +306,8 @@ export const TAG_CONTROL = 0x01;
 export const TAG_CHUNK = 0x02;
 export const TAG_EPHEMERAL = 0x03;
 
-/** 1 tag + 32 hash + 4 index + 4 chunks + 4 total. */
-export const CHUNK_HEADER_BYTES = 45;
+/** 1 tag + 32 space + 32 hash + 4 index + 4 chunks + 4 total. */
+export const CHUNK_HEADER_BYTES = 77;
 
 const HASH_BYTES = 32;
 const UTF8 = new TextEncoder();
@@ -335,6 +335,18 @@ export function encodeEphemeral(msg: EphemeralMessage): Uint8Array {
 }
 
 export interface ChunkFrame {
+  /**
+   * The space this blob is for (`design/CONNECTIONS.md`).
+   *
+   * **A chunk names its space for the same reason a control frame does**, and
+   * the consequence of not doing so is worse: a completed blob is written to
+   * the receiving *session's* store, so a chunk routed to the wrong session
+   * puts the bytes in the wrong space and the space that asked waits forever.
+   *
+   * 32 bytes on a 16 KiB chunk — 0.2%, and the alternative is a transfer that
+   * silently misfiles whenever a connection carries more than one space.
+   */
+  readonly space: string;
   readonly hash: string;
   readonly index: number;
   readonly chunks: number;
@@ -350,6 +362,7 @@ export interface ChunkFrame {
  * matters when a transfer resumes mid-stream.
  */
 export function encodeChunk(
+  spaceHex: string,
   hashHex: string,
   index: number,
   chunks: number,
@@ -359,14 +372,25 @@ export function encodeChunk(
   const out = new Uint8Array(CHUNK_HEADER_BYTES + payload.length);
   const view = new DataView(out.buffer);
   out[0] = TAG_CHUNK;
-  for (let i = 0; i < HASH_BYTES; i++) {
-    out[1 + i] = Number.parseInt(hashHex.slice(i * 2, i * 2 + 2), 16);
-  }
-  view.setUint32(33, index, false);
-  view.setUint32(37, chunks, false);
-  view.setUint32(41, total, false);
+  writeHex(out, 1, spaceHex);
+  writeHex(out, 33, hashHex);
+  view.setUint32(65, index, false);
+  view.setUint32(69, chunks, false);
+  view.setUint32(73, total, false);
   out.set(payload, CHUNK_HEADER_BYTES);
   return out;
+}
+
+function readHex(data: Uint8Array, at: number): string {
+  let out = '';
+  for (let i = 0; i < HASH_BYTES; i++) out += data[at + i]!.toString(16).padStart(2, '0');
+  return out;
+}
+
+function writeHex(out: Uint8Array, at: number, hexText: string): void {
+  for (let i = 0; i < HASH_BYTES; i++) {
+    out[at + i] = Number.parseInt(hexText.slice(i * 2, i * 2 + 2), 16);
+  }
 }
 
 export type Frame =
@@ -399,15 +423,16 @@ export function decodeFrame(data: Uint8Array): Frame | null {
   if (tag === TAG_CHUNK) {
     if (data.length < CHUNK_HEADER_BYTES) return null;
     const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-    let hash = '';
-    for (let i = 0; i < HASH_BYTES; i++) hash += data[1 + i]!.toString(16).padStart(2, '0');
+    const space = readHex(data, 1);
+    const hash = readHex(data, 33);
     return {
       kind: 'chunk',
       chunk: {
+        space,
         hash,
-        index: view.getUint32(33, false),
-        chunks: view.getUint32(37, false),
-        total: view.getUint32(41, false),
+        index: view.getUint32(65, false),
+        chunks: view.getUint32(69, false),
+        total: view.getUint32(73, false),
         bytes: data.subarray(CHUNK_HEADER_BYTES),
       },
     };

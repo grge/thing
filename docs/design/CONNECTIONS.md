@@ -92,11 +92,18 @@ the ordinary path and there is no peeking.
 - **The ephemeral channel.** `ANNOUNCE`, `RESOLVE` and `RESOLVED` already name
   their space in the message. Resolution needed no connection to be *about*
   anything, which is why the flow above works up to step 4.
-- **Blob transfer.** Chunks are addressed by content hash and carry no space.
-  Two spaces holding the same blob is not a collision; it is deduplication.
 - **Who may connect.** A connection still proves nothing about authority. What
   a peer will hold is `acceptUnknownSpaces` and the hosting rule
   (`MAIN-SPACE.md`), unchanged.
+
+**Blob chunks name their space too, and this was missed.** The first version of
+this note said they did not need to — *"addressed by content hash, two spaces
+holding the same blob is deduplication"* — which is true about the *content* and
+irrelevant to the *routing*. A completed blob is written to the receiving
+session's store, so a chunk delivered to the wrong session on a shared
+connection files the bytes under the wrong space, and the space that asked waits
+forever. It cost 32 bytes on a 16 KiB chunk and a regression that reached a
+browser.
 
 ## What to check while building
 

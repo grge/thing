@@ -256,7 +256,7 @@ export class Session {
           this.send({ type: 'NO_BLOB', hash: msg.hash });
           return;
         }
-        await sendBlob(this.channel, hash, bytes, msg.fromChunk);
+        await sendBlob(this.channel, this.store.space, hash, bytes, msg.fromChunk);
         return;
       }
 

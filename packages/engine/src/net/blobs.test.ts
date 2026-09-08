@@ -7,6 +7,9 @@
  */
 import { hashLarge, hex } from '../core/index.js';
 import { describe, expect, it } from 'vitest';
+
+/** A chunk names its space (`design/CONNECTIONS.md`). */
+const SPACE = 'bb'.repeat(32);
 import { BlobReceiver, type Channel, HIGH_WATER, sendBlob } from './blobs.js';
 import { CHUNK_SIZE, decodeFrame } from './protocol.js';
 
@@ -42,7 +45,7 @@ describe('sending', () => {
     const hash = await hashLarge(bytes);
     const channel = new TestChannel();
 
-    await sendBlob(channel, hash, bytes, 0, noWait);
+    await sendBlob(channel, SPACE, hash, bytes, 0, noWait);
 
     const chunks = channel.chunks();
     expect(chunks).toHaveLength(3);
@@ -55,7 +58,7 @@ describe('sending', () => {
     const bytes = new Uint8Array(0);
     const hash = await hashLarge(bytes);
     const channel = new TestChannel();
-    await sendBlob(channel, hash, bytes, 0, noWait);
+    await sendBlob(channel, SPACE, hash, bytes, 0, noWait);
     expect(channel.chunks()).toHaveLength(1);
   });
 
@@ -66,7 +69,7 @@ describe('sending', () => {
     const hash = await hashLarge(bytes);
     const channel = new TestChannel();
 
-    await sendBlob(channel, hash, bytes, 2, noWait);
+    await sendBlob(channel, SPACE, hash, bytes, 2, noWait);
 
     const chunks = channel.chunks();
     expect(chunks).toHaveLength(2);
@@ -87,7 +90,7 @@ describe('sending', () => {
       if (waits >= 3) channel.bufferedAmount = 0;
     };
 
-    await sendBlob(channel, hash, bytes, 0, wait);
+    await sendBlob(channel, SPACE, hash, bytes, 0, wait);
     expect(waits).toBeGreaterThan(0);
     expect(channel.chunks()).toHaveLength(3);
   });
@@ -97,7 +100,7 @@ describe('receiving', () => {
   async function transfer(bytes: Uint8Array, receiver = new BlobReceiver()) {
     const hash = await hashLarge(bytes);
     const channel = new TestChannel();
-    await sendBlob(channel, hash, bytes, 0, noWait);
+    await sendBlob(channel, SPACE, hash, bytes, 0, noWait);
     let last;
     for (const chunk of channel.chunks()) last = await receiver.accept(chunk);
     return { hash, result: last!, receiver };
@@ -117,7 +120,7 @@ describe('receiving', () => {
     const bytes = bytesOf(CHUNK_SIZE * 3);
     const hash = await hashLarge(bytes);
     const channel = new TestChannel();
-    await sendBlob(channel, hash, bytes, 0, noWait);
+    await sendBlob(channel, SPACE, hash, bytes, 0, noWait);
 
     const receiver = new BlobReceiver();
     const first = await receiver.accept(channel.chunks()[0]!);
@@ -132,7 +135,7 @@ describe('receiving', () => {
     const bytes = bytesOf(CHUNK_SIZE);
     const hash = await hashLarge(bytes);
     const channel = new TestChannel();
-    await sendBlob(channel, hash, bytes, 0, noWait);
+    await sendBlob(channel, SPACE, hash, bytes, 0, noWait);
 
     const [chunk] = channel.chunks();
     const tampered = { ...chunk!, bytes: bytesOf(CHUNK_SIZE).map((b) => b ^ 0xff) };
@@ -146,7 +149,7 @@ describe('receiving', () => {
     const bytes = bytesOf(CHUNK_SIZE * 2);
     const hash = await hashLarge(bytes);
     const channel = new TestChannel();
-    await sendBlob(channel, hash, bytes, 0, noWait);
+    await sendBlob(channel, SPACE, hash, bytes, 0, noWait);
     const chunks = channel.chunks();
 
     const receiver = new BlobReceiver();
@@ -160,7 +163,7 @@ describe('receiving', () => {
     const bytes = bytesOf(CHUNK_SIZE * 4);
     const hash = await hashLarge(bytes);
     const channel = new TestChannel();
-    await sendBlob(channel, hash, bytes, 0, noWait);
+    await sendBlob(channel, SPACE, hash, bytes, 0, noWait);
     const chunks = channel.chunks();
 
     const receiver = new BlobReceiver();
@@ -179,8 +182,8 @@ describe('receiving', () => {
 
     const chA = new TestChannel();
     const chB = new TestChannel();
-    await sendBlob(chA, await hashLarge(a), a, 0, noWait);
-    await sendBlob(chB, await hashLarge(b), b, 0, noWait);
+    await sendBlob(chA, SPACE, await hashLarge(a), a, 0, noWait);
+    await sendBlob(chB, SPACE, await hashLarge(b), b, 0, noWait);
 
     // Interleaved.
     await receiver.accept(chB.chunks()[0]!);
@@ -197,7 +200,7 @@ describe('receiving', () => {
     const bytes = bytesOf(CHUNK_SIZE * 2);
     const hash = await hashLarge(bytes);
     const channel = new TestChannel();
-    await sendBlob(channel, hash, bytes, 0, noWait);
+    await sendBlob(channel, SPACE, hash, bytes, 0, noWait);
 
     const receiver = new BlobReceiver();
     await receiver.accept(channel.chunks()[0]!);

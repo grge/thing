@@ -618,6 +618,49 @@ describe('Client', () => {
     await client.close();
   });
 
+  it('routes a blob to the space that asked, on a shared connection', async () => {
+    // **A chunk names its space, and this is why.** A completed blob is written
+    // to the receiving *session's* store, so a chunk delivered to the wrong
+    // session on a shared connection files the bytes under the wrong space —
+    // and the space that asked waits forever, which looks exactly like a peer
+    // that never answered.
+    //
+    // Two spaces on one connection is now ordinary, so this is not a corner.
+    const one = await generateKeyPair();
+    const two = await generateKeyPair();
+    const oneId = hex(one.publicKey);
+    const twoId = hex(two.publicKey);
+
+    const host = new Client({ store: new MemoryStore() }, {});
+    const reader = new Client({ store: new MemoryStore() }, {});
+
+    const spaceOne = await host.hold(one.publicKey, one);
+    await host.hold(two.publicKey, two);
+    await reader.hold(one.publicKey);
+    await reader.hold(two.publicKey);
+
+    const [x, y] = pair();
+    // **The other space joins first**, so it is the one a fallback would pick.
+    // With the space that asked joining first, routing to "the first live
+    // session" happens to be right and the test proves nothing.
+    await reader.join(twoId, x);
+    await reader.join(oneId, x);
+    await host.join(oneId, y);
+    await until(() => reader.peers().length >= 2);
+
+    const { hash } = await makeFile(spaceOne, 'f.txt', new TextEncoder().encode('the bytes'));
+    await until(() => list(reader.space(oneId)!.state).some((e) => e.name === 'f.txt'));
+
+    reader.requestBlob(oneId, hash);
+    await until(async () => (await reader.space(oneId)!.getBlob(hash)) !== null);
+
+    // And it went to the right space, not merely somewhere.
+    expect(await reader.space(twoId)!.getBlob(hash)).toBeNull();
+
+    await host.close();
+    await reader.close();
+  });
+
   it('refuses an adopted connection for a space it does not hold', async () => {
     const key = await generateKeyPair();
     const a = new Client({ store: new MemoryStore() });

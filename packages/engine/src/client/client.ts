@@ -24,7 +24,7 @@ import { Session } from '../net/session.js';
 import type { Coverage, Divergence } from '../net/sync.js';
 import type { Answer } from '../net/ephemeral.js';
 import { formatLocator, type Locator, locatorKey, parseLocator } from '../net/locator.js';
-import type { Resolved } from '../net/protocol.js';
+import { CHUNK_HEADER_BYTES, type Resolved } from '../net/protocol.js';
 import { vvToWire } from '../net/wire.js';
 import type { SpaceId, SpaceStore } from '../store/index.js';
 import { referencedBlobs } from '../fs/files.js';
@@ -386,9 +386,9 @@ export class Client {
     conn.onFrame((data) => {
       void (async () => {
         const framed = frameSpace(data);
-        // Not a control frame — a blob chunk or an ephemeral message. Those are
-        // about the connection rather than about one space, so any live session
-        // can handle them and the first will do.
+        // An ephemeral message is about the connection rather than one space —
+        // announcements and resolution name their own space inside the message
+        // — so any live session can handle it and the first will do.
         if (framed === null) {
           for (const pending of sessions.values()) {
             const session = await pending;
@@ -1059,6 +1059,16 @@ export class Client {
  * stray frame would open a store.
  */
 export function frameSpace(data: Uint8Array): { space: SpaceId; greeting: boolean } | null {
+  // A blob chunk carries its space in the header (`design/CONNECTIONS.md`).
+  // Routing it matters more than it looks: a completed blob is written to the
+  // receiving *session's* store, so a chunk delivered to the wrong session
+  // files the bytes under the wrong space and the one that asked waits forever.
+  if (data[0] === 0x02) {
+    if (data.length < CHUNK_HEADER_BYTES) return null;
+    let space = '';
+    for (let i = 0; i < 32; i++) space += data[1 + i]!.toString(16).padStart(2, '0');
+    return { space, greeting: false };
+  }
   if (data.length < 2 || data[0] !== 0x01) return null;
   try {
     const msg: unknown = JSON.parse(new TextDecoder().decode(data.subarray(1)));

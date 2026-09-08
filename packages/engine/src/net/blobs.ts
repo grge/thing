@@ -48,6 +48,7 @@ async function drain(channel: Channel, wait: (ms: number) => Promise<void>): Pro
  */
 export async function sendBlob(
   channel: Channel,
+  space: string,
   hash: Uint8Array,
   bytes: Uint8Array,
   fromChunk = 0,
@@ -60,7 +61,7 @@ export async function sendBlob(
     await drain(channel, wait);
     const start = i * CHUNK_SIZE;
     const slice = bytes.subarray(start, Math.min(start + CHUNK_SIZE, bytes.length));
-    channel.send(encodeChunk(hashHex, i, chunks, bytes.length, slice));
+    channel.send(encodeChunk(space, hashHex, i, chunks, bytes.length, slice));
   }
 }
 
