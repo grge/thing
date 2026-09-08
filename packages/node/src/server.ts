@@ -257,6 +257,11 @@ export class Server {
     return this.client.reach(space);
   }
 
+  /** Turn blob mirroring on or off for one space (§2.4). */
+  async setMirrorOf(space: string, on: boolean): Promise<void> {
+    await this.client.setMirror(space, on);
+  }
+
   /** Any space this peer holds, by id. Null if it holds none such. */
   spaceOf(space: string): Space | null {
     return this.client.entry(space)?.space ?? null;
