@@ -20,7 +20,7 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { readText, writeText, type Space, type Uuid } from '@thing/engine';
+  import { hex, readText, writeText, type Space, type Uuid } from '@thing/engine';
   import type { Client } from '../client.js';
 
   interface Props {
@@ -50,28 +50,66 @@
 
   let timer: ReturnType<typeof setTimeout> | null = null;
 
+  /** The document a pending write belongs to, and the text it should have. */
+  let pending: { space: Space; id: Uuid; text: string } | null = null;
+
   async function flush(): Promise<void> {
     timer = null;
-    if (!writable) return;
-    const wanted = value;
+    if (!writable || pending === null) return;
+    const target = pending;
+    pending = null;
     saving = true;
     try {
-      await writeText(space, id, wanted);
-      applied = readText(space.state, id);
+      await writeText(target.space, target.id, target.text);
+      if (hex(target.id) === hex(id)) applied = readText(space.state, id);
     } finally {
       saving = false;
     }
   }
 
+  /** Flush only if what is pending belongs to the document being left. */
+  async function flushTo(key: string): Promise<void> {
+    if (pending === null) return;
+    if (`${spaceId}/${hex(pending.id)}` !== key) return;
+    await flush();
+  }
+
   function onInput(): void {
+    // Captured now, so a write that lands after the selection moves still goes
+    // to the document that was being typed into.
+    pending = { space, id, text: value };
     if (timer !== null) clearTimeout(timer);
     timer = setTimeout(() => void flush(), FLUSH_MS);
   }
 
-  onMount(() => {
-    value = readText(space.state, id);
-    applied = value;
+  /**
+   * Load whichever document is selected now.
+   *
+   * **Not `onMount`.** Svelte reuses this component when the selection moves to
+   * another document, so mounting happens once and the text would stay on
+   * whichever document was open first. Keyed on the id, and it flushes what is
+   * pending before switching — otherwise the last few keystrokes in one
+   * document would be written into the next.
+   */
+  let loaded: string | null = null;
+  $effect(() => {
+    const key = `${spaceId}/${hex(id)}`;
+    if (key === loaded) return;
+    const leaving = loaded;
+    loaded = key;
+    void (async () => {
+      if (leaving !== null && timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+        // Flush against the document being *left*, not the new one.
+        await flushTo(leaving);
+      }
+      value = readText(space.state, id);
+      applied = value;
+    })();
+  });
 
+  onMount(() => {
     const off = client.subscribe(() => {
       const now = readText(space.state, id);
       // **Only when someone else changed it.** If the fold matches what this
