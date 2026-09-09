@@ -12,6 +12,9 @@
  * state, which `folder.test.ts` checks over generated histories.
  */
 import {
+  decryptBlob,
+  encryptBlob,
+  encrypted,
   type Event,
   Folder,
   type Hash,
@@ -19,8 +22,11 @@ import {
   type KeyPair,
   type PublicKey,
   resumeFrom,
+  type ReadingKey,
   ROOT,
   type State,
+  type Subkeys,
+  subkeys,
   type Uuid,
   Writer,
 } from './core/index.js';
@@ -43,12 +49,31 @@ export interface SpaceOptions {
   /** This peer's writing key, absent for a read-only replica. */
   readonly writer?: KeyPair;
   /**
+   * The space's reading key, if this peer holds one (§6).
+   *
+   * **Absent is ordinary, not degraded.** A space may have no reading key at
+   * all, and a peer may hold a space whose key it lacks — §6.1 makes that a
+   * first-class way to participate: it stores, verifies, serves and relays, and
+   * folds the root and every attribute slice without reading any of them.
+   *
+   * Separate from `writer` because reading and writing are separate
+   * capabilities (`docs/design/CAPABILITIES.md`): a peer may hold either, both
+   * or neither, and conflating them is what makes "host without reading"
+   * impossible to express.
+   */
+  readonly reading?: ReadingKey;
+  /**
    * Where `wall` comes from.
    *
    * Injected rather than read from a clock, so a caller can make writes
    * reproducible. `wall` is display-only and resolves nothing (§2.1).
    */
   readonly now?: () => number;
+}
+
+/** Whether an event targets the root, which is never encrypted (`ROOT-IN-CLEAR.md`). */
+function isRoot(target: Uuid): boolean {
+  return hex(target) === hex(ROOT);
 }
 
 /** Emitted after every change, so a view can redraw without polling. */
@@ -60,11 +85,15 @@ export class Space {
   private writerState: Writer | null = null;
   private closed = false;
 
+  /** Derived once at open: HKDF per event would be a hash per value for a fixed answer. */
+  private readonly reading: Subkeys | null;
+
   private constructor(
     private readonly store: SpaceStore,
     private readonly options: SpaceOptions,
   ) {
-    this.folder = new Folder(options.key);
+    this.reading = options.reading === undefined ? null : subkeys(options.reading);
+    this.folder = new Folder(options.key, this.reading);
   }
 
   /**
@@ -222,7 +251,14 @@ export class Space {
     if (writer === null) throw new Error('space is not writable: no writing key');
 
     const wall = (this.options.now ?? Date.now)();
-    const event = await writer.write(target, attr, value, wall);
+    // Encrypted at the one place a value is written (§6), against the position
+    // this event is about to take — which is why the writer's own state is
+    // asked for it rather than guessed. Root-targeted events are exempt
+    // (`docs/design/ROOT-IN-CLEAR.md`), so a keyless peer still folds
+    // membership.
+    const at = writer.next();
+    const body = encrypted(this.reading, at, value, isRoot(target));
+    const event = await writer.write(target, attr, body, wall);
 
     const result = await this.receive([event]);
     if (result.appended.length === 0) {
@@ -232,15 +268,75 @@ export class Space {
     return event;
   }
 
-  /** Store bytes, returning the hash a `:body` should name (§2.4). */
+  /**
+   * Store bytes, returning the hash a `:body` should name (§2.4).
+   *
+   * **The hash is of the ciphertext**, which is what makes a keyless peer able
+   * to store and serve blobs at all: it addresses what it holds, and what it
+   * holds is what it was given. Nothing downstream learns that the bytes were
+   * encrypted.
+   *
+   * **Two puts of one plaintext give two blobs**, deliberately
+   * (`docs/working/ENCRYPTION-PLAN.md`). §2.4's deduplication was always
+   * emergent rather than structural, and nothing depends on it; a deterministic
+   * scheme would restore it at the cost of a confirm-a-known-file attack by
+   * whoever hosts you.
+   */
   putBlob(bytes: Uint8Array): Promise<Hash> {
     this.assertOpen();
-    return this.store.putBlob(bytes);
+    return this.store.putBlob(this.reading === null ? bytes : encryptBlob(this.reading, bytes));
   }
 
-  getBlob(hash: Hash): Promise<Uint8Array | null> {
+  /**
+   * Blob content, decrypted where this peer holds the key.
+   *
+   * Null covers both "no such blob" and "held, but not readable here", which
+   * are the same thing to a caller: bytes it cannot show. A peer without the
+   * key still stores and serves this blob to peers who can read it (§6.1).
+   */
+  async getBlob(hash: Hash): Promise<Uint8Array | null> {
     this.assertOpen();
-    return this.store.getBlob(hash);
+    const stored = await this.store.getBlob(hash);
+    if (stored === null || this.reading === null) return stored;
+    return decryptBlob(this.reading, stored);
+  }
+
+  /** Whether this peer holds a reading key for this space (§6). */
+  get readable(): boolean {
+    return this.reading !== null;
+  }
+
+  /**
+   * Whether this space looks encrypted to a peer that cannot read it.
+   *
+   * **A guess, and named as one.** Nothing in an event says "this value is
+   * ciphertext" — §2.1 keeps values opaque, and adding a marker would tell a
+   * hub something it currently cannot learn. So this reads the invariant
+   * `ROOT-IN-CLEAR.md` says a peer can check without knowing what anything says:
+   * root-targeted values are cleartext, everything else is ciphertext. The
+   * evidence used here is the cheap half of it — a `:kind` that does not name
+   * any rule this client holds, on an object that has a body.
+   *
+   * **Only ever asked when this peer holds no key**, because with one there is
+   * nothing to guess: values either decrypt or the space is not encrypted.
+   *
+   * It exists for one reason — so an interface can say *encrypted, no reading
+   * key* instead of showing a space that looks broken (§6.1: `:kind` is
+   * encrypted, so such a peer cannot pick a body rule at all, and that is
+   * deliberate rather than damage).
+   */
+  get looksEncrypted(): boolean {
+    if (this.reading !== null) return false;
+    let bodies = 0;
+    let unreadable = 0;
+    for (const o of this.state.objects.values()) {
+      if (o.body === undefined && o.bodyRuleMissing === undefined) continue;
+      bodies += 1;
+      if (o.bodyRuleMissing !== undefined) unreadable += 1;
+    }
+    // Every body unreadable, and at least one of them: a space where one object
+    // uses a rule this client lacks is the §3.4 case and looks quite different.
+    return bodies > 0 && unreadable === bodies;
   }
 
   /** What this peer knows, for reconciliation (§2.3). */
