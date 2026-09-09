@@ -32,6 +32,8 @@ import {
   type Keyring,
   type LocalState,
   Locators,
+  READING_KEY_LEN,
+  type ReadingKey,
   seedFor,
   type Stored,
   type PetnameStore,
@@ -39,6 +41,8 @@ import {
 } from '@thing/engine';
 
 const KEY_PREFIX = 'thing:key:';
+/** Reading keys, under their own prefix: a separate capability (§6). */
+const READ_PREFIX = 'thing:read:';
 const SPACES = 'thing:spaces';
 const PETNAMES = 'thing:petnames';
 const LOCATORS = 'thing:locators';
@@ -106,6 +110,26 @@ export class LocalKeyring implements Keyring {
     return true;
   }
 
+  async readingFor(space: string): Promise<ReadingKey | null> {
+    const stored = localStorage.getItem(READ_PREFIX + space);
+    if (stored === null) return null;
+    try {
+      const bytes = fromHex(stored);
+      return bytes.length === READING_KEY_LEN ? bytes : null;
+    } catch {
+      // Unreadable is "this browser cannot read that space" — ordinary (§6.1),
+      // and never a reason to treat the space itself as damaged.
+      return null;
+    }
+  }
+
+  async setReading(space: string, reading: ReadingKey): Promise<void> {
+    if (reading.length !== READING_KEY_LEN) {
+      throw new Error(`a reading key is ${READING_KEY_LEN} bytes, got ${reading.length}`);
+    }
+    localStorage.setItem(READ_PREFIX + space, hexOf(reading));
+  }
+
   async keyFor(space: string): Promise<KeyPair | null> {
     const seed = localStorage.getItem(KEY_PREFIX + space);
     if (seed === null) return null;
@@ -123,6 +147,7 @@ export class LocalKeyring implements Keyring {
 
   async forget(space: string): Promise<void> {
     localStorage.removeItem(KEY_PREFIX + space);
+    localStorage.removeItem(READ_PREFIX + space);
   }
 
   /**
@@ -134,6 +159,17 @@ export class LocalKeyring implements Keyring {
    */
   exportKey(space: string): string | null {
     return localStorage.getItem(KEY_PREFIX + space);
+  }
+
+  /**
+   * The reading key as hex, for putting in an `r=` link (`CAPABILITIES.md`).
+   *
+   * Synchronous and outside `Keyring` for the same two reasons `exportKey` is:
+   * it hands a secret to a caller deliberately, and a share panel builds its
+   * link inside a `$derived` that cannot await.
+   */
+  exportReading(space: string): string | null {
+    return localStorage.getItem(READ_PREFIX + space);
   }
 }
 

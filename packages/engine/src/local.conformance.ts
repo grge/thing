@@ -176,6 +176,78 @@ export function localConformanceTests(name: string, make: LocalBackends): void {
     });
   });
 
+  /**
+   * Reading keys (§6), which every backend must hold **beside** its writing
+   * keys rather than among them. `ENCRYPTION-PLAN.md` puts "a peer without the
+   * key can do X" here deliberately: the claim is about all three backends, so
+   * one set of expectations is the only way to be sure they agree.
+   */
+  describe(`${name}: reading keys`, () => {
+    const reading = new Uint8Array(32).fill(9);
+
+    it('keeps a reading key and finds it again', async () => {
+      const keys = await make.keys();
+      await keys.setReading('aa', reading);
+      const found = await keys.readingFor('aa');
+      expect(found).not.toBeNull();
+      expect(hex(found!)).toBe(hex(reading));
+      await after();
+    });
+
+    it('returns null for a space it can replicate but not read', async () => {
+      // The ordinary case, not a degraded one (§6.1).
+      const keys = await make.keys();
+      expect(await keys.readingFor('00'.repeat(32))).toBeNull();
+      await after();
+    });
+
+    it('holds a reading key for a space it cannot write', async () => {
+      // The capabilities are separate (`docs/design/CAPABILITIES.md`): reading
+      // and writing are held independently, and either without the other is a
+      // state a client must be able to be in.
+      const keys = await make.keys();
+      await keys.setReading('bb', reading);
+      expect(await keys.keyFor('bb')).toBeNull();
+      expect(await keys.readingFor('bb')).not.toBeNull();
+      await after();
+    });
+
+    it('holds a writing key for a space it cannot read', async () => {
+      const keys = await make.keys();
+      const minted = await keys.mint();
+      const id = hex(minted.publicKey);
+      expect(await keys.keyFor(id)).not.toBeNull();
+      expect(await keys.readingFor(id)).toBeNull();
+      await after();
+    });
+
+    it('replaces a reading key rather than keeping both', async () => {
+      const keys = await make.keys();
+      await keys.setReading('cc', reading);
+      const other = new Uint8Array(32).fill(4);
+      await keys.setReading('cc', other);
+      expect(hex((await keys.readingFor('cc'))!)).toBe(hex(other));
+      await after();
+    });
+
+    it('forgets a reading key along with the space', async () => {
+      const keys = await make.keys();
+      await keys.setReading('dd', reading);
+      await keys.forget('dd');
+      expect(await keys.readingFor('dd')).toBeNull();
+      await after();
+    });
+
+    it('refuses a key of the wrong length', async () => {
+      // A truncated key is not a weaker key, it is a different one — and it
+      // would fail as an authentication error at every read, which looks like
+      // corruption rather than like a mistake made here.
+      const keys = await make.keys();
+      await expect(keys.setReading('ee', new Uint8Array(16))).rejects.toThrow();
+      await after();
+    });
+  });
+
   describe(`${name}: inventory`, () => {
     it('remembers and lists spaces', async () => {
       const inv = await make.inventory();

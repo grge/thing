@@ -227,6 +227,9 @@ export class Client {
   private async openSpace(id: SpaceId, key: PublicKey, writer?: KeyPair): Promise<Space> {
     const store = await this.capabilities.store.open(id, key);
     const own = writer ?? (await this.capabilities.keys?.keyFor(id)) ?? null;
+    // Held or not, independently of the writing key: a peer may read a space it
+    // cannot write, write one it cannot read, or neither (§6.1).
+    const reading = (await this.capabilities.reading?.readingFor(id)) ?? null;
 
     // §7.3: two writers sharing one key fork that writer's chain, and both
     // branches verify. Where they can agree cheaply they should; a second
@@ -241,7 +244,11 @@ export class Client {
       ? NO_LOCK
       : await this.capabilities.lock(id);
     const writable = own !== null && (this.capabilities.lock === undefined || lock.held);
-    const space = await Space.open(store, writable ? { key, writer: own } : { key });
+    const space = await Space.open(store, {
+      key,
+      ...(writable ? { writer: own } : {}),
+      ...(reading === null ? {} : { reading }),
+    });
 
     const entry: Held = {
       key,

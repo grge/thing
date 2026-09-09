@@ -6,8 +6,8 @@
  * are checked against — so "remembers a space" means the same thing in a
  * browser and on a filesystem rather than two things that look similar.
  */
-import type { KeyPair } from './core/index.js';
-import { generateKeyPair } from './core/index.js';
+import type { KeyPair, ReadingKey } from './core/index.js';
+import { generateKeyPair, READING_KEY_LEN } from './core/index.js';
 import type { SpaceId } from './store/index.js';
 import type { PetnameStore } from './store/naming.js';
 import { type Inventory, type Keyring, type LocalState, seedFor } from './local.js';
@@ -15,6 +15,8 @@ import { Locators } from './locators.js';
 
 export class MemoryKeyring implements Keyring {
   private readonly keys = new Map<SpaceId, KeyPair>();
+  /** Reading keys, kept apart from writing keys: separate capabilities (§6). */
+  private readonly reading = new Map<SpaceId, ReadingKey>();
 
   async mint(): Promise<KeyPair> {
     const key = await generateKeyPair();
@@ -46,8 +48,20 @@ export class MemoryKeyring implements Keyring {
     return this.keys.get(space) ?? null;
   }
 
+  async readingFor(space: SpaceId): Promise<ReadingKey | null> {
+    return this.reading.get(space) ?? null;
+  }
+
+  async setReading(space: SpaceId, reading: ReadingKey): Promise<void> {
+    if (reading.length !== READING_KEY_LEN) {
+      throw new Error(`a reading key is ${READING_KEY_LEN} bytes, got ${reading.length}`);
+    }
+    this.reading.set(space, reading);
+  }
+
   async forget(space: SpaceId): Promise<void> {
     this.keys.delete(space);
+    this.reading.delete(space);
   }
 }
 

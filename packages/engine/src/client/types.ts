@@ -8,7 +8,7 @@
  */
 import type { Channel, Locator } from '../net/index.js';
 import type { LocatorCache } from '../local.js';
-import type { KeyPair, PublicKey } from '../core/index.js';
+import type { KeyPair, PublicKey, ReadingKey } from '../core/index.js';
 import type { Divergence } from '../net/sync.js';
 import type { Event } from '../core/index.js';
 import type { SpaceId } from '../store/index.js';
@@ -103,12 +103,35 @@ export interface WriterSource {
   keyFor(space: SpaceId): Promise<KeyPair | null>;
 }
 
+/**
+ * How a client resolves the key it should *read* a space with (§6).
+ *
+ * **Separate from `WriterSource`, not a widening of it.** Reading, writing and
+ * replicating are three capabilities and a peer may hold any combination
+ * (`docs/design/CAPABILITIES.md`); folding them into one source would make a
+ * hub — which holds neither, and is §6.1's ordinary case — express itself as
+ * two absences of one thing rather than as what it is.
+ *
+ * Absent altogether means this client reads no space, which is exactly what a
+ * ciphertext-only peer wants.
+ */
+export interface ReaderSource {
+  readingFor(space: SpaceId): Promise<ReadingKey | null>;
+}
+
 /** Everything platform-bound that a client needs. */
 export interface ClientCapabilities {
   /** Where spaces live. */
   readonly store: import('../store/index.js').Store;
   /** The writing key for a space, if this peer has one. */
   readonly keys?: WriterSource;
+  /**
+   * The reading key for a space, if this peer has one (§6).
+   *
+   * Absent means every space opens as ciphertext — which a hub does deliberately
+   * (§6.2: infrastructure without being an audience).
+   */
+  readonly reading?: ReaderSource;
   /**
    * Take the write lock for a space, or report that someone else has it.
    *

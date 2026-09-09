@@ -23,7 +23,7 @@
  * `PetnameStore` already lived in `store/naming.ts` and is re-exported here so
  * the four read as a set.
  */
-import { hex, type KeyPair, keyPairFromSeed, SEED_LEN } from './core/index.js';
+import { hex, type KeyPair, keyPairFromSeed, type ReadingKey, SEED_LEN } from './core/index.js';
 import type { Locator } from './net/locator.js';
 import type { SpaceId } from './store/index.js';
 
@@ -105,6 +105,28 @@ export interface Keyring {
   importFor(space: SpaceId, seed: string): Promise<boolean>;
   /** This client's writing key for a space, or null if it holds none. */
   keyFor(space: SpaceId): Promise<KeyPair | null>;
+  /**
+   * The reading key for a space, or null if this client holds none (§6).
+   *
+   * **Beside the writing keys, not among them.** A space may have a reading key
+   * or not, and a client may hold one for a space it cannot write, or a writing
+   * key for a space it cannot read — `docs/design/CAPABILITIES.md` makes these
+   * three separate capabilities, and a keyring that stored them together would
+   * make "hold one but not the other" the awkward case rather than the ordinary
+   * one it is.
+   *
+   * Null is not a failure. §6.1: replicating without reading is a first-class
+   * way to participate.
+   */
+  readingFor(space: SpaceId): Promise<ReadingKey | null>;
+  /**
+   * Keep a reading key someone shared, normally out of an `r=` link fragment.
+   *
+   * Not minted here the way a writing key is: a reading key belongs to the
+   * *space*, so every reader must hold the same one, and a client that minted
+   * its own would produce a space only it could read (§6).
+   */
+  setReading(space: SpaceId, reading: ReadingKey): Promise<void>;
   /** Destroy a key. Irreversible, and §5.1.1 is why that matters. */
   forget(space: SpaceId): Promise<void>;
 }
