@@ -1108,13 +1108,19 @@ there is encryption.
 
 §6, self-contained if stage 3 left addressing ciphertext-shaped.
 
-- Reading key in the link fragment.
+- **Root events are not encrypted** (`../design/ROOT-IN-CLEAR.md`). `:writers`
+  lives there, so encrypting it means a peer without the reading key cannot
+  evaluate membership — and an encrypted space could then only be hosted by
+  someone able to read it, which is what §6.2 exists to avoid. It is also the
+  bound OPEN.md 8a wanted: a keyless peer can tell whether an event will ever
+  fold. Costs `:name` in clear, deliberately.
+- Reading key in the link fragment — the `r=` field `CAPABILITIES.md` left for
+  this stage.
 - Authenticated cipher over event values and blobs, **nonce derived from
-  `(writer, seq)`** (§6). **That pair is unique only because one identity has
-  one chain.** If per-process append points land first (`../design/APPEND-POINTS.md`), the
-  nonce input must gain the point or two of one identity's processes reuse a
-  nonce under one key — which an authenticated cipher does not survive. Check
-  this before building, whichever way the core question goes.
+  `(writer, point, seq)`**. §6 specified `(writer, seq)` and flagged that the
+  pair is unique *only because one identity has one chain*; append points broke
+  that, and `../design/CAPABILITIES.md` settles the replacement — the same
+  triple that already keys a chain.
 - Derived subkeys for values and blobs.
 - A peer without the key: stores, serves, verifies, folds structure, folds no
   bodies (§6.1).

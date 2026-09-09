@@ -400,8 +400,9 @@ not have — or a space it cannot read (Section 6).
 
 **Permission in particular cannot be checked here**, for two reasons worth
 stating because the consequence is easy to mistake for an oversight. A peer
-without the reading key cannot evaluate membership at all — `:writers` is an
-encrypted value on the root — so refusing unadmitted writes at the store would
+without the reading key cannot evaluate membership at all — `:writers` is a
+value on the root, which `design/ROOT-IN-CLEAR.md` proposes leaving unencrypted
+for exactly this reason, and which is encrypted until that is built — so refusing unadmitted writes at the store would
 mean an encrypted space could only be hosted by someone who can read it, which
 is what §6.2 exists to avoid. And membership is time-dependent: §7.2.3 judges an
 event against the set *its author had seen*, and a peer may not yet hold the
@@ -1362,14 +1363,14 @@ authenticated cipher; what follows is what a construction has to get right.
   where they would: many writers encrypting independently, offline, with no
   coordination. Random nonces invite a birthday collision; a counter needs
   agreement nobody can reach. The envelope already carries a unique pair —
-  `(writer, seq)` — which is unique by construction under §7.3's constraint and
-  is the natural nonce input. **That dependency is load-bearing and easy to
-  miss:** the pair is unique *because* one key has one chain. Any change that
-  lets one identity hold two chains — per-process append points, say, which
-  `design/APPEND-POINTS.md` traces — makes two writers produce the same nonce for
-  different plaintexts under one key, which an authenticated cipher does not
-  survive. The nonce input must gain whatever component distinguishes the
-  chains, and this bullet must be revisited *before* §6 is built.
+  `(writer, seq)`. **That dependency was load-bearing and it has since broken:**
+  the pair was unique *because* one key had one chain, and per-process append
+  points (`design/APPEND-POINTS.md`) give one identity a chain per process. The
+  nonce input is therefore **`(writer, point, seq)`** — the same triple that
+  already keys a chain, which is not a coincidence: the point exists precisely
+  because `(writer, seq)` stopped identifying a position.
+  `design/CAPABILITIES.md` records the correction. The flag worked as intended:
+  written down when the assumption was made, found on re-reading, cost nothing.
 - **Encryption must be deterministic where deduplication is wanted.** §2.4 says
   identical content deduplicates; under a randomised scheme two writers adding
   the same file produce different ciphertexts and it does not, even within one
@@ -1380,6 +1381,13 @@ authenticated cipher; what follows is what a construction has to get right.
   made deliberately.
 - **Keys should be derived, not used raw.** One reading key with separate derived
   subkeys for event values and blobs keeps the two domains apart.
+- **Root-targeted events are not encrypted** — see `design/ROOT-IN-CLEAR.md`.
+  `:writers` lives on the root, so encrypting it means a peer without the
+  reading key cannot evaluate membership, and an encrypted space could only be
+  hosted by someone able to read it. Unlike the `:kind` exemption rejected in
+  §6.1, this is one node rather than one per object, and what it holds is a list
+  of public keys that holding the space id already discloses. It costs `:name`
+  in clear, which is a deliberate trade rather than an oversight.
 
 **One key per space, covering all of it.** There is no per-object or per-subtree
 encryption: holding the reading key means reading everything in the space, and
