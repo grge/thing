@@ -34,7 +34,9 @@ import {
   entry,
   links,
   type Locator,
+  newReadingKey,
   parseLocator,
+  READING_KEY_LEN,
   referencedBlobs,
   targetOf,
   type Uuid,
@@ -93,6 +95,16 @@ export interface Tab {
    * able to serve the content to someone else.
    */
   readonly mirrors: boolean;
+  /** Whether this client holds a reading key for the space (§6). */
+  readonly readable: boolean;
+  /**
+   * Whether the space looks encrypted to a client that cannot read it.
+   *
+   * The pair matters, not either alone: `!readable && looksEncrypted` is the
+   * one state an interface must name — *encrypted, no reading key* — because
+   * every body is unreadable and the space would otherwise look broken (§6.1).
+   */
+  readonly looksEncrypted: boolean;
 }
 
 export interface ClientOptions {
@@ -131,6 +143,7 @@ export class Client extends PeerClient {
     super({
       store,
       keys: { keyFor: (id) => this.local.keys.keyFor(id) },
+      reading: { readingFor: (id) => this.local.keys.readingFor(id) },
       // Through a facade: `local` is a field, so it is not initialised when
       // this object is built for `super`. The engine only ever calls these.
       locators: {
@@ -381,6 +394,8 @@ export class Client extends PeerClient {
       forks: held.forks,
       peers: held.connections.size,
       mirrors: this.mirrors(id),
+      readable: held.space.readable,
+      looksEncrypted: held.space.looksEncrypted,
     };
   }
 
@@ -423,6 +438,34 @@ export class Client extends PeerClient {
     await this.release(id);
     const key = fromHex(id);
     await this.hold(key, (await this.local.keys.keyFor(id)) ?? undefined);
+    this.changed();
+    return true;
+  }
+
+  /**
+   * Keep a reading key from a link, and reopen so the space can read (§6).
+   *
+   * **Not the same act as `adoptKey`.** That one installs the space's authority
+   * and cannot be undone; this one grants sight of what is already there. It is
+   * also not revocable (§6.3) — anyone who has held a reading key holds it
+   * permanently — but that is a property of the key rather than of installing
+   * it here.
+   *
+   * Reopens for the same reason `adoptKey` does: a `Space` takes its reading
+   * key at open, and one already open holds ciphertext.
+   */
+  async adoptReading(id: string, reading: string): Promise<boolean> {
+    let bytes: Uint8Array;
+    try {
+      bytes = fromHex(reading);
+    } catch {
+      return false;
+    }
+    if (bytes.length !== READING_KEY_LEN) return false;
+
+    await this.local.keys.setReading(id, bytes);
+    await this.release(id);
+    await this.hold(fromHex(id), (await this.local.keys.keyFor(id)) ?? undefined);
     this.changed();
     return true;
   }
@@ -562,8 +605,31 @@ export class Client extends PeerClient {
    *
    * A client that only views other people's spaces never needs this.
    */
-  async create(name?: string): Promise<Tab> {
+  async create(name?: string, options: { encrypted?: boolean } = {}): Promise<Tab> {
+    // Encrypted unless asked otherwise. A browser space is somebody's own
+    // material, and the cost of the default is paid by whoever wants to be
+    // hosted rather than by whoever forgot to ask — see `looksEncrypted` and
+    // LEARNINGS.md §21 for what a keyless host can and cannot do for one.
     const key = await this.local.keys.mint();
+
+    // **A reading key is minted before the space is opened**, so that every
+    // event it ever holds is encrypted under it. A space that gained one later
+    // would have cleartext events before it and ciphertext after — consistent,
+    // and readable only by someone who knows to try both, which is not a state
+    // worth being able to reach by accident.
+    //
+    // **On by default**, and off is the deliberate act. §6 makes the reading
+    // key optional, so this is a choice rather than a consequence: a space made
+    // in a browser is somebody's own material, and `CAPABILITIES.md` already
+    // makes "help me host this" a different link rather than a different space.
+    //
+    // What it costs is in LEARNINGS.md §21: a keyless host relays every event
+    // and cannot mirror blobs, because naming a blob means reading `:parent`
+    // and `:body`. Structure stays alive without a reader; file bytes do not.
+    if (options.encrypted !== false) {
+      await this.local.keys.setReading(hex(key.publicKey), newReadingKey());
+    }
+
     const space = await this.hold(key.publicKey, key);
     // **Declare a writer set naming this client alone** (`CAPABILITIES.md`).
     // An *absent* set admits everyone (§7.2.1), and a share link is made of the
@@ -734,7 +800,10 @@ export class Client extends PeerClient {
    * stored one: a share link's staleness is fixed by resharing it, where a
    * rotted address inside a space propagates to everyone holding it.
    */
-  shareLink(id: string, options: { locator?: string; grant?: 'read' | 'administer' } = {}): string {
+  shareLink(
+    id: string,
+    options: { locator?: string; grant?: 'replicate' | 'read' | 'administer' } = {},
+  ): string {
     const entry = this.entry(id);
     if (entry === undefined) throw new Error('that space is not open');
 
@@ -746,6 +815,18 @@ export class Client extends PeerClient {
     if (options.locator !== undefined && options.locator !== '') {
       params.set('l', options.locator);
     }
+    // **`r=` is what invites someone in** (`CAPABILITIES.md`). A link with `k`
+    // alone replicates: the recipient verifies and serves and reads nothing,
+    // which §6.2 makes a genuinely useful thing to hand out. Adding `r` is a
+    // different act, so it is a different link rather than a mode flag.
+    //
+    // Omitted for a space with no reading key at all, which is not an error —
+    // an unencrypted space is read by anyone holding `k`.
+    if (options.grant === 'read' || options.grant === 'administer') {
+      const reading = this.local.keys.exportReading(id);
+      if (reading !== null) params.set('r', reading);
+    }
+
     if (options.grant === 'administer') {
       // **This hands over the space itself** (`CAPABILITIES.md`), not "write
       // access": whoever holds the seed writes the root, so they decide who
@@ -764,6 +845,16 @@ export class Client extends PeerClient {
   override async close(): Promise<void> {
     await super.close();
     this.signalling?.close();
+  }
+
+  /**
+   * Whether this browser holds a reading key for a space (§6).
+   *
+   * For the share panel, which offers a choice — read or replicate — that only
+   * exists where there is a reading key to withhold.
+   */
+  isEncrypted(id: string): boolean {
+    return this.local.keys.exportReading(id) !== null;
   }
 
   /** A key this browser can write with, for showing whether a tab is editable. */
@@ -824,6 +915,15 @@ export interface ShareLink {
   readonly token: string | null;
   readonly locator: string | null;
   /**
+   * The space's reading key, when the link invites the recipient in (§6).
+   *
+   * **A link without it still works** — it replicates, verifies and serves, and
+   * reads nothing (§6.2). That is the distinction `CAPABILITIES.md` draws
+   * between asking someone to help keep a space alive and inviting them into
+   * it, and it is expressed by what the link contains rather than by a flag.
+   */
+  readonly reading: string | null;
+  /**
    * The space's own seed, when a link hands over the space (`CAPABILITIES.md`).
    *
    * Not "write access": whoever holds this writes the root, so they decide who
@@ -853,7 +953,14 @@ export function parsePasted(text: string): ShareLink | null {
   if (hash !== -1) return parseShareLink(trimmed.slice(hash));
 
   if (/^[0-9a-f]{64}$/i.test(trimmed)) {
-    return { key: trimmed.toLowerCase(), name: null, token: null, locator: null, seed: null };
+    return {
+      key: trimmed.toLowerCase(),
+      name: null,
+      token: null,
+      locator: null,
+      reading: null,
+      seed: null,
+    };
   }
   return null;
 }
@@ -862,11 +969,21 @@ export function parseShareLink(fragment: string): ShareLink | null {
   const params = new URLSearchParams(fragment.replace(/^#/, ''));
   const key = params.get('k');
   if (key === null || key.length !== 64 || !/^[0-9a-f]+$/i.test(key)) return null;
+  const reading = params.get('r');
   return {
     key: key.toLowerCase(),
     name: params.get('n'),
     token: params.get('t'),
     locator: params.get('l'),
+    /**
+     * The reading key, if this link invites the recipient in (§6).
+     *
+     * Checked for shape here rather than at use: a malformed `r` is a link that
+     * replicates, which is a working outcome, and is much better than a key
+     * that installs and then fails authentication at every read — which looks
+     * like a corrupt space rather than like a bad link.
+     */
+    reading: reading !== null && /^[0-9a-f]{64}$/i.test(reading) ? reading.toLowerCase() : null,
     /** The space's own seed, if this link hands over the space (§7.2.1). */
     seed: params.get('w'),
   };

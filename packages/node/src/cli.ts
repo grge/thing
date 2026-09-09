@@ -7,7 +7,7 @@
  * either its key or a path of link names from the space this peer serves.
  *
  * ```
- *   thing init [--name X]              mint a space and serve it
+ *   thing init [--name X] [--encrypted] mint a space and serve it
  *   thing serve [--port N]             accept connections
  *   thing ls [path]                    what a space contains
  *   thing put <file> [--as name]       write a file in
@@ -16,6 +16,7 @@
  *   thing unlink <name>|--key <key>    remove one
  *   thing links                        every link this peer holds
  *   thing key                          this peer's space key, for sharing
+ *   thing read [<key>]                 show the reading key, or install one
  * ```
  *
  * **Writing commands take `--at <url>`.** Per-process append points (§2.1) mean
@@ -48,12 +49,14 @@ import {
   makeFile,
   makeLink,
   read,
+  READING_KEY_LEN,
   ROOT,
   type Space,
   type Uuid,
 } from '@thing/engine';
 
 import { createSpace, Server } from './server.js';
+import { FileKeyring } from './local.js';
 
 const UTF8 = new TextEncoder();
 
@@ -213,7 +216,12 @@ export async function main(argv: readonly string[]): Promise<number> {
         process.stderr.write('this peer already serves a space; `thing key` shows which\n');
         return 1;
       }
-      const key = await createSpace(dir);
+      // `--encrypted` mints a reading key with the space (§6), so every event
+      // it ever holds is encrypted. Off by default: an unencrypted space is the
+      // one anyone can host, read and help with, and §6 makes the reading key
+      // optional rather than assumed.
+      const encrypted = flags['encrypted'] !== undefined;
+      const key = await createSpace(dir, { encrypted });
       await setMainSpace(dir, key.publicKey);
 
       const opened = await openMain(dir);
@@ -231,6 +239,51 @@ export async function main(argv: readonly string[]): Promise<number> {
         await opened.server.close();
       }
       process.stdout.write(`${hex(key.publicKey)}\n`);
+      return 0;
+    }
+
+    /**
+     * The reading key: show it, or install one someone shared (§6).
+     *
+     * Separate from `key`, because they are separate capabilities
+     * (`design/CAPABILITIES.md`) — and printing a reading key beside a space id
+     * would make handing over the first look like part of telling someone the
+     * second.
+     */
+    case 'read': {
+      const space = await mainSpace(dir);
+      if (space === null) {
+        process.stderr.write('no space here yet — run `thing init`\n');
+        return 1;
+      }
+      const keyring = new FileKeyring(dir);
+      const id = hex(space);
+      const given = positional[1];
+
+      if (given !== undefined) {
+        let bytes: Uint8Array;
+        try {
+          bytes = fromHex(given.trim());
+        } catch {
+          process.stderr.write('that is not a hex reading key\n');
+          return 1;
+        }
+        if (bytes.length !== READING_KEY_LEN) {
+          process.stderr.write(`a reading key is ${READING_KEY_LEN} bytes\n`);
+          return 1;
+        }
+        await keyring.setReading(id, bytes);
+        return 0;
+      }
+
+      const held = await keyring.readingFor(id);
+      if (held === null) {
+        // Not an error: §6.1 makes replicating without reading an ordinary way
+        // to participate, and this peer may simply be hosting.
+        process.stderr.write('this peer holds no reading key for that space\n');
+        return 1;
+      }
+      process.stdout.write(`${hex(held)}\n`);
       return 0;
     }
 
@@ -469,7 +522,9 @@ function activityLog(): { onConnect?: (space: string | null, peer: string) => vo
 const USAGE = `thing — one space, and links to others
 
   thing init [--name X]              mint a space and serve it
+             [--encrypted]           give it a reading key (§6)
   thing key                          this peer's space key, for sharing
+  thing read [<key>]                 show the reading key, or install one
   thing serve [--port N] [--quiet]   accept connections
               [--host-depth N]       host spaces linked from this one (default 1)
   thing ls [path]                    what this space contains

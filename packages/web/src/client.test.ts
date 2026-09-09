@@ -975,6 +975,90 @@ describe('share links', () => {
   });
 });
 
+/**
+ * The reading key in a link (§6, `design/CAPABILITIES.md`).
+ *
+ * The distinction being checked is the one the design draws: a link with `k`
+ * alone replicates, and one with `r` too invites the recipient in. They are
+ * different links rather than one link with a mode flag.
+ */
+describe('reading keys in links', () => {
+  it('an unencrypted space shares a link with no r=', async () => {
+    // Opting out: new spaces are encrypted by default, so this is the
+    // deliberate case rather than the ordinary one.
+    const client = new Client();
+    const tab = await client.create('mine', { encrypted: false });
+    const link = parseShareLink(new URL(client.shareLink(tab.id, { grant: 'read' })).hash);
+    expect(link?.reading).toBeNull();
+    await client.close();
+  });
+
+  it('makes a new space encrypted by default', async () => {
+    const client = new Client();
+    const tab = await client.create('mine');
+    expect(client.isEncrypted(tab.id)).toBe(true);
+    await client.close();
+  });
+
+  it('an encrypted space shares a read link carrying r=', async () => {
+    const client = new Client();
+    const tab = await client.create('mine', { encrypted: true });
+    const link = parseShareLink(new URL(client.shareLink(tab.id, { grant: 'read' })).hash);
+    expect(link?.reading).toMatch(/^[0-9a-f]{64}$/);
+    await client.close();
+  });
+
+  it('a replicate link omits r= even for an encrypted space', async () => {
+    // §6.2: handing someone the space key asks them to help keep it alive;
+    // handing them the reading key too invites them in. Different acts.
+    const client = new Client();
+    const tab = await client.create('mine', { encrypted: true });
+    const link = parseShareLink(new URL(client.shareLink(tab.id)).hash);
+    expect(link?.key).toBe(tab.id);
+    expect(link?.reading).toBeNull();
+    await client.close();
+  });
+
+  it('installs a reading key from a link, and then reads', async () => {
+    const owner = new Client();
+    const tab = await owner.create('mine', { encrypted: true });
+    await makeFile(owner.space(tab.id)!, 'notes.txt', new TextEncoder().encode('hello'));
+    const link = parseShareLink(new URL(owner.shareLink(tab.id, { grant: 'read' })).hash)!;
+
+    // A different browser, holding nothing.
+    (globalThis as { localStorage?: unknown }).localStorage = new MemoryStorage();
+    const other = new Client();
+    const bytes = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) bytes[i] = Number.parseInt(link.key.slice(i * 2, i * 2 + 2), 16);
+    await other.open(bytes);
+
+    expect(await other.adoptReading(link.key, link.reading!)).toBe(true);
+    expect(other.view().find((t) => t.id === link.key)?.readable).toBe(true);
+    await other.close();
+    await owner.close();
+  });
+
+  it('refuses a malformed reading key rather than installing one that cannot read', async () => {
+    // A key of the wrong width would install and then fail authentication at
+    // every read, which looks like a corrupt space rather than a bad link.
+    const client = new Client();
+    const tab = await client.create('mine');
+    expect(await client.adoptReading(tab.id, 'ab'.repeat(8))).toBe(false);
+    expect(await client.adoptReading(tab.id, 'nothex')).toBe(false);
+    await client.close();
+  });
+
+  it('reads r= out of a pasted link, and ignores a malformed one', () => {
+    const key = 'ab'.repeat(32);
+    const good = 'cd'.repeat(32);
+    expect(parsePasted(`#k=${key}&r=${good}`)?.reading).toBe(good);
+    // Malformed `r` leaves a link that still replicates, which is a working
+    // outcome rather than a broken one.
+    expect(parsePasted(`#k=${key}&r=tooshort`)?.reading).toBeNull();
+    expect(parsePasted(`#k=${key}`)?.reading).toBeNull();
+  });
+});
+
 describe('parsePasted', () => {
   const key = 'ab'.repeat(32);
 

@@ -25,6 +25,7 @@ import {
   type PublicKey,
   type Locator,
   type LocatorCache,
+  newReadingKey,
   parseLocator,
   type PeerStatus,
   type Space,
@@ -80,6 +81,10 @@ export class Server {
       {
         store: new FileStore(options.dir),
         keys: { keyFor: (id) => this.keyring.keyFor(id) },
+        // A server holds a reading key only where someone put one in its
+        // keyring. Ordinarily nobody does, and it hosts ciphertext it cannot
+        // read — §6.2's infrastructure without an audience.
+        reading: { readingFor: (id) => this.keyring.readingFor(id) },
         // No lock. Per-process append points mean two processes writing one
         // space extend separate chains and never contend (§2.1), so a lock
         // would prevent something that is no longer a hazard.
@@ -322,7 +327,19 @@ export class Server {
   }
 }
 
-/** Mint a space for a peer that has none yet. */
-export async function createSpace(dir: string): Promise<KeyPair> {
-  return new FileKeyring(dir).mint();
+/**
+ * Mint a space for a peer that has none yet.
+ *
+ * `encrypted` mints a reading key alongside it (§6), before the space is ever
+ * opened — so every event it holds is encrypted under it. A space that gained
+ * one later would have cleartext events before and ciphertext after, which is
+ * consistent and readable only by someone who knows to try both.
+ */
+export async function createSpace(dir: string, options: { encrypted?: boolean } = {}): Promise<KeyPair> {
+  const keyring = new FileKeyring(dir);
+  const key = await keyring.mint();
+  if (options.encrypted === true) {
+    await keyring.setReading(hex(key.publicKey), newReadingKey());
+  }
+  return key;
 }
