@@ -71,6 +71,18 @@ export class ChainSet {
       list.sort((a, b) => a.seq - b.seq);
       const chain = emptyChain();
       for (const e of list) {
+        // **A repeated seq is skipped, not a stop.** A log may hold the same
+        // event more than once — `append` is what deduplicates, and anything
+        // that wrote around it, or a crash between the write and the state
+        // update, leaves copies behind. Sorting then puts them adjacent, so a
+        // strict `frontier + 1` check saw `0, 0, 0, 1, …`, stopped at the
+        // second copy, and left the chain pinned at 0 forever: every later
+        // event became a permanent gap, and the space showed a file with a
+        // name and no content.
+        if (e.seq <= chain.frontier) continue;
+        // A genuine hole does stop it. Events after a gap are held aside
+        // rather than applied (§2.5), and the frontier is by definition the
+        // highest *contiguous* sequence number.
         if (e.seq !== chain.frontier + 1) break;
         chain.frontier = e.seq;
         chain.tip = eventId(this.space, e);
