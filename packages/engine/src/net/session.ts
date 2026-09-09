@@ -508,23 +508,6 @@ export class Session {
     return this.ephemeral.blobCount(this.options.peer);
   }
 
-  /** Say where we are in a space (§10). Opaque payload, expires on its own. */
-  presence(space: string, payload: unknown, ttl?: number): void {
-    this.sendEphemeral(
-      ttl === undefined ? presenceMessage(space, payload) : presenceMessage(space, payload, ttl),
-    );
-  }
-
-  /** Who this peer says is present in a space, and what they last said. */
-  presenceIn(space: string): Map<string, unknown> {
-    return this.ephemeral.present(space);
-  }
-
-  /** How many blobs this peer has advertised holding (§2.4). */
-  get blobsAdvertised(): number {
-    return this.ephemeral.blobCount(this.options.peer);
-  }
-
   /** Tell the peer what blobs we hold (§2.4). */
   async announceBlobs(): Promise<void> {
     const hashes: string[] = [];

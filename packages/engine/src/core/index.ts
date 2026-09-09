@@ -111,3 +111,4 @@ export {
 } from './sign.js';
 
 export { resumeFrom, Writer, type WriterState } from './writer.js';
+export { ordered, type SeqAcc, type SeqNode, type SeqOp } from './sequence.js';
