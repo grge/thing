@@ -30,6 +30,7 @@
   } from '@thing/engine';
   import type { Client } from '../client.js';
   import { rendererFor } from './renderers/index.js';
+  import ObjectHeader from './ObjectHeader.svelte';
   import TextEdit from './TextEdit.svelte';
 
   interface Props {
@@ -164,6 +165,9 @@
 
 <section class="preview">
   <h2>{item?.name ?? 'file'}</h2>
+  <!-- What the object *is*, above whatever is showing it: the same slices for
+       a file, a folder, a link and a document, in the fold's own vocabulary. -->
+  <ObjectHeader folded={space.state} {spaceId} {id} />
 
   {#if isTextDoc}
     <!-- A text document is live state, not bytes: it has no blob to fetch and
