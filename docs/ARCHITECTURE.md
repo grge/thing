@@ -1219,6 +1219,10 @@ question for observation rather than argument.
 
 ### 5.4 Sharing
 
+**See `design/CAPABILITIES.md`**, which settles what a link carries when there
+is more than one key to carry: replicating, reading and administering are three
+different grants and the format below has one field for them.
+
 A share link carries the key in the URL fragment, so it never reaches a server:
 
 ```

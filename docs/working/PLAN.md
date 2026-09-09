@@ -1062,6 +1062,30 @@ resolution is deterministic, and it belongs with the defensive work.
 
 ---
 
+## Stage 9.5 — Capabilities: three keys, and what a link carries
+
+**Designed, not built.** `../design/CAPABILITIES.md` has the reasoning.
+
+Two things block putting this on a public server, and only one of them was
+obvious.
+
+**Every space is world-writable.** `mayWrite` admits everyone when no writer set
+is declared, and nothing writes `:writers` — so a space is writable by anyone
+holding its public key, which is what a share link is made of. Sharing a space
+to be *read* currently hands over the ability to change it. `Space.addWriter`
+and `Space.admitted` both exist with no callers.
+
+**A link carries one key and there are three.** Replicate, read and administer
+are different acts (§6.2 says so); the format has one field.
+
+- `create` declares a writer set naming its creator.
+- Three link shapes, by what they contain rather than a mode flag.
+- `writable` in a UI must distinguish *I hold a key* from *my key is admitted*.
+- An absent writer set still admits everyone, so existing spaces are unaffected.
+
+**Done when:** a space made in one browser is read-only in another until
+admitted, and a share link can be made that grants reading without writing.
+
 ## Stage 10 — Encryption
 
 §6, self-contained if stage 3 left addressing ciphertext-shaped.
