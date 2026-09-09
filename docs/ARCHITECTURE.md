@@ -1817,6 +1817,14 @@ answerable without disturbing it:
   the workaround — pre-authorising a batch of keys — is clumsy.
 - **Whether moderator actions need their own attribute vocabulary** or are
   ordinary writes distinguished only by who signed them.
+
+**And whether two levels are enough.** The model has exactly *may write
+everything* and *may write nothing*. Four separate difficulties have each wanted
+a third — hosting a space means write access to a hub's main space, since a link
+is an ordinary write; unadmitted writes cost storage nobody bounds; moderators
+are a label nothing enforces; and encryption forced the authority model outside
+the privacy model rather than under it. Each has a local answer and the pattern
+is only visible together: `working/LEARNINGS.md` §19.
 - **What bounds an unadmitted writer's storage cost.** Their events fold into
   nothing, so they change no state — but the substrate stores and replicates
   them regardless, for the reasons §2.3 gives, and nothing removes them. Anyone

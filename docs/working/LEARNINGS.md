@@ -473,6 +473,58 @@ number follows is a decision about a *chain*, so deciding it and recording it
 must be one step. The conformance suite has it, so a fourth store cannot get it
 wrong quietly.
 
+## 19. The permission model is too simple, and it is starting to show
+
+**The model is one sentence:** whoever holds the space key decides who may
+write. That is its great virtue — §7.2.1 says so, and it is why the fold has no
+fixed point to find and why membership needs no merge semantics. It should not
+be given up lightly.
+
+But four separate difficulties this month turned out to be the same difficulty,
+and it is worth recording that they are related rather than each being fixed
+where it surfaced.
+
+**Encryption and authority collided.** `:writers` is a root value, so encrypting
+it means a peer without the reading key cannot evaluate membership — and an
+encrypted space could then only be hosted by someone able to read it, which is
+what §6.2 exists to avoid. `ROOT-IN-CLEAR.md` resolves it by exempting the root,
+which works, but notice what the fix is: **the authority model had to be moved
+outside the privacy model** because they could not be layered. Two mechanisms
+that should be independent were not.
+
+**Unadmitted writes cost storage nobody bounds** (OPEN.md 8a). Because a store
+cannot check permission — for the reason above, and because §7.2.3 makes
+membership time-dependent — anyone who can reach a space can make it grow. The
+events fold into nothing, so this is not a correctness failure; it is authority
+that stops at the fold and does not reach the transport.
+
+**Sharing a space means write access to a hub's main space.** Hosting is a link
+(`MAIN-SPACE.md`), a link is an ordinary write, so *"please host my space"* and
+*"let me edit your space"* are the same request. A public hub either admits
+strangers as writers of its own main space or hosts nothing they ask for. The
+authorisation the design wanted — *this person may add a link* — cannot be
+expressed, because the vocabulary has one verb.
+
+**Moderators are a label the engine does not enforce.** §7.2.2 defines them,
+`isModerator` exists, nothing calls it, and nothing can: a moderator action is
+an ordinary write and the fold has no way to treat it differently. The concept
+was added because "several administrators" needed an answer that was not
+sharing the space key — and what it produced was a note on the root that any
+application may consult or ignore.
+
+**What connects them.** The model has exactly two levels — *may write
+everything*, or *may write nothing* — and every one of these is a request for a
+third: may write here but not there, may add links but not files, may act as
+this role. Each has been worked around locally, and the workarounds are
+reasonable in isolation. The pattern is only visible when they are listed
+together.
+
+**This is not a call to build capability-based ACLs.** The simplicity is
+load-bearing and most of what it buys is real. It is a note that the next
+authority question should be answered by *revisiting the model* rather than by
+adding a fifth workaround — and that a rewrite of `ARCHITECTURE.md` should
+treat §6 and §7 as one problem rather than two chapters.
+
 ## The nuclear revoke
 
 **The problem it answers.** `deps` (see `../design/DEPS.md`) narrows backdating without
