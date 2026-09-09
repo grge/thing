@@ -15,6 +15,24 @@ export {
   Writer as ByteWriter,
 } from './bytes.js';
 
+export {
+  decryptBlob,
+  decryptValue,
+  decrypted,
+  encryptBlob,
+  encryptValue,
+  encrypted,
+  newReadingKey,
+  NONCE_LEN,
+  type Position,
+  READING_KEY_LEN,
+  type ReadingKey,
+  type Subkeys,
+  subkeys,
+  TAG_LEN,
+  valueNonce,
+} from './cipher.js';
+
 export { CODE_ALPHABET, CODE_LENGTH, codeFor, isCode } from './code.js';
 
 export {

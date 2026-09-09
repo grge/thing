@@ -17,6 +17,7 @@ import { chainOf } from './chain.js';
 import { type Event, type EventBody, eventId, newDeps, newPoint, type Point, signEvent, type Uuid } from './event.js';
 import type { Hash } from './hash.js';
 import { hex } from './bytes.js';
+import type { Position } from './cipher.js';
 import type { KeyPair, PublicKey } from './sign.js';
 
 export interface WriterState {
@@ -79,6 +80,21 @@ export class Writer {
   /** This writer's chain id, for asking a store about its own events. */
   get chain(): string {
     return chainOf({ writer: this.key.publicKey, point: this.point });
+  }
+
+  /**
+   * Where the next `write` will land: `(writer, point, seq)`.
+   *
+   * Exists for the cipher, which needs a value's position *before* the event
+   * carrying it is minted — the nonce is over the position and the ciphertext
+   * is what gets signed, so the order is fixed (§6, `CAPABILITIES.md`).
+   *
+   * **Reads `seq` rather than advancing it.** `write` is what advances a chain,
+   * and a `next` that consumed a sequence number would silently skip one for any
+   * caller that asked without writing — producing a gap `checkLink` rejects.
+   */
+  next(): Position {
+    return { writer: this.key.publicKey, point: this.point, seq: this.seq };
   }
 
   get state(): WriterState {
