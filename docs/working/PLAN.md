@@ -1107,6 +1107,8 @@ there is encryption.
 ## Stage 10 — Encryption
 
 §6, self-contained if stage 3 left addressing ciphertext-shaped.
+**`ENCRYPTION-PLAN.md` has the decisions and the seams** — read that first; the
+bullets below are the original sketch.
 
 - **Root events are not encrypted** (`../design/ROOT-IN-CLEAR.md`). `:writers`
   lives there, so encrypting it means a peer without the reading key cannot

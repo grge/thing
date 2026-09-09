@@ -468,7 +468,11 @@ retry instead of a permanent gap.
 - **Content-addressed** by full SHA-256 of the bytes **as stored and
   transferred**, so integrity is verified by rehashing the reassembly. Identical
   content deduplicates only where the encryption is deterministic, which is a
-  choice §6 makes rather than a property that comes free.
+  choice §6 makes rather than a property that comes free —
+  **and it is made the other way**: blobs are randomised, so an encrypted space
+  does not deduplicate. `working/ENCRYPTION-PLAN.md` has the trade. The cost is
+  duplicate storage when the same bytes are added twice within one space; what
+  it avoids is a confirm-a-known-file attack by whoever hosts you.
 - **Chunked** for transfer, with backpressure and resume from a chunk index.
 - **Availability is advertised.** Version vectors describe events, never blobs.
   Peers exchange blob-availability sets so "who holds this content" is
