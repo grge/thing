@@ -210,6 +210,15 @@ export interface Have {
  */
 export interface Presence {
   readonly type: 'PRESENCE';
+  /**
+   * Which space this is about (`design/CONNECTIONS.md`).
+   *
+   * One connection carries several spaces, so presence has to say which — two
+   * documents open at once would otherwise mix their cursors. `ANNOUNCE` and
+   * `RESOLVE` already named their space; this did not, because when it was
+   * written a connection was about one space and the answer was implicit.
+   */
+  readonly space: string;
   readonly payload: unknown;
   /** Milliseconds after which a receiver should forget this (§10.1). */
   readonly ttl: number;

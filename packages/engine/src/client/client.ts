@@ -674,6 +674,36 @@ export class Client {
     return [...wanted].sort();
   }
 
+  /* ── presence (§10) ───────────────────────────────────────────────────── */
+
+  /**
+   * Say where you are in a space — a cursor, a selection, whatever a view means
+   * by it.
+   *
+   * **Ephemeral, and that is the point.** A cursor is about the present moment:
+   * putting one in the log would make it permanent, replicated, and unbounded,
+   * accumulating a position per keystroke forever (§10). The payload is opaque
+   * to everything below the view.
+   */
+  announcePresence(id: SpaceId, payload: unknown, ttl?: number): void {
+    const entry = this.held.get(id);
+    if (entry === undefined) return;
+    for (const session of entry.sessions.values()) {
+      if (!session.isClosed) session.presence(id, payload, ttl);
+    }
+  }
+
+  /** Who else is in this space, and what they last said about themselves. */
+  presence(id: SpaceId): Map<string, unknown> {
+    const entry = this.held.get(id);
+    if (entry === undefined) return new Map();
+    const out = new Map<string, unknown>();
+    for (const session of entry.sessions.values()) {
+      for (const [peer, payload] of session.presenceIn(id)) out.set(peer, payload);
+    }
+    return out;
+  }
+
   /* ── resolution (§5.3) ────────────────────────────────────────────────── */
 
   /**
@@ -1024,8 +1054,10 @@ export class Client {
   availability(id: SpaceId): { peer: string; blobs: number }[] {
     const entry = this.held.get(id);
     if (entry === undefined) return [];
-    // Only what this session's peer advertised; presence is per-connection.
-    return [...entry.sessions].map(([peer, s]) => ({ peer, blobs: s.ephemeral.present().size }));
+    // Only what this session's peer advertised about *blobs* — this counted
+    // presence entries before, which was a different thing wearing the same
+    // method name.
+    return [...entry.sessions].map(([peer, s]) => ({ peer, blobs: s.blobsAdvertised }));
   }
 
   peers(): PeerStatus[] {

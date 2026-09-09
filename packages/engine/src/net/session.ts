@@ -20,6 +20,7 @@ import {
   EphemeralState,
   haveMessage,
   resolveMessage,
+  presenceMessage,
   resolvedMessage,
 } from './ephemeral.js';
 import type { Locator } from './locator.js';
@@ -488,6 +489,40 @@ export class Session {
   /** When it was last announced, for "nobody is serving, last seen at T". */
   seenServing(space: string): number | undefined {
     return this.ephemeral.seenAt(space);
+  }
+
+  /** Say where we are in a space (§10). Opaque payload, expires on its own. */
+  presence(space: string, payload: unknown, ttl?: number): void {
+    this.sendEphemeral(
+      ttl === undefined ? presenceMessage(space, payload) : presenceMessage(space, payload, ttl),
+    );
+  }
+
+  /** Who this peer says is present in a space, and what they last said. */
+  presenceIn(space: string): Map<string, unknown> {
+    return this.ephemeral.present(space);
+  }
+
+  /** How many blobs this peer has advertised holding (§2.4). */
+  get blobsAdvertised(): number {
+    return this.ephemeral.blobCount(this.options.peer);
+  }
+
+  /** Say where we are in a space (§10). Opaque payload, expires on its own. */
+  presence(space: string, payload: unknown, ttl?: number): void {
+    this.sendEphemeral(
+      ttl === undefined ? presenceMessage(space, payload) : presenceMessage(space, payload, ttl),
+    );
+  }
+
+  /** Who this peer says is present in a space, and what they last said. */
+  presenceIn(space: string): Map<string, unknown> {
+    return this.ephemeral.present(space);
+  }
+
+  /** How many blobs this peer has advertised holding (§2.4). */
+  get blobsAdvertised(): number {
+    return this.ephemeral.blobCount(this.options.peer);
   }
 
   /** Tell the peer what blobs we hold (§2.4). */

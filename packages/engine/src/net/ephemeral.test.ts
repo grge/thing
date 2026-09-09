@@ -46,22 +46,39 @@ describe('availability', () => {
   });
 });
 
+/** Presence names its space (`design/CONNECTIONS.md`). */
+const SPACE = 'aa'.repeat(32);
+
 describe('presence', () => {
   it('records and expires by its own ttl', () => {
     let now = 0;
     const state = new EphemeralState(() => now);
-    state.receive('alice', presenceMessage({ cursor: 7 }, 100));
+    state.receive('alice', presenceMessage(SPACE, { cursor: 7 }, 100));
 
-    expect(state.present().get('alice')).toEqual({ cursor: 7 });
+    expect(state.present(SPACE).get('alice')).toEqual({ cursor: 7 });
     now = 100;
-    expect(state.present().has('alice')).toBe(false);
+    expect(state.present(SPACE).has('alice')).toBe(false);
+  });
+
+  it('keeps two spaces apart on one connection', () => {
+    // **The bug this shape prevents.** One connection carries several spaces
+    // (`design/CONNECTIONS.md`), so a single slot per peer meant a second
+    // document's cursor overwrote the first's — two people editing different
+    // files appeared to be in the same one.
+    const other = 'bb'.repeat(32);
+    const state = new EphemeralState(() => 0);
+    state.receive('alice', presenceMessage(SPACE, { cursor: 1 }, 1000));
+    state.receive('alice', presenceMessage(other, { cursor: 99 }, 1000));
+
+    expect(state.present(SPACE).get('alice')).toEqual({ cursor: 1 });
+    expect(state.present(other).get('alice')).toEqual({ cursor: 99 });
   });
 
   it('treats the payload as opaque', () => {
     // The protocol does not interpret presence; a view decides what it means.
     const state = new EphemeralState(() => 0);
-    state.receive('alice', presenceMessage('anything at all', 1000));
-    expect(state.present().get('alice')).toBe('anything at all');
+    state.receive('alice', presenceMessage(SPACE, 'anything at all', 1000));
+    expect(state.present(SPACE).get('alice')).toBe('anything at all');
   });
 });
 
@@ -69,11 +86,11 @@ describe('peers', () => {
   it('forgets a peer on disconnect', () => {
     const state = new EphemeralState(() => 0);
     state.receive('alice', haveMessage(['aa']));
-    state.receive('alice', presenceMessage({}, 10_000));
+    state.receive('alice', presenceMessage(SPACE, {}, 10_000));
 
     state.forget('alice');
     expect(state.whoHas('aa')).toEqual([]);
-    expect(state.present().size).toBe(0);
+    expect(state.present(SPACE).size).toBe(0);
   });
 
   it('sweeping is an optimisation, not a correctness requirement', () => {

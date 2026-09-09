@@ -27,6 +27,9 @@ import type { Resolved } from './protocol.js';
 
 const UTF8 = new TextEncoder();
 
+/** Presence names its space (`design/CONNECTIONS.md`). */
+const SPACE_ID = 'aa'.repeat(32);
+
 function labelled(label: string, len: number): Uint8Array {
   const out = new Uint8Array(len);
   for (let i = 0; i < label.length && i < len; i++) out[i] = label.charCodeAt(i);
@@ -682,11 +685,11 @@ describe('blobs and presence', () => {
 
     const wire = await connect(a, b);
     await wire.a.announceBlobs();
-    wire.a.sendEphemeral(presenceMessage({ cursor: 3 }, 10_000));
+    wire.a.sendEphemeral(presenceMessage(SPACE_ID, { cursor: 3 }, 10_000));
     await wire.settle();
 
     // b learned about the blob and the presence...
-    expect(wire.b.ephemeral.present().size).toBe(1);
+    expect(wire.b.ephemeral.present(SPACE_ID).size).toBe(1);
     // ...and neither reached its log.
     expect(await countOf(b.store)).toBe(0);
   });
