@@ -1178,6 +1178,40 @@ histories, and the tests that carry a raised timeout no longer need one.
 
 ---
 
+## Stage 13 — A shared document ✅
+
+**The bet, used.** §3.8 calls the universal fold the central claim of the
+design; the sequence rule was built for it, pinned before it was coded, and
+nothing had ever put weight on it. A text document is the smallest thing that
+does — and it needed no engine change beyond exporting one traversal.
+
+A document is an object whose `:kind` is `sequence`, so any client holding that
+rule can edit it without knowing what wrote it. `fs/text.ts` turns a wanted
+string into operations; `TextEdit.svelte` binds a textarea to it, with cursors
+on the ephemeral channel.
+
+Three things worth keeping:
+
+- **Runs, not characters.** An element's id is its event's, so one event is one
+  element and a character per keystroke would be an event per keystroke. Typing
+  is debounced into runs. The price: concurrent edits *inside one run* resolve
+  at run granularity, because splitting a run needs an id the creating event
+  cannot supply.
+- **Local text leads while you type.** Rebuilding the textarea from the fold on
+  every keystroke fights the caret — the fold is a beat behind, so the value
+  snaps back and the cursor jumps. The fold only overwrites when someone *else*
+  changed it.
+- **`:kind` names the rule** (§4.2), which caught an error: an invented `text`
+  kind resolved to nothing and the object folded as *unreadable* rather than
+  being guessed at. §3.1's tiering working as designed.
+
+**Verified with two people editing at once**, through a hub, converging with
+both edits intact.
+
+**Open:** cursors are reported as an offset and shown as text. Rendering them in
+the textarea needs coordinate mapping, which is a UI problem rather than a
+protocol one.
+
 ## Beyond
 
 Not planned in detail, because each depends on what the stages above teach.

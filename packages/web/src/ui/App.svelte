@@ -18,6 +18,7 @@
     makeFile,
     makeFolder,
     makeLink,
+    makeText,
     move,
     read,
     remove,
@@ -369,6 +370,30 @@
     void addFiles(event.dataTransfer.files);
   }
 
+  /**
+   * A text document: an object whose body folds by the sequence rule (§3.8).
+   *
+   * Not a file — it has no blob. The contents live in the log as operations,
+   * so two people can edit it at once and any client holding the rule can
+   * read it without knowing what wrote it.
+   */
+  async function newDocument(): Promise<void> {
+    if (activeId === null) return;
+    const space = client.space(activeId);
+    if (space === null || !space.writable) {
+      error = 'this space is read-only here';
+      return;
+    }
+    try {
+      const doc = await makeText(space, 'untitled.txt', here);
+      selected = doc;
+      selectedIn = activeId;
+      refresh();
+    } catch {
+      error = 'could not make a document';
+    }
+  }
+
   async function newFolder(): Promise<void> {
     if (activeId === null) return;
     const space = client.space(activeId);
@@ -672,6 +697,13 @@
               <Icon name="folderPlus" />
             </button>
             <button
+              onclick={newDocument}
+              aria-label="New document"
+              title="New shared document"
+            >
+              <Icon name="fileText" />
+            </button>
+            <button
               onclick={() => {
                 pasting = 'link';
                 pasted = '';
@@ -744,6 +776,7 @@
             id={selected}
             peers={active.peers}
             mirrors={active.mirrors}
+            {writable}
           />
         {:else}
           <p class="muted pad">Select a file.</p>

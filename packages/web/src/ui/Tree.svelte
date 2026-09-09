@@ -12,6 +12,7 @@
   import {
     hex,
     isLink,
+    isText,
     list,
     targetOf,
     type FileEntry,
@@ -80,7 +81,8 @@
   {@const path = `${parentPath}/${key}`}
   {@const target = isLink(e) ? targetOf(from, e.id) : null}
   {@const inside = target === null ? null : linked(target)}
-  {@const canOpen = target !== null || opens(from, e)}
+  {@const doc = target === null && isText(from, e.id)}
+  {@const canOpen = target !== null || (!doc && opens(from, e))}
   {@const isOpen = expanded.has(path)}
   <li>
     <div
@@ -133,6 +135,11 @@
         <span class="glyph">
           {#if target !== null}
             <Icon name="link" />
+          {:else if doc}
+            <!-- A document with no text yet has no body, which is otherwise
+                 how a folder is recognised (§4.2). Its `:kind` says what it
+                 is, so it says so here. -->
+            <Icon name="fileText" />
           {:else if canOpen}
             <Icon name="folder" />
           {/if}

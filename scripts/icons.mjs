@@ -28,6 +28,8 @@ const WANTED = {
   files: 'files',
   folder: 'folder',
   settings: 'settings',
+  // A text document, editable in place (§3.8).
+  fileText: 'file-text',
   eye: 'eye',
   eyeOff: 'eye-off',
   link: 'link',
