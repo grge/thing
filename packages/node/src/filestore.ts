@@ -135,7 +135,13 @@ class FileSpaceStore implements SpaceStore {
 
     let expect = range.from;
     for (const e of wanted) {
-      if (e.seq !== expect) return; // a gap ends the range
+      // **A repeated seq is skipped, not a stop** — the same trap as
+      // `ChainSet.load`. A log may hold the same event more than once, and
+      // sorting puts the copies adjacent, so `0, 0, 0, 1, ...` yielded one
+      // event and returned at the second copy. The peer then received seq 0
+      // and nothing else, forever, however many times it asked.
+      if (e.seq < expect) continue;
+      if (e.seq !== expect) return; // a genuine gap ends the range
       yield e;
       expect += 1;
     }

@@ -412,6 +412,33 @@ refuses and lists the candidates, with `--key` to disambiguate. That one is a
 **Worth grepping for after any bug of this kind.** `\.name === ` found all
 three in one command.
 
+## 17. The same walk, written twice, broke twice
+
+A log held every event three times. Two separate walks stepped through a
+chain's events by `expect + 1`, and sorting by seq puts duplicates adjacent —
+`0, 0, 0, 1, ...` — so both stopped at the second copy of seq 0.
+
+- `ChainSet.load` pinned the frontier at 0, so every later event was refused as
+  a permanent gap.
+- `readRange` yielded one event and returned, so a peer asking for the range
+  got seq 0 and nothing else, however many times it asked.
+
+**The second one was invisible until the first was fixed.** Repairing `load`
+made the server's own copy healthy, and the space still would not replicate —
+which is what sent me looking again rather than declaring it done. Two bugs with
+one symptom look like one bug that was not properly fixed.
+
+**Neither function had a test.** `ChainSet` had none at all; `readRange` had
+none either, in a file with twenty-three other tests. Both are on paths that
+only run when something else has already gone slightly wrong — reopening a log,
+serving a range to a peer that is behind — which is exactly the code that gets
+exercised least and matters most.
+
+The shape worth remembering: **a walk that assumes strict succession over data
+it did not itself deduplicate.** `append` deduplicates, so within one process a
+log holds each event once, and both walks were written against that assumption.
+A log is a file, and a file outlives the process that guaranteed its shape.
+
 ## The nuclear revoke
 
 **The problem it answers.** `deps` (see `../design/DEPS.md`) narrows backdating without
