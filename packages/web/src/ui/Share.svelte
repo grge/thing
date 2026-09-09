@@ -12,6 +12,13 @@
     your call and still cannot produce events that verify.
 
   The key goes in the URL fragment, so it never reaches a server.
+
+  **For an encrypted space there are two links, not one** (§6.2,
+  `design/CAPABILITIES.md`): one that lets someone replicate, verify and serve
+  without reading, and one that also invites them in. That is a real choice
+  rather than a setting, and the panel puts it in front of the person making it.
+  For an unencrypted space it does not arise — anyone holding the key reads it —
+  so the control is not shown.
 -->
 <script lang="ts">
   import { codeFor } from '@thing/engine';
@@ -46,11 +53,24 @@
    */
   let handOver = $state(false);
 
+  /**
+   * Whether to include the reading key (§6).
+   *
+   * Defaults to *yes*, because sharing a space normally means sharing what is
+   * in it — the interesting case is deliberately withholding it, which is what
+   * "help me host this" looks like. Only shown for an encrypted space, since
+   * there is nothing to withhold otherwise.
+   */
+  let letRead = $state(true);
+
+  /** Whether this space has a reading key at all, and so whether the choice exists. */
+  const encrypted = $derived(client.isEncrypted(tab.id));
+
   const link = $derived.by(() => {
     try {
       return client.shareLink(tab.id, {
         ...(locator === '' ? {} : { locator }),
-        ...(handOver ? { grant: 'administer' as const } : {}),
+        grant: handOver ? 'administer' : letRead ? 'read' : 'replicate',
       });
     } catch {
       return '';
@@ -91,12 +111,30 @@
         <strong>This hands over the space.</strong> Whoever opens it can write
         anything and decide who else may — including removing you. There is no
         way to take it back. Use it to move a space to your own other device.
+      {:else if encrypted && !letRead}
+        <!-- §6.2: infrastructure without being an audience. -->
+        Carries the key but not the reading key. Whoever opens it can store,
+        verify and serve this space, and cannot read a word of it.
       {:else}
         Carries the key, so what answers it is verified. Whoever opens it can
         read and replicate, and cannot write.
       {/if}
     </p>
   </label>
+
+  {#if encrypted}
+    <label class="check">
+      <input type="checkbox" bind:checked={letRead} disabled={handOver} />
+      <span>
+        Let them read it
+        {#if handOver}<span class="note">— handing over the space includes this</span>{/if}
+      </span>
+    </label>
+    <p class="note">
+      A reading key cannot be taken back (§6.3). Anyone who has ever held it can
+      decrypt anything they have or later obtain.
+    </p>
+  {/if}
 
   <label class="check">
     <input type="checkbox" bind:checked={handOver} disabled={!tab.writable} />

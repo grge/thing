@@ -12,6 +12,13 @@
   does not have — §3.4's unreadable body), `cycleBroken` (re-parented to break a
   cycle — §3.4), and a slice's `pending` entries (events held aside because
   their rule could not place them yet).
+
+  **An encrypted space this client cannot read is not one of those.** Without
+  the reading key every `:kind` is ciphertext, so *every* body is unreadable
+  (§6.1) — which is correct and expected rather than damage. Saying "unreadable
+  body: <mojibake>" for each one would report a working peer as a broken space,
+  so `encrypted` suppresses the per-object warning and names the actual
+  condition once.
 -->
 <script lang="ts">
   import { hex, type State, type Uuid } from '@thing/engine';
@@ -22,9 +29,17 @@
     folded: State;
     spaceId: string;
     id: Uuid;
+    /**
+     * The space is encrypted and this client holds no reading key (§6).
+     *
+     * Passed in rather than guessed at here: it is a property of the space, and
+     * one object cannot tell the difference between "the whole space is
+     * ciphertext" and "this one body uses a rule I lack".
+     */
+    encrypted?: boolean;
   }
 
-  const { folded, spaceId, id }: Props = $props();
+  const { folded, spaceId, id, encrypted = false }: Props = $props();
 
   let open = $state(false);
   let copied = $state<string | null>(null);
@@ -63,7 +78,14 @@
       <code>{hex(id).slice(0, 12)}</code>
     </button>
 
-    {#if object.bodyRuleMissing !== undefined}
+    {#if encrypted}
+      <!-- §6.1: `:kind` is encrypted, so no body rule can be picked at all.
+           Expected, not damage — and stated plainly so it does not read as one
+           more thing that is wrong. -->
+      <span class="muted" title="Encrypted: this client holds no reading key (§6)">
+        encrypted — no reading key
+      </span>
+    {:else if object.bodyRuleMissing !== undefined}
       <!-- §3.4: the structure folded, the body did not. Worth saying loudly,
            because the object looks ordinary otherwise. -->
       <span class="warn" title="No rule for this :kind on this client">
@@ -106,6 +128,8 @@
               {#if object.body.pending !== undefined && object.body.pending.length > 0}
                 <span class="warn">{object.body.pending.length} held</span>
               {/if}
+            {:else if encrypted}
+              <span class="muted">encrypted — no reading key (§6.1)</span>
             {:else if object.bodyRuleMissing !== undefined}
               <span class="warn">rule <code>{object.bodyRuleMissing}</code> not held here</span>
             {:else}

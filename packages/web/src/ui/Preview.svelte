@@ -47,6 +47,15 @@
 
   const { client, space, spaceId, id, peers, mirrors, writable }: Props = $props();
 
+  /**
+   * The space is encrypted and this client holds no reading key (§6.1).
+   *
+   * Read from the space rather than passed down: it is a property of the whole
+   * space, and asking it here keeps the one place that decides it in the engine
+   * (`Space.looksEncrypted`) rather than in a chain of props.
+   */
+  const cannotRead = $derived(!space.readable && space.looksEncrypted);
+
   let bytes = $state<Uint8Array | null>(null);
   let loading = $state(false);
   let asked = $state(false);
@@ -167,7 +176,7 @@
   <h2>{item?.name ?? 'file'}</h2>
   <!-- What the object *is*, above whatever is showing it: the same slices for
        a file, a folder, a link and a document, in the fold's own vocabulary. -->
-  <ObjectHeader folded={space.state} {spaceId} {id} />
+  <ObjectHeader folded={space.state} {spaceId} {id} encrypted={cannotRead} />
 
   {#if isTextDoc}
     <!-- A text document is live state, not bytes: it has no blob to fetch and

@@ -164,6 +164,13 @@
           // A link that carried the space's own seed hands over the space
           // (`docs/design/CAPABILITIES.md`) — install it before connecting, so
           // the space opens with its key rather than read-only.
+          // A reading key first: it changes what the space *says*, and doing it
+          // before connecting means the first events to arrive are folded with
+          // it rather than as ciphertext that a later reopen has to redo.
+          if (link.reading !== null) {
+            const took = await client.adoptReading(tab.id, link.reading);
+            if (!took) error = 'that link carried a malformed reading key';
+          }
           if (link.seed !== null) {
             const took = await client.adoptKey(tab.id, link.seed);
             if (!took) error = 'that link carried a key for a different space';
@@ -223,6 +230,8 @@
   }
 
   async function create(): Promise<void> {
+    // Encrypted by default (§6). `create` decides that; naming it here would
+    // be a second place for the default to live.
     show((await client.create('untitled')).id);
   }
 
