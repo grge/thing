@@ -36,11 +36,14 @@ who takes them for solved will plan badly:
   those events name is answerable with what exists and is not surfaced
   anywhere, so an upload looks complete when only its names have replicated.
 
-There is also one **constraint on operating the system** that it cannot enforce
-itself: **a private key is held by one device at a time.** Two devices sharing a
-key fork that writer's chain, and while §7.3 resolves the fork deterministically
-so the network converges, the losing branch's writes are dropped. Worth reading
-before any decision about sharing administration.
+There was also a **constraint on operating the system** that it cannot enforce
+itself — *a private key is held by one device at a time* — and **append points
+removed it**. A chain is keyed by `(writer, point)` and every process mints a
+fresh point, so two devices holding one key extend different chains and both
+sets of writes are kept (§2.1, `design/APPEND-POINTS.md`). Sharing a key is now
+an *accountability* choice rather than a correctness hazard: it makes "who wrote
+this" unanswerable and makes revocation all-or-nothing (§7.2.2). Sections
+written before that change are marked where the premise has moved.
 
 A reader who wants only the parts that are safe to build on should read §2, §5,
 §6, §7 and §10, which are Proven or Decided throughout.
@@ -258,9 +261,9 @@ alongside the frontier, or a bounded list of exceptions — and neither is desig
 **Decided: detect now, repair later.** The tip hash goes in the handshake, so a
 fork is noticed in the ordinary exchange and can be reported. The *request* that
 would fetch a competing branch is deliberately not designed yet, for two
-reasons: a fork means the one-key-one-device constraint (§7.3) was already
-violated, so it is not a routine event; and the same extension is wanted by two
-other needs that are not yet understood. Designing it once, when all three are,
+reasons: a fork means deliberate equivocation or a rolled-back store (§7.3), so
+it is not something honest software produces; and the same extension is wanted
+by two other needs that are not yet understood. Designing it once, when all three are,
 beats designing it three times.
 
 **What detection must do meanwhile.** A peer that sees mismatched tips must say
@@ -1609,12 +1612,20 @@ time membership changes.
 ### 7.2.2 Moderators hold their own keys, never the space key
 
 The obvious way to have several administrators is to share the space key between
-them. **It should not be done**, and the reason is more specific than shared
-secrets being poor practice: two holders writing concurrently fork the one chain
-that determines who may write. §7.3 resolves such a fork rather than leaving the
-space stuck, so this is a silent loss of one administrator's changes rather than
-a catastrophe — but it is a loss with no upside, since the shape below gets
-several administrators without it.
+them. **It should not be done** — though the reason has changed, and the old one
+is worth retiring rather than leaving to be repeated.
+
+**It used to be forks.** Two holders writing concurrently were said to fork the
+one chain that decides who may write, silently losing one administrator's
+changes. Append points removed that: each process mints its own chain, so two
+holders of one key write side by side and both sets of changes are kept
+(`design/APPEND-POINTS.md`).
+
+**What remains is attribution.** A key is what a signature attributes an event
+to, so several people behind one key makes *"who admitted this writer"*
+unanswerable — in a log whose whole purpose is provenance. And §7.2.3's
+revocation acts on a key, so removing one administrator removes all of them.
+Neither is fixed by append points, and the shape below avoids both.
 
 The shape that works instead keeps the root single-writer:
 
@@ -1631,10 +1642,11 @@ event is, so folding it means checking whether that writer was a moderator. That
 check is against phase 1's output, which is already computed, and it is the same
 shape as an ordinary write-permission check.
 
-It buys two things worth having. No secret is ever shared, so §7.3's hazard never
-arises. And every moderator action is **attributable to a person** rather than
-being an anonymous act by the space — *Alice removed Bob* rather than *Bob was
-removed* — which is better in a log whose whole purpose is provenance.
+It buys two things worth having. No secret is ever shared, so revocation can
+reach one administrator without reaching all of them. And every moderator action
+is **attributable to a person** rather than being an anonymous act by the space
+— *Alice removed Bob* rather than *Bob was removed* — which is better in a log
+whose whole purpose is provenance.
 
 ### 7.2.3 Revocation means "may no longer write", never "was never here"
 
@@ -1683,23 +1695,36 @@ reconsidering if the reading key were ever derived from membership**, since "who
 was a member at time T" would then determine what can be decrypted, and a few
 seconds of ambiguity would stop being cosmetic.
 
-### 7.3 Chain forks: one key, two devices — **Decided**
+### 7.3 Chain forks — **Decided**
 
-A private key is meant to be held by **one device at a time**. This section says
-what happens when that is violated, because it will be, and because the answer
-determines whether the violation is survivable.
+> **This section was written before append points and its premise has changed.**
+> It said *one key, two devices*, and described sharing a private key as the way
+> a fork happens. That is no longer true: §2.1's append point means a chain is
+> keyed by `(writer, point)` and every process mints a fresh random point, so
+> two devices holding one key extend two *different* chains and never collide.
+> `design/APPEND-POINTS.md` has the change; the resolution below is unchanged
+> and still needed, because a fork is still *possible* — it just now means
+> something else.
 
-**Two devices holding one key fork that writer's chain.** The mechanism is
-§2.1's per-writer chain: each event carries `seq` and the hash of that writer's
-previous event, which makes a writer's history a linked list with exactly one
-tail. Two devices both believe they are at the same tail. Both write. The result
-is **two different events at the same sequence number, with the same
-predecessor, both validly signed.**
+**A fork is one chain with two histories at the same sequence number.** The
+mechanism is §2.1's chain: each event carries `seq` and the hash of that chain's
+previous event, so a chain is a linked list with exactly one tail. Two events at
+one position with the same predecessor, both validly signed, is a fork.
 
-**Signing cannot catch it.** A forged event fails verification; this one does
-not, because the key genuinely signed both. The two branches have identical
-provenance, so nothing can adjudicate them *on authority* — there is no fact
-about which one the writer "meant".
+**Honest software no longer produces one.** Two of your own processes do not
+collide, because they hold different points. What remains are two causes, and
+neither is an accident:
+
+- **Deliberate equivocation.** A writer that reuses a point on purpose, signing
+  two different events at one position. Signing cannot catch this — the key
+  genuinely signed both — which is the property `design/EQUIVOCATION.md`
+  reviews and the reason the resolution below exists.
+- **A corrupted or rolled-back store.** A peer that loses its record of where a
+  chain had reached may re-mint at a position it already used.
+
+**Signing cannot catch either.** A forged event fails verification; these do
+not. The two branches have identical provenance, so nothing can adjudicate them
+*on authority* — there is no fact about which one the writer "meant".
 
 ### 7.3.1 The resolution is deterministic, not fair
 
@@ -1783,23 +1808,29 @@ never appear — reads as a mysterious bug rather than as a key on two devices. 
 events at one sequence number with one predecessor is a cheap, checkable
 condition, and a client that sees it should say so plainly.
 
-### 7.3.4 The operational rule stands
-
-Resolution changes the failure from *unrecoverable* to *deterministic and lossy*,
-which is a large improvement and not a licence:
+### 7.3.4 The operational rule, and what it now rests on
 
 > **Export a key to move an identity, never to share one.**
 
-Within a single device an exclusive lock per space is a complete fix — the first
-context to open a space writes, later ones open read-only and say so. Across
-devices nothing prevents a fork, because no lock spans devices without a
-coordinator and a coordinator is the server this design does not have.
+**The advice stands; its reason has changed.** It used to rest on forks: sharing
+a key meant two devices at one chain tail, and the resolution above silently lost
+one of them. Append points removed that — two devices holding one key extend
+different chains and both sets of writes are simply kept, which
+`design/APPEND-POINTS.md` verified with two concurrent writers and zero forks.
+**The lock this section once required is gone too**, for the same reason, and
+the code says so where it used to take one.
 
-A second person who needs to write gets **their own key** and a place in the
+What remains is not a correctness argument but an accountability one. A key is
+what a signature attributes an event to, so sharing one makes *"who wrote this"*
+unanswerable — and §7.2.3's revocation removes a key from the writer set, which
+cuts off every holder at once or none of them. Neither of those is fixed by
+append points.
+
+So a second person who needs to write gets **their own key** and a place in the
 writer set. A second person who needs to administer gets §7.2.2's moderator role.
-A second *device* of the same person gets its own key too, enrolled alongside the
-first. In none of these cases is sharing a key the right answer, and the reason
-is now ordinary — it silently loses work — rather than catastrophic.
+A second *device* of the same person may now genuinely share a key — nothing
+breaks, and `CAPABILITIES.md`'s hand-over link exists for exactly that — at the
+cost that the two devices are one writer as far as the log is concerned.
 
 ### 7.4 What remains open
 
@@ -2227,9 +2258,11 @@ The design holds together only if these hold:
 9. **Only the space key writes the root.** This is what makes the rule that says
    which events count computable without already knowing the answer, and it is
    what keeps a causal dependency out of the envelope.
-10. **A private key is held by one device at a time.** Two devices sharing a key
-    fork that writer's chain. The fork resolves deterministically (§7.3) so peers
-    still converge, but one branch's writes are dropped.
+10. **A chain is `(writer, point)`, and a process mints its own point.** So one
+    identity may write from several places at once without colliding (§2.1). A
+    fork — two histories at one position — is therefore no longer something
+    honest software produces: it means deliberate equivocation or a rolled-back
+    store, and §7.3 still resolves it deterministically.
 11. **Events are the truth; everything else is cache.** Snapshots, indexes and
     rendered state are all discardable and recomputable.
 

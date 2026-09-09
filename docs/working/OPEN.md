@@ -151,11 +151,17 @@ truth is established by acting on it. Signing would add attribution, not
 protection. The domain tag stays reserved so the separation exists if that ever
 changes.
 
-**Chain forks under a shared key — closed by §7.3.** Previously stated as
-unrecoverable, which was wrong. Two branches with identical provenance cannot be
-adjudicated on authority, but they can be resolved deterministically: longest
-branch, ties on lowest event hash. The failure drops from *the space breaks* to
-*one branch's writes are dropped*, which is survivable and worth preferring even
+**Chain forks under a shared key — closed twice over.** First by §7.3, which
+resolved them deterministically rather than leaving them unrecoverable; then by
+append points, which stopped a shared key producing one at all. A chain is
+keyed by `(writer, point)` and each process mints its own, so two devices holding
+one key write side by side. §7.3's resolution is still needed and now covers
+deliberate equivocation and rolled-back stores rather than ordinary use. The
+original reasoning, kept because it is what the resolution rests on: two branches
+with identical provenance cannot be adjudicated on authority, but they can be
+resolved deterministically — longest branch, ties on lowest event hash. The
+failure dropped from *the space breaks* to *one branch's writes are dropped*,
+which is survivable and worth preferring even
 when the winner is not the party you would have chosen.
 
 ---
