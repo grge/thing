@@ -356,8 +356,21 @@ export class Client {
     // Kept per connection rather than per call, so a space wanted *later* — by
     // `reach`, over a transport already open — can be added to the same
     // routing table rather than starting a second one.
-    const sessions = this.routed.get(conn.peer) ?? new Map<SpaceId, Promise<Session | null>>();
+    const already = this.routed.get(conn.peer);
+    const sessions = already ?? new Map<SpaceId, Promise<Session | null>>();
     this.routed.set(conn.peer, sessions);
+
+    // **Wire the transport once.** `onFrame` appends a handler, so routing an
+    // already-routed connection again would deliver every frame twice — and
+    // the same events arriving twice is what filled logs with copies, which
+    // then broke two walks that assumed strict succession. A client holding
+    // several spaces from one peer calls this once per space, so this is the
+    // ordinary case rather than a corner.
+    if (already !== undefined) {
+      const open = this.openers.get(conn.peer);
+      if (options.greet !== null && open !== undefined) void open(options.greet, 'direct');
+      return sessions;
+    }
 
     const open = (id: SpaceId, kind: PeerKind): Promise<Session | null> => {
       const existing = sessions.get(id);

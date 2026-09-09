@@ -439,6 +439,40 @@ it did not itself deduplicate.** `append` deduplicates, so within one process a
 log holds each event once, and both walks were written against that assumption.
 A log is a file, and a file outlives the process that guaranteed its shape.
 
+## 18. An invariant that holds by accident is not held
+
+`SpaceStore.append` decided an event was new, awaited a signature verification,
+and only then recorded that it had been taken. Two overlapping appends both
+passed the check and both stored the event.
+
+**Three stores, written at different times, all had it.** That is the signature
+of a missing contract rather than three slips: `ChainSet` offered `admit` and
+`advance` as separate calls and said nothing about holding them together, so
+every implementation independently did the reasonable-looking thing.
+
+**It was satisfied by accident until something unrelated changed.** One
+connection carried one space, so appends arrived one batch at a time and the
+race had no way to fire. Making a connection carry several spaces
+(`design/CONNECTIONS.md`) made overlapping appends ordinary — and the failure
+appeared three layers away, as a file with a name and no content.
+
+**The damage outlived the cause, which is what made it hard to see.** Duplicate
+events broke two *other* walks that assumed a chain reads as a sequence —
+rebuilding chain state on open, and serving a range to a peer. I fixed both as
+bugs, and they were; but fixing them made the symptom recede without the cause
+going anywhere, and the second one was invisible until the first was fixed. Two
+bugs with one symptom look like one bug that was not properly fixed.
+
+**The user called it before I did.** I was four layers deep and still treating
+each layer as its own defect. Their read — *"this feels like a design issue we
+overlooked rather than a bug"* — was right, and the tell was that I had fixed
+"the" bug twice already and it was still there.
+
+Now stated in §2.3, where the three verification checks are: deciding a sequence
+number follows is a decision about a *chain*, so deciding it and recording it
+must be one step. The conformance suite has it, so a fourth store cannot get it
+wrong quietly.
+
 ## The nuclear revoke
 
 **The problem it answers.** `deps` (see `../design/DEPS.md`) narrows backdating without

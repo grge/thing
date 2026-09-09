@@ -29,6 +29,8 @@ import { join } from 'node:path';
 class FileSpaceStore implements SpaceStore {
   private chains: ChainSet;
   private closed = false;
+  /** Serialises `append`, so no two overlap between `admit` and `advance`. */
+  private appending: Promise<void> = Promise.resolve();
 
   get isClosed(): boolean {
     return this.closed;
@@ -60,6 +62,21 @@ class FileSpaceStore implements SpaceStore {
 
   async append(events: readonly Event[]): Promise<AppendResult> {
     if (this.closed) throw new Error('store is closed');
+    // **One append at a time**, because `admit` and `advance` must not be
+    // interleaved — see `ChainSet.admit`. A peer sends events in batches and a
+    // client asks for several ranges, so overlapping appends on one store are
+    // the ordinary case rather than a corner.
+    const mine = this.appending.then(() => this.appendSerially(events));
+    // Swallowed here only so one failure does not poison the queue; the caller
+    // still sees it through `mine`.
+    this.appending = mine.then(
+      () => undefined,
+      () => undefined,
+    );
+    return mine;
+  }
+
+  private async appendSerially(events: readonly Event[]): Promise<AppendResult> {
 
     const appended: Event[] = [];
     const rejected: { event: Event; why: AppendRejection }[] = [];

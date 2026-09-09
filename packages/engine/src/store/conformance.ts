@@ -235,6 +235,47 @@ export function conformanceTests(
     });
   });
 
+  describe(`${name}: concurrent appends`, () => {
+    it('takes an event once, however many appends race for it', async () => {
+      // **§2.3: appending is serial.** Deciding that a sequence number follows
+      // is a decision about the *chain*, and verifying the signature that
+      // guards it is asynchronous — so between deciding an event is new and
+      // recording that it was taken, another append can decide the same thing.
+      //
+      // The cost is not a wasted write. A log with an event twice in it is a
+      // log whose chain no longer reads as a sequence, and everything that
+      // walks one expects it to: the chain pins at the repeated position and
+      // every later event becomes a permanent gap.
+      const store = await makeStore();
+      const { key, space, writer } = await fixture();
+      const s = await store.open(space, key.publicKey);
+
+      const events: Event[] = [];
+      for (let i = 0; i < 5; i++) {
+        events.push(await writer.write(ROOT, `:a${i}`, UTF8.encode(`v${i}`), i));
+      }
+
+      // Three callers offering the same batch at once, which is what a peer
+      // sending events while a client asks for ranges looks like.
+      const results = await Promise.all([s.append(events), s.append(events), s.append(events)]);
+
+      // Exactly one caller is told it appended each event.
+      const takenTotal = results.reduce((n, r) => n + r.appended.length, 0);
+      expect(takenTotal).toBe(events.length);
+
+      // And the log holds each once, so the chain still reads as a sequence.
+      const counts = new Map<number, number>();
+      for await (const e of s.readAll()) counts.set(e.seq, (counts.get(e.seq) ?? 0) + 1);
+      expect([...counts.values()]).toEqual([1, 1, 1, 1, 1]);
+
+      const vv = await s.versionVector();
+      expect([...vv.values()][0]?.frontier).toBe(4);
+
+      await store.close();
+      if (cleanup !== undefined) await cleanup(store);
+    });
+  });
+
   describe(`${name}: blobs`, () => {
     it('stores and retrieves by content hash', async () => {
       await withStore(async (store) => {

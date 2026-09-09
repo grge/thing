@@ -398,6 +398,31 @@ whether the writer is permitted to say it. Those are decisions for higher layers
 and keeping them out is what allows a peer to replicate an application it does
 not have — or a space it cannot read (Section 6).
 
+**Appending is serial, and that is a requirement rather than an implementation
+detail.** Check 3 is a decision about a *chain*, not about an event: whether a
+sequence number follows depends on what the store already holds, so deciding it
+and recording the result have to be one step. Check 1 makes that awkward,
+because verifying a signature is asynchronous — so between deciding an event is
+new and noting that it was taken, another append can run and decide the same
+thing. Both then store it.
+
+The cost is not a wasted write. **A log with an event twice in it is a log whose
+chain no longer reads as a sequence**, and everything that walks a chain expects
+one: rebuilding chain state on open, and serving a range to a peer that is
+behind. Both stopped at the second copy, so the chain pinned at that sequence
+number and every later event became a permanent gap — a file with a name, no
+content, and no way to recover without touching the log.
+
+So **a store appends one batch at a time**. Concurrent appends are ordinary
+rather than exotic: a peer sends events in batches, a client asks for several
+ranges at once, and one connection carries several spaces (§5.3) — so nothing
+above the store naturally arrives in single file.
+
+This was not noticed until a connection could carry more than one space. Before
+that, appends were serial by accident, which is the worst way for an invariant
+to hold: it is satisfied, unstated, and stops being satisfied when something
+unrelated changes.
+
 ### 2.4 Blobs
 
 Large content does not travel in the log. A blob-kinded object's body holds the

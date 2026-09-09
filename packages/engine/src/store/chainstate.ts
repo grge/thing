@@ -107,6 +107,14 @@ export class ChainSet {
    * Returns null if it may, or why not. Checks in order of cost: cheap
    * structural checks before the signature, so a duplicate does not pay for
    * verification.
+   *
+   * **A caller must not interleave `admit` and `advance`.** This awaits — it
+   * verifies a signature — so between deciding an event is new and recording
+   * that it was taken, another append can run and decide the same thing. Both
+   * then store it, and the chain advances once: the log gains a copy per
+   * concurrent caller, and those copies broke two walks that assumed strict
+   * succession (`load` here, `readRange` in the file store). Every store
+   * serialises `append` for this reason.
    */
   async admit(e: Event): Promise<AppendRejection | null> {
     const w = chainOf(e);
