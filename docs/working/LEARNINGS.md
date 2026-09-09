@@ -525,6 +525,51 @@ authority question should be answered by *revisiting the model* rather than by
 adding a fifth workaround — and that a rewrite of `ARCHITECTURE.md` should
 treat §6 and §7 as one problem rather than two chapters.
 
+## 20. Encryption hides values; the design reveals the rest
+
+§6.3 concedes that encryption *"does not hide structure"* in one line and moves
+on. Working through what a keyless peer actually holds — while correcting §6.1,
+which claimed more than it should have — makes the size of that concession
+clearer, and it is worth writing down before anyone deploys against it.
+
+**What a host of an encrypted space learns without the reading key:**
+
+- **How many objects there are**, and therefore roughly how many files.
+- **How many times each one changed**, since every write is an event on that
+  object's slice, and the slices are enumerable by attribute name.
+- **Which attributes each object carries** — so *this object has a `:body`* and
+  *this one does not* separates files from folders without reading either.
+- **When everything happened**, from `wall`, and in what order, from `lamport`.
+- **Who wrote what**, since `writer` is in the clear on every event.
+- **How large every blob is**, and when it arrived.
+- **The whole membership list**, once `ROOT-IN-CLEAR.md` lands, plus the space's
+  `:name`.
+
+An edit-per-keystroke document is distinguishable from a file uploaded once. A
+space with three objects is distinguishable from one with three hundred. A burst
+of activity at 2am is visible. None of that needs a single value decrypted.
+
+**Why it comes out this way.** Nothing here is a mistake in the encryption; it
+falls out of choices made for good reasons elsewhere. Events are the unit of
+replication, so they cannot be opaque blobs — a peer must read `target`, `attr`,
+`writer`, `seq` and `prev` to reconcile at all (§2.3). The fold is universal, so
+attribute *names* must be legible for the rule vocabulary to be fixed (§3.2).
+Signatures are per event, so events cannot be batched into indistinguishable
+chunks. **Metadata is the substrate.** Encrypting it would mean a different
+substrate, not a different cipher.
+
+**What that means in practice.** "A peer can host a space it cannot read" is
+true and much weaker than it sounds. The host cannot read your documents; it can
+describe your working habits. For a personal file-sync space on a VPS you
+control that is fine. For anything where *activity itself* is sensitive — who is
+talking to whom, when a group formed, whether a file exists at all — this design
+does not provide it, and no amount of care with the cipher will.
+
+**Carry forward:** §6.3's one line should be a section, and a rewrite should
+state the disclosure positively — *here is what a host learns* — rather than as
+a list of things encryption does not do. A reader deciding whether to trust a
+host needs the first form.
+
 ## The nuclear revoke
 
 **The problem it answers.** `deps` (see `../design/DEPS.md`) narrows backdating without

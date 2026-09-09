@@ -109,6 +109,12 @@ existing partition rather than a special case threaded through the codec.
 revocable, does not hide structure, does not hide identity, and does not protect
 against a reader. None of that is fixed here.
 
+**"Does not hide structure" is the big one**, and `LEARNINGS.md` §20 sizes it:
+a host learns how many objects exist, how often each changed, which are files
+and which folders, when, in what order, by whom, and how large every blob is.
+That falls out of events being the unit of replication and is not fixable with a
+cipher. Build accordingly, and do not let the UI imply more privacy than this.
+
 **And it does not bound unadmitted writes** (OPEN.md 8a) — the root exemption
 makes the check *possible* for a keyless peer, but membership is still
 time-dependent (§7.2.3), so a store must not refuse on arrival. The likely shape

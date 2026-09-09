@@ -1427,17 +1427,30 @@ Almost everything except read. The substrate never interprets a value
 | Store and serve blobs | **yes** — content-addressed by ciphertext hash |
 | Answer resolution queries | **yes** |
 | Read any value | **no** |
-| Fold structure (the object tree) | **yes** — attribute rules are fixed, not declared |
+| Fold attribute slices | **yes** — rules are fixed per name, and merges compare keys |
+| Fold structure (the object tree) | **no** — `:parent` is an encrypted value |
 | Fold any body | **no** — a body's rule is named by an encrypted `:kind` |
 | Fold into *meaningful* state | **no** — the shape resolves, the values do not |
 | Write | **no** — that needs the private space key, separately |
 
-Folding is the interesting case, and it splits. **Attribute slices fold over
-ciphertext**: their rules are fixed per attribute name (§3.2), so a peer knows
-which rule applies without reading anything, and each rule picks a winner by
-`(lamport, writer)` without inspecting values. Such a peer therefore computes
-*the shape* of the state — which objects exist, which attributes they carry,
-which writes won — while knowing what none of it says.
+Folding is the interesting case, and it splits three ways rather than two.
+
+**Attribute slices fold over ciphertext.** Their rules are fixed per attribute
+name (§3.2), so a peer knows which rule applies without reading anything, and
+each rule picks a winner by `(lamport, writer)` without inspecting values. Such
+a peer computes *which write won* for every attribute of every object, while
+knowing what none of it says.
+
+**The tree does not fold.** An earlier version of this table said it did, and
+that was wrong: resolving `:parent` means reading its *decoded* value as a
+16-byte uuid, and ciphertext is not one, so every object falls back to the root.
+A keyless peer therefore has a flat set of objects rather than a tree — and
+cannot name them either, since `:name` is a value like any other. What it holds
+is the slice structure, not the filesystem.
+
+**The root does fold**, because root-targeted events are not encrypted
+(`design/ROOT-IN-CLEAR.md`). That is what lets such a peer evaluate membership,
+and it is now the only structural thing it can compute.
 
 **Body slices do not fold at all.** A body's rule is named by `:kind`, `:kind` is
 an encrypted value, so a peer without the key cannot even determine which rule to
@@ -1477,9 +1490,22 @@ concerns, and only the second requires trust.
   ever held it holds it permanently, and can decrypt anything they have or later
   obtain that was encrypted under it. Restricting access after the fact requires
   a new key and re-encryption, which is a new space in all but name.
-- **It does not hide structure.** A peer without the key still sees how many
-  events exist, who wrote them, when, how large the blobs are, and how the space
-  changes over time. Encrypted values conceal content, not activity.
+- **It does not hide structure**, and this concession is larger than one line
+  suggests — `working/LEARNINGS.md` §20 works it through. A peer without the key
+  sees how many objects exist and therefore roughly how many files; how many
+  times each changed; which carry a body and so which are files rather than
+  folders; when everything happened and in what order; who wrote each event; how
+  large every blob is; and, once the root is in clear, the membership list and
+  the space's name. An edit-per-keystroke document is distinguishable from a
+  file uploaded once.
+
+  **This is not a weakness of the cipher.** Events are the unit of replication,
+  so a peer must read `target`, `attr`, `writer`, `seq` and `prev` to reconcile
+  at all (§2.3); the fold is universal, so attribute names must be legible
+  (§3.2); signatures are per event, so events cannot be batched into
+  indistinguishable chunks. Metadata is the substrate. **"A peer can host a
+  space it cannot read" is true and weaker than it sounds:** the host cannot
+  read your documents, and can describe your working habits.
 - **It does not hide identity.** The space's public key is what peers ask for by
   name. Holding an encrypted space is not private in the sense of being secret;
   it is private in the sense of being unreadable.
