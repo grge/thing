@@ -25,6 +25,7 @@ import {
   type LocalState,
   Locators,
   SEED_LEN,
+  seedFor,
   type Stored,
   type SpaceId,
 } from '@thing/engine';
@@ -66,6 +67,14 @@ export class FileKeyring implements Keyring {
     // an identity within someone else's space, not a space of its own.
     await writeFile(this.path(space), key.privateKey, { mode: 0o600 });
     return key;
+  }
+
+  async importFor(space: SpaceId, seed: string): Promise<boolean> {
+    const pair = await seedFor(space, seed);
+    if (pair === null) return false;
+    await mkdir(this.dir, { recursive: true });
+    await writeFile(this.path(space), pair.privateKey, { mode: 0o600 });
+    return true;
   }
 
   async keyFor(space: SpaceId): Promise<KeyPair | null> {

@@ -70,6 +70,7 @@ export {
   type Keyring,
   type LocalState,
   type LocatorCache,
+  seedFor,
 } from './local.js';
 export {
   type Attempt,

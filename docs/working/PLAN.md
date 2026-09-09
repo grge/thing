@@ -1062,7 +1062,7 @@ resolution is deterministic, and it belongs with the defensive work.
 
 ---
 
-## Stage 9.5 — Capabilities: three keys, and what a link carries
+## Stage 9.5 — Capabilities: three keys, and what a link carries ✅
 
 **Designed, not built.** `../design/CAPABILITIES.md` has the reasoning.
 
@@ -1085,6 +1085,24 @@ are different acts (§6.2 says so); the format has one field.
 
 **Done when:** a space made in one browser is read-only in another until
 admitted, and a share link can be made that grants reading without writing.
+
+**Done.** Four notes:
+
+- **`writable` now means admitted**, not "holds a key". A key outside the
+  writer set signs events every peer stores and no peer folds, so a UI offering
+  editing on the first would be lying. `Space.admitted` existed for exactly
+  this and had no callers.
+- **`importFor` is the other half of `exportKey`**, which §5.1.1 wanted and
+  `WEB-NEXT.md` had noted as the substantive gap: an export nobody can restore
+  is half a mechanism. Validated against the space id in one shared place, so
+  three backends cannot disagree about what they accept.
+- **Existing spaces are untouched.** An absent writer set still admits everyone
+  (§7.2.1), so only newly created spaces declare one.
+- **The hand-over link is deliberately blunt.** It hands over the space, not
+  write access, and the panel says so in those words.
+
+**Left for stage 10:** the `r=` field. A reading key has nothing to carry until
+there is encryption.
 
 ## Stage 10 — Encryption
 

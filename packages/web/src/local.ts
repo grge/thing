@@ -32,6 +32,7 @@ import {
   type Keyring,
   type LocalState,
   Locators,
+  seedFor,
   type Stored,
   type PetnameStore,
   SEED_LEN,
@@ -96,6 +97,13 @@ export class LocalKeyring implements Keyring {
     // an identity within someone else's space, not a space of its own.
     localStorage.setItem(KEY_PREFIX + space, hexOf(key.privateKey));
     return key;
+  }
+
+  async importFor(space: string, seed: string): Promise<boolean> {
+    const pair = await seedFor(space, seed);
+    if (pair === null) return false;
+    localStorage.setItem(KEY_PREFIX + space, hexOf(pair.privateKey));
+    return true;
   }
 
   async keyFor(space: string): Promise<KeyPair | null> {

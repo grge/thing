@@ -372,7 +372,12 @@ export class Client extends PeerClient {
       key: tab.key,
       name: tab.name,
       state: held.space.state,
-      writable: held.space.writable,
+      // **Admitted, not merely holding a key.** `writable` asks whether a
+      // writing key is held; `admitted` asks whether the writer set accepts it
+      // (§7.2.1). A key that is not in the set signs events every peer stores
+      // and no peer folds — which looks like working and is not, so a UI that
+      // offered editing on the first would be lying (`CAPABILITIES.md`).
+      writable: held.space.writable && held.space.admitted,
       forks: held.forks,
       peers: held.connections.size,
       mirrors: this.mirrors(id),
@@ -396,6 +401,30 @@ export class Client extends PeerClient {
     const target = targetOf(held.space.state, link);
     if (target === null) return null;
     return this.open(target, entry(held.space.state, link)?.name ?? null);
+  }
+
+  /**
+   * Take over a space from a link that carried its seed (`CAPABILITIES.md`).
+   *
+   * **This is not "gaining write access"** — it installs the key that *is* the
+   * space's authority, so this client can then write the root and decide who
+   * may write. Given only when someone deliberately hands over a space, which
+   * is why the link shape that carries it is separate.
+   *
+   * Refuses a seed whose public key is not this space: accepting one would
+   * install a key for a different space under this one's name, which is the
+   * failure §5.1.1's read-only fallback exists to prevent.
+   */
+  async adoptKey(id: string, seed: string): Promise<boolean> {
+    const installed = await this.local.keys.importFor(id, seed);
+    if (!installed) return false;
+    // Reopen, because a `Space` takes its writer at open (`space.ts`) and this
+    // one was opened without a key — or with a different one.
+    await this.release(id);
+    const key = fromHex(id);
+    await this.hold(key, (await this.local.keys.keyFor(id)) ?? undefined);
+    this.changed();
+    return true;
   }
 
   /* ── settings ─────────────────────────────────────────────────────────── */
@@ -536,6 +565,12 @@ export class Client extends PeerClient {
   async create(name?: string): Promise<Tab> {
     const key = await this.local.keys.mint();
     const space = await this.hold(key.publicKey, key);
+    // **Declare a writer set naming this client alone** (`CAPABILITIES.md`).
+    // An *absent* set admits everyone (§7.2.1), and a share link is made of the
+    // public key — so without this, sharing a space to be read hands over the
+    // ability to change it. `writerSetFrom` always adds the space key, so this
+    // narrows from "anyone" to "whoever holds this space's key".
+    await space.addWriter(key.publicKey);
     if (name !== undefined && name !== '') {
       // The suggested name goes on the root, written by the space key (§3.5).
       // Distinct from the petname: this one replicates and is what the space
@@ -699,7 +734,7 @@ export class Client extends PeerClient {
    * stored one: a share link's staleness is fixed by resharing it, where a
    * rotted address inside a space propagates to everyone holding it.
    */
-  shareLink(id: string, options: { locator?: string } = {}): string {
+  shareLink(id: string, options: { locator?: string; grant?: 'read' | 'administer' } = {}): string {
     const entry = this.entry(id);
     if (entry === undefined) throw new Error('that space is not open');
 
@@ -710,6 +745,16 @@ export class Client extends PeerClient {
     params.set('t', codeFor(entry.key));
     if (options.locator !== undefined && options.locator !== '') {
       params.set('l', options.locator);
+    }
+    if (options.grant === 'administer') {
+      // **This hands over the space itself** (`CAPABILITIES.md`), not "write
+      // access": whoever holds the seed writes the root, so they decide who
+      // may write — including removing you — and §7.2.3 has no way to undo it.
+      // It exists because moving a space between your own devices is a real
+      // need; anything else should be an admission, which can be withdrawn.
+      const seed = this.local.keys.exportKey(id);
+      if (seed === null) throw new Error('this browser holds no key for that space');
+      params.set('w', seed);
     }
 
     const base = `${location.origin}${location.pathname}`;
@@ -778,6 +823,14 @@ export interface ShareLink {
   readonly name: string | null;
   readonly token: string | null;
   readonly locator: string | null;
+  /**
+   * The space's own seed, when a link hands over the space (`CAPABILITIES.md`).
+   *
+   * Not "write access": whoever holds this writes the root, so they decide who
+   * may write. Granting write access is an admission instead, which can be
+   * withdrawn where this cannot.
+   */
+  readonly seed: string | null;
 }
 
 /**
@@ -800,7 +853,7 @@ export function parsePasted(text: string): ShareLink | null {
   if (hash !== -1) return parseShareLink(trimmed.slice(hash));
 
   if (/^[0-9a-f]{64}$/i.test(trimmed)) {
-    return { key: trimmed.toLowerCase(), name: null, token: null, locator: null };
+    return { key: trimmed.toLowerCase(), name: null, token: null, locator: null, seed: null };
   }
   return null;
 }
@@ -814,6 +867,8 @@ export function parseShareLink(fragment: string): ShareLink | null {
     name: params.get('n'),
     token: params.get('t'),
     locator: params.get('l'),
+    /** The space's own seed, if this link hands over the space (§7.2.1). */
+    seed: params.get('w'),
   };
 }
 

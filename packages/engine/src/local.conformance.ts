@@ -117,6 +117,54 @@ export function localConformanceTests(name: string, make: LocalBackends): void {
       await after();
     });
 
+    it('imports a key that really is the space it claims', async () => {
+      // The other half of `exportKey`. §5.1.1 lists "an explicit export the
+      // user is prompted to keep" among its answers to key loss, and an export
+      // nobody can restore is half a mechanism.
+      const source = await make.keys();
+      const minted = await source.mint();
+      const id = hex(minted.publicKey);
+      const seed = hex(minted.privateKey);
+
+      const target = await make.keys();
+      expect(await target.importFor(id, seed)).toBe(true);
+      expect(hex((await target.keyFor(id))!.publicKey)).toBe(id);
+      await after();
+    });
+
+    it('refuses a seed for a different space', async () => {
+      // **A space *is* its public key** (§5.1), so accepting this would install
+      // one space's identity under another's name — the failure the read-only
+      // fallback exists to prevent, arrived at from the other direction.
+      const keys = await make.keys();
+      const a = await keys.mint();
+      const b = await keys.mint();
+
+      expect(await keys.importFor(hex(a.publicKey), hex(b.privateKey))).toBe(false);
+      await after();
+    });
+
+    it('refuses junk rather than throwing', async () => {
+      // A pasted seed is ordinary input, and being wrong is an ordinary
+      // outcome.
+      const keys = await make.keys();
+      const id = hex((await keys.mint()).publicKey);
+      for (const junk of ['', 'nonsense', 'zz'.repeat(32), 'aa', ' ']) {
+        expect(await keys.importFor(id, junk)).toBe(false);
+      }
+      await after();
+    });
+
+    it('accepts a seed with surrounding whitespace, which pasting carries', async () => {
+      const source = await make.keys();
+      const minted = await source.mint();
+      const id = hex(minted.publicKey);
+
+      const target = await make.keys();
+      expect(await target.importFor(id, `  ${hex(minted.privateKey)}\n`)).toBe(true);
+      await after();
+    });
+
     it('round-trips a key through storage, not just through memory', async () => {
       // The private half has to survive: a keyring that returns a public key
       // and a broken private one fails only when something tries to sign.

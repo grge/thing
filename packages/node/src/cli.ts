@@ -216,14 +216,19 @@ export async function main(argv: readonly string[]): Promise<number> {
       const key = await createSpace(dir);
       await setMainSpace(dir, key.publicKey);
 
-      const name = flags['name'];
-      if (name !== undefined && name !== '') {
-        const opened = await openMain(dir);
-        if (opened !== null) {
+      const opened = await openMain(dir);
+      if (opened !== null) {
+        // **Declare a writer set naming this peer alone** (`CAPABILITIES.md`).
+        // An absent set admits everyone (§7.2.1), and a space id is what a
+        // share link is made of — so without this, telling someone where a
+        // space is hands them the ability to change it.
+        await opened.space.addWriter(key.publicKey);
+        const name = flags['name'];
+        if (name !== undefined && name !== '') {
           // The suggested name goes on the root, written by the space key (§3.5).
           await opened.space.write(ROOT, ':name', UTF8.encode(name));
-          await opened.server.close();
         }
+        await opened.server.close();
       }
       process.stdout.write(`${hex(key.publicKey)}\n`);
       return 0;

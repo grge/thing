@@ -1,6 +1,6 @@
 # Three keys, and what a link carries
 
-**Status: a design, not built.** It settles how reading, writing and replicating
+**Status: built**, except the reading key (`r=`), which waits on stage 10. It settles how reading, writing and replicating
 are separated, what a share link says, and what a new space defaults to — the
 things §6 and §7.2 each specify from one side and neither joins up.
 

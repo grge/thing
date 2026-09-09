@@ -35,11 +35,23 @@
    * sides meet at the rendezvous token instead.
    */
   let locator = $state('');
-  let copied = $state<'link' | 'key' | null>(null);
+  let copied = $state<'link' | 'key' | 'seed' | null>(null);
+  /**
+   * Whether to hand over the space itself.
+   *
+   * **Not "write access"** (`docs/design/CAPABILITIES.md`): the seed is the
+   * space's authority, so whoever holds it decides who may write — including
+   * removing you — and nothing can undo that. It exists because moving a space
+   * between your own devices is a real need, and it is deliberately awkward.
+   */
+  let handOver = $state(false);
 
   const link = $derived.by(() => {
     try {
-      return client.shareLink(tab.id, locator === '' ? {} : { locator });
+      return client.shareLink(tab.id, {
+        ...(locator === '' ? {} : { locator }),
+        ...(handOver ? { grant: 'administer' as const } : {}),
+      });
     } catch {
       return '';
     }
@@ -74,7 +86,24 @@
         {copied === 'link' ? 'copied' : 'copy'}
       </button>
     </div>
-    <p class="note">Carries the key, so what answers it is verified. Send it anywhere.</p>
+    <p class="note">
+      {#if handOver}
+        <strong>This hands over the space.</strong> Whoever opens it can write
+        anything and decide who else may — including removing you. There is no
+        way to take it back. Use it to move a space to your own other device.
+      {:else}
+        Carries the key, so what answers it is verified. Whoever opens it can
+        read and replicate, and cannot write.
+      {/if}
+    </p>
+  </label>
+
+  <label class="check">
+    <input type="checkbox" bind:checked={handOver} disabled={!tab.writable} />
+    <span>
+      Hand over the space
+      {#if !tab.writable}<span class="note">— this browser holds no key for it</span>{/if}
+    </span>
   </label>
 
   <label>

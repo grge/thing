@@ -23,11 +23,32 @@
  * `PetnameStore` already lived in `store/naming.ts` and is re-exported here so
  * the four read as a set.
  */
-import type { KeyPair } from './core/index.js';
+import { hex, type KeyPair, keyPairFromSeed, SEED_LEN } from './core/index.js';
 import type { Locator } from './net/locator.js';
 import type { SpaceId } from './store/index.js';
 
 export type { PetnameStore } from './store/naming.js';
+
+/**
+ * A seed that really is this space's key, or null.
+ *
+ * Shared so three backends cannot disagree about what they will accept. A
+ * space *is* its public key (§5.1), so the check is that deriving the public
+ * key from the seed reproduces the space id — anything else would install a
+ * different space's identity under this one's name.
+ */
+export async function seedFor(space: SpaceId, seed: string): Promise<KeyPair | null> {
+  const clean = seed.trim().toLowerCase();
+  if (clean.length !== SEED_LEN * 2 || !/^[0-9a-f]+$/.test(clean)) return null;
+  const bytes = new Uint8Array(SEED_LEN);
+  for (let i = 0; i < SEED_LEN; i++) bytes[i] = Number.parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+  try {
+    const pair = await keyPairFromSeed(bytes);
+    return hex(pair.publicKey) === space.toLowerCase() ? pair : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Where a client keeps its writing keys (§5.1).
@@ -65,6 +86,23 @@ export interface Keyring {
    * for every space we touch" — so this mints rather than reusing anything.
    */
   mintFor(space: SpaceId): Promise<KeyPair>;
+  /**
+   * Install a key someone handed over, as a hex seed.
+   *
+   * The other half of `exportKey`, and §5.1.1 lists "an explicit export the
+   * user is prompted to keep" among its candidate answers to key loss — an
+   * export nobody can restore is half a mechanism.
+   *
+   * **Checked against the space it claims to be for.** A space *is* its public
+   * key (§5.1), so a seed whose public key is not this space would install a
+   * different space's identity under this one's name — the exact failure the
+   * read-only fallback exists to prevent. Returns false rather than throwing:
+   * a pasted seed is ordinary input and being wrong is an ordinary outcome.
+   *
+   * Only for a key that *is* the space. A writing identity within someone
+   * else's space is minted, never handed over (`design/CAPABILITIES.md`).
+   */
+  importFor(space: SpaceId, seed: string): Promise<boolean>;
   /** This client's writing key for a space, or null if it holds none. */
   keyFor(space: SpaceId): Promise<KeyPair | null>;
   /** Destroy a key. Irreversible, and §5.1.1 is why that matters. */

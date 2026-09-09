@@ -161,6 +161,13 @@
           // Dial regardless of whether the tab is new: a restored tab has no
           // connection, and the link's hint may be the only address anyone has
           // for that space (`docs/design/LOCATORS.md`).
+          // A link that carried the space's own seed hands over the space
+          // (`docs/design/CAPABILITIES.md`) — install it before connecting, so
+          // the space opens with its key rather than read-only.
+          if (link.seed !== null) {
+            const took = await client.adoptKey(tab.id, link.seed);
+            if (!took) error = 'that link carried a key for a different space';
+          }
           if (link.locator !== null) await client.connect(tab.id, link.locator);
           else if (link.token !== null) await client.meetAt(tab.id, link.token);
         } catch (err) {

@@ -10,7 +10,7 @@ import type { KeyPair } from './core/index.js';
 import { generateKeyPair } from './core/index.js';
 import type { SpaceId } from './store/index.js';
 import type { PetnameStore } from './store/naming.js';
-import type { Inventory, Keyring, LocalState } from './local.js';
+import { type Inventory, type Keyring, type LocalState, seedFor } from './local.js';
 import { Locators } from './locators.js';
 
 export class MemoryKeyring implements Keyring {
@@ -33,6 +33,13 @@ export class MemoryKeyring implements Keyring {
     const key = await generateKeyPair();
     this.keys.set(space, key);
     return key;
+  }
+
+  async importFor(space: SpaceId, seed: string): Promise<boolean> {
+    const pair = await seedFor(space, seed);
+    if (pair === null) return false;
+    this.keys.set(space, pair);
+    return true;
   }
 
   async keyFor(space: SpaceId): Promise<KeyPair | null> {
