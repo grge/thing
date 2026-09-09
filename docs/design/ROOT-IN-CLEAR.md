@@ -1,6 +1,6 @@
 # The root is not encrypted
 
-**Status: a design, not built.** It settles which parts of an encrypted space
+**Status: built** (stage 10). It settles which parts of an encrypted space
 stay readable, and why the root is a different case from the `:kind` exemption
 §6 already considered and rejected.
 

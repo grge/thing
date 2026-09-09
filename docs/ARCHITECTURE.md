@@ -899,6 +899,13 @@ Left open deliberately. It is a small decision that wants to be made against a
 real implementation rather than in advance, and nothing above depends on which
 way it goes.
 
+**Both conditions have since changed.** Stage 10 encrypted `:body` and so
+encrypted the blob *address* it carries, which broke keyless mirroring — §6.2's
+promise, and the thing §2.4's ciphertext-addressing was arranged to support. So
+there is now a real implementation to decide against, and something above does
+depend on which way it goes. `design/BLOB-REFS.md` has the problem and the
+candidates; snapshots (§9.1) remain the second forcing case.
+
 ---
 
 ## 4. Objects, kinds and views — **Decided in shape, Open in detail**
@@ -1354,7 +1361,7 @@ without being told, exactly as on the early web.
 
 ---
 
-## 6. Privacy and the reading key — **Decided in shape, Open in construction**
+## 6. Privacy and the reading key — **Proven**
 
 Identity is a public key, and it makes a space verifiable. It does not make a
 space private: anything a peer can replicate, a peer could read.
@@ -1362,9 +1369,11 @@ space private: anything a peer can replicate, a peer could read.
 Privacy is therefore a separate key. A space may have a **symmetric reading
 key**, and where it does, event values and blob contents are encrypted under it.
 
-**The construction is not specified here and must be before this is built.** What
-the rest of this section says about *who can do what* holds under any competent
-authenticated cipher; what follows is what a construction has to get right.
+**The construction is settled and built** (`core/cipher.ts`):
+**XChaCha20-Poly1305**, with the value and blob subkeys derived from the reading
+key by HKDF-SHA256. What the rest of this section says about *who can do what*
+holds under any competent authenticated cipher; what follows is what a
+construction has to get right, and what this one does about it.
 
 - **Nonces must never repeat under one key**, and a space is exactly the setting
   where they would: many writers encrypting independently, offline, with no
@@ -1378,16 +1387,23 @@ authenticated cipher; what follows is what a construction has to get right.
   because `(writer, seq)` stopped identifying a position.
   `design/CAPABILITIES.md` records the correction. The flag worked as intended:
   written down when the assumption was made, found on re-reading, cost nothing.
-- **Encryption must be deterministic where deduplication is wanted.** §2.4 says
-  identical content deduplicates; under a randomised scheme two writers adding
-  the same file produce different ciphertexts and it does not, even within one
-  space. Deriving a blob's key and nonce from its plaintext hash restores
-  deduplication at a known cost: it reveals to anyone holding the key that two
-  objects have identical content, and it permits a confirm-a-known-file attack
-  by someone who can guess a candidate. That is a real trade and it should be
-  made deliberately.
-- **Keys should be derived, not used raw.** One reading key with separate derived
-  subkeys for event values and blobs keeps the two domains apart.
+- **Encryption must be deterministic where deduplication is wanted**, and
+  **this one is not.** §2.4 says identical content deduplicates; under a
+  randomised scheme two writers adding the same file produce different
+  ciphertexts and it does not, even within one space. Deriving a blob's key and
+  nonce from its plaintext hash would restore deduplication at a known cost: it
+  permits a **confirm-a-known-file attack** by someone who can guess a
+  candidate — encrypt it, compare hashes — aimed at exactly the party a public
+  server exposes you to. **Taken the other way deliberately**
+  (`working/ENCRYPTION-PLAN.md`): blobs get a random nonce, carried with the
+  ciphertext. The cost is duplicate storage on a machine you own, and only when
+  one space stores the same bytes twice; the alternative is a standing
+  disclosure to whoever hosts you. §2.4's deduplication is therefore **false for
+  encrypted spaces**, which that section now says.
+- **Keys should be derived, not used raw**, and are: one reading key, expanded by
+  HKDF-SHA256 into separate subkeys for event values and blobs, so a
+  construction error in one domain cannot reach the other. A value's nonce is
+  derived from its position; a blob's is random, for the reason above.
 - **Root-targeted events are not encrypted** — see `design/ROOT-IN-CLEAR.md`.
   `:writers` lives on the root, so encrypting it means a peer without the
   reading key cannot evaluate membership, and an encrypted space could only be
@@ -1424,7 +1440,8 @@ Almost everything except read. The substrate never interprets a value
 | Store the log | **yes** |
 | Verify signatures and chains | **yes** — signatures are over ciphertext |
 | Replicate events to other peers | **yes** |
-| Store and serve blobs | **yes** — content-addressed by ciphertext hash |
+| Store and serve blobs it was given | **yes** — content-addressed by ciphertext hash |
+| *Find* which blobs a space references | **intended yes; currently no** — see below |
 | Answer resolution queries | **yes** |
 | Read any value | **no** |
 | Fold attribute slices | **yes** — rules are fixed per name, and merges compare keys |
@@ -1463,9 +1480,21 @@ In practice such a peer stores and serves rather than folding, because shape
 without meaning is of no use to it. The point is that it *can* — nothing in
 replication requires reading.
 
-The consequence is the useful one: **a peer can be a complete, verifying,
-useful replica of a space it cannot read.** Storage and readership are separate
-concerns, and only the second requires trust.
+**Blobs are currently broken here, and it is a bug rather than a property**
+(`design/BLOB-REFS.md`). A blob's address lives in `:body`, stage 10 encrypted
+`:body`, and a keyless peer therefore cannot name a blob to ask for. It relays
+the whole log and acquires no content — so a **file** space keeps its structure
+alive and not its bytes.
+
+That contradicts this table and §6.2, both of which are the intent: §2.4
+addresses blobs by the hash of the *ciphertext* specifically so that a peer
+without the reading key can verify what it stores and serves. The fix is
+undecided and the candidates are in `design/BLOB-REFS.md`; §3.9 predicted the
+underlying confusion, which is that `:body` answers two questions at once.
+
+The consequence is the useful one once that is repaired: **a peer can be a
+complete, verifying replica of a space it cannot read.** Storage and readership
+are separate concerns, and only the second requires trust.
 
 ### 6.2 What this makes possible
 

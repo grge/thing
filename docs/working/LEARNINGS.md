@@ -570,6 +570,86 @@ state the disclosure positively — *here is what a host learns* — rather than
 a list of things encryption does not do. A reader deciding whether to trust a
 host needs the first form.
 
+## 21. A pointer went into a slot that gets encrypted
+
+Stage 10, found by writing the end-to-end test §6 asks for: *a headless peer
+serves an encrypted space it cannot read, and a peer with the key reads it
+through that peer.* The first half is true. The second half is true of **events**
+and false of **blobs**.
+
+**This is a regression against stated intent, not a discovered limitation.** The
+first version of this entry recorded it as an honest consequence of §6 that the
+design had not noticed. That was wrong twice over, and the corrections are the
+actual lesson — see the end of this section. The live problem statement is
+[`../design/BLOB-REFS.md`](../design/BLOB-REFS.md); this records how it was
+misread.
+
+**Why.** A relay mirrors content by walking the fold for what it references —
+`referencedBlobs` reads `:parent` to find objects and `:body` to get each hash.
+Both are encrypted values, so a keyless peer cannot name a single blob to ask
+for. And a peer serves a blob only from its own store: `WANT_BLOB` is answered
+from local bytes or refused with `NO_BLOB`, never forwarded. So a hub with no
+reading key holds no blob of an encrypted space and has nothing to pass on.
+
+The result is a split that §6.1's table does not draw:
+
+| | keyless hub |
+| --- | --- |
+| relay events | **yes** — the whole log, verified |
+| fold the root, evaluate membership | **yes** (`ROOT-IN-CLEAR.md`) |
+| mirror or serve blobs | **no** — it cannot name one |
+
+**What it means in practice.** For a space whose content lives in event values —
+notes, a chat, a collaborative document — a keyless hub is a complete relay, and
+§6.2 holds as written. For a **file** space, it keeps the filesystem's structure
+alive and not its bytes: two peers never online together see the file listed and
+cannot fetch it. That is a much weaker promise than "a peer can be a complete,
+verifying, useful replica of a space it cannot read", which §6.1 says without
+qualification.
+
+**It is a bug, and the cause is one sentence:** a blob's address lives in
+`:body`, and stage 10 encrypted `:body`. §2.4 had deliberately arranged for the
+address to be the hash of the *ciphertext* precisely so a keyless peer could
+verify blobs it stores and serves — that reasoning only makes sense if such a
+peer is expected to acquire them. The mechanism was there and stage 10 wrapped
+the one input it needed.
+
+**Three wrong turns before that was clear**, and they are the part worth
+remembering:
+
+- **"The tree walk blocks it."** `referencedBlobs` recurses through `:parent`,
+  which a keyless peer cannot resolve — so it looked like a second, independent
+  blocker. It is not: `state.objects` is a flat map and iterating it directly
+  reaches the same objects for less work. A gratuitous recursion was mistaken
+  for a constraint because it was there.
+- **"The hash is secret."** It is an address, and a randomised one — encrypting
+  one file three times yields three unrelated addresses, so it cannot even
+  confirm a guessed file. Reasoning proceeded for some time on the assumption
+  that exposing it was the dangerous part, having already established that it
+  was the ciphertext hash.
+- **"It is a consequence, so document it."** Two design documents were amended
+  and an OPEN entry filed, all of which made a bug look like a decision. Writing
+  it down is not the same as being right, and a plausible explanation absorbed
+  the evidence instead of being tested against it.
+
+**The lesson.** §6.1's table was written about *the fold* and silently
+generalised to *everything a peer does*; blobs travel by a different path (§2.4)
+and were never checked against it. That is the second time a claim about a
+keyless peer was more confident than the code — §20 corrected the same table for
+the tree. But the sharper lesson is the third bullet: **the first coherent story
+that fits the symptom is not the diagnosis**, and it is most dangerous when it is
+coherent enough to write up.
+
+**What was actually predicted.** §3.9 has been open since it was written and
+names this exactly — *"is this body a blob" and "is this value stored out of
+line" are two different questions, and a design that answers them with one
+mechanism will have to separate them again.* It deferred the decision until
+there was a real implementation to decide against. There is now, and encryption
+is the second forcing case after snapshots (§9.1).
+
+**Open:** [`../design/BLOB-REFS.md`](../design/BLOB-REFS.md) has the problem
+statement and five candidate fixes. Not decided.
+
 ## The nuclear revoke
 
 **The problem it answers.** `deps` (see `../design/DEPS.md`) narrows backdating without

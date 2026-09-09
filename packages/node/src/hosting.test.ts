@@ -24,6 +24,9 @@ import {
   list,
   makeFile,
   makeLink,
+  contentHash,
+  newReadingKey,
+  read,
   type KeyPair,
 } from '@thing/engine';
 
@@ -305,5 +308,111 @@ describe('a hub hosts what its main space links to', () => {
     // Only once the middle space's own events arrive can its links be seen —
     // which is why every hosted space is watched, not only the main one.
     await waitFor(() => server.hosting.includes(hex(far.publicKey)));
+  });
+});
+
+/**
+ * Stage 10's own "done when": **a headless peer serves an encrypted space it
+ * cannot read, and a peer with the key reads it through that peer.**
+ *
+ * The point is not that encryption works — `encryption.test.ts` covers that —
+ * but that §6.1's table holds across a real connection: the hub verifies,
+ * stores and relays ciphertext, and the reading happens only at the ends.
+ */
+describe('hosting a space it cannot read (§6.2)', () => {
+  it('relays an encrypted space between two peers, holding only ciphertext', { timeout: 30_000 }, async () => {
+    const { server: hubServer, url } = await hub();
+
+    // The owner: its own encrypted space, and the reading key for it.
+    const ownerDir = await tempDir();
+    const ownerKeys = new FileKeyring(ownerDir);
+    const mine = await ownerKeys.mint();
+    const mineId = hex(mine.publicKey);
+    const reading = newReadingKey();
+    await ownerKeys.setReading(mineId, reading);
+
+    const ownerClient = new Client({
+      store: new FileStore(ownerDir),
+      keys: { keyFor: (i) => ownerKeys.keyFor(i) },
+      reading: { readingFor: (i) => ownerKeys.readingFor(i) },
+    });
+    cleanup.push(() => ownerClient.close());
+
+    const mineSpace = await ownerClient.hold(mine.publicKey, mine);
+    await makeFile(mineSpace, 'secret.md', new TextEncoder().encode('# for readers only'));
+
+    // The hub is told to host it, by its own operator writing the link — the
+    // same instruction a cleartext space takes, and it needs no reading key to
+    // carry it out.
+    await makeLink(hubServer.space!, 'mine', mine.publicKey);
+    await waitFor(() => hubServer.hosting.includes(mineId));
+
+    // The owner then syncs its space up to the hub.
+    await ownerClient.join(mineId, await dial(url));
+    await waitFor(() => ownerClient.peers().length > 0);
+    await waitFor(() => hubServer.spaceOf(mineId) !== null);
+
+    // **The hub holds it and cannot read it.** It folds the root — that is what
+    // `ROOT-IN-CLEAR.md` buys — and every body is unreadable (§6.1).
+    const hash0 = contentHash(
+      mineSpace.state,
+      list(mineSpace.state).find((e) => e.name === 'secret.md')!.id,
+    )!;
+
+    const hosted = hubServer.spaceOf(mineId)!;
+    await waitFor(() => hosted.state.objects.size > 0);
+    expect(list(hosted.state).some((e) => e.name === 'secret.md')).toBe(false);
+    expect(hosted.looksEncrypted).toBe(true);
+    expect(hosted.readable).toBe(false);
+
+    // A second peer, holding the reading key and no writing key, reaches the
+    // space only through the hub.
+    const readerDir = await tempDir();
+    const readerKeys = new FileKeyring(readerDir);
+    await readerKeys.setReading(mineId, reading);
+    const readerClient = new Client({
+      store: new FileStore(readerDir),
+      keys: { keyFor: (i) => readerKeys.keyFor(i) },
+      reading: { readingFor: (i) => readerKeys.readingFor(i) },
+      mirrorBlobs: true,
+    });
+    cleanup.push(() => readerClient.close());
+
+    const readerSpace = await readerClient.hold(mine.publicKey);
+    await readerClient.join(mineId, await dial(url));
+
+    // It reads what the relay between them never could.
+    await waitFor(() => list(readerSpace.state).some((e) => e.name === 'secret.md'));
+    expect(readerSpace.readable).toBe(true);
+    expect(readerSpace.writable).toBe(false);
+
+    // **The bytes must come from the owner, not through the hub — and that is a
+    // known defect, not the intended behaviour.** §6.2 promises a peer can keep
+    // an encrypted space alive without reading it, blobs included, and §2.4
+    // addresses blobs by ciphertext hash precisely so a keyless peer can verify
+    // what it stores. Stage 10 broke that by encrypting `:body`, which is where
+    // a blob's address lives, so the hub cannot name a blob to ask for.
+    //
+    // This assertion therefore pins **current** behaviour, and should fail —
+    // loudly, and be rewritten — when `docs/design/BLOB-REFS.md` is settled.
+    // Root cause is §3.9's deferred question; LEARNINGS.md §21 has the history.
+    expect(await hubServer.spaceOf(mineId)!.getBlob(hash0)).toBeNull();
+
+    // The two readers therefore meet directly.
+    const ownerListener = new Server({
+      dir: ownerDir,
+      space: mine.publicKey,
+      listen: { port: 0, host: '127.0.0.1' },
+    });
+    cleanup.push(() => ownerListener.close());
+    await ownerListener.start();
+    await readerClient.join(mineId, await dial(`ws://127.0.0.1:${ownerListener.port}`));
+
+    const entry = list(readerSpace.state).find((e) => e.name === 'secret.md')!;
+    const hash = contentHash(readerSpace.state, entry.id)!;
+    readerClient.requestBlob(mineId, hash);
+    await waitFor(async () => (await read(readerSpace, entry.id)) !== null);
+    const bytes = await read(readerSpace, entry.id);
+    expect(new TextDecoder().decode(bytes!)).toBe('# for readers only');
   });
 });

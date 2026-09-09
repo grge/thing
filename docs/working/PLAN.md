@@ -1104,11 +1104,12 @@ admitted, and a share link can be made that grants reading without writing.
 **Left for stage 10:** the `r=` field. A reading key has nothing to carry until
 there is encryption.
 
-## Stage 10 — Encryption
+## Stage 10 — Encryption ✅ *(one defect open: `design/BLOB-REFS.md`)*
 
 §6, self-contained if stage 3 left addressing ciphertext-shaped.
-**`ENCRYPTION-PLAN.md` has the decisions and the seams** — read that first; the
-bullets below are the original sketch.
+**`ENCRYPTION-PLAN.md` has the decisions, the seams, and what the build found
+that they missed** — read that first; the bullets below are the original
+sketch.
 
 - **Root events are not encrypted** (`../design/ROOT-IN-CLEAR.md`). `:writers`
   lives there, so encrypting it means a peer without the reading key cannot
@@ -1132,6 +1133,34 @@ which trades a confirm-a-known-file attack for deduplication (§6).
 
 **Done when:** a headless peer serves an encrypted space it cannot read, and a
 browser with the key reads it through that peer.
+
+**Done, with one qualification worth reading.** XChaCha20-Poly1305 over event
+values and blobs, HKDF-SHA256 subkeys, nonce `(writer, point, seq)`, root in
+clear, `r=` in links, reading keys in all three keyrings and in the local
+conformance suite. `hosting.test.ts` runs the "done when" end to end.
+
+**The qualification: a keyless peer cannot mirror blobs, and this is a bug.**
+A blob's address lives in `:body` and this stage encrypted `:body`, so the
+headless peer in that test relays the whole log and the *content* moves only
+between the two peers holding the key. §6.1 and §6.2 both promise otherwise, and
+§2.4 addressed blobs by ciphertext hash specifically to make keyless mirroring
+possible. **Open, with five candidates in `../design/BLOB-REFS.md`** — the root
+cause is §3.9's deferred question, now forced. Stage 10 is otherwise complete;
+this is the piece to settle before it can be called done.
+
+Three other notes:
+
+- **The three decode sites the plan named were the wrong seam** — two of them
+  have no access to the nonce triple. Decryption happens once at the entry to
+  each fold instead, and nothing below it knows encryption exists.
+- **It found a latent bug in the incremental fold.** `applyOther` minted a
+  phantom object from any `:parent` value that was not a uuid; `resolveParents`
+  had the width check and the two disagreed. Reachable before encryption by a
+  malformed write, never hit.
+- **A new browser space is encrypted by default**; a CLI space is not
+  (`thing init --encrypted`). Nothing in the design decided this, so it was
+  decided in `ENCRYPTION-PLAN.md` and is flagged here as a choice rather than a
+  consequence.
 
 ---
 

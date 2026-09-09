@@ -1,8 +1,9 @@
 # Encryption: the implementation plan
 
-**Status: a plan, not built.** Stage 10. It records the decisions taken so a
-session can start from them rather than re-deriving them, and the seams found by
-reading the code.
+**Status: built.** Stage 10. It records the decisions taken so a session could
+start from them rather than re-deriving them, and the seams found by reading the
+code. Kept because the reasoning is what justifies the shape; what the build
+found that this did not anticipate is at the bottom.
 
 Design: §6 for what encryption is and what it does not do,
 `../design/ROOT-IN-CLEAR.md` for the root exemption,
@@ -119,3 +120,57 @@ cipher. Build accordingly, and do not let the UI imply more privacy than this.
 makes the check *possible* for a keyless peer, but membership is still
 time-dependent (§7.2.3), so a store must not refuse on arrival. The likely shape
 is *store it, decline to relay it*, and it is not part of this stage.
+
+---
+
+## What the build found
+
+Three things this plan did not anticipate. The first two were wrong here; the
+third was outside what it looked at.
+
+**The three decode sites were the wrong seam.** The table above names
+`rule.codec.decode(e.value)` in three places, and two of them cannot be used: a
+rule sees an `Entry`, whose key is a `Key` — `(lamport, writer, id)` — carrying
+neither `point` nor `seq`. `refoldBody` in particular decodes from *retained*
+entries, long after the envelope is gone. Threading the nonce triple down would
+have meant widening `Entry`, which is the rule contract, for a concern rules must
+never have.
+
+**The seam that works is the entry to each fold**, where the whole event is still
+in hand: one `map` in `fold`, one branch in `Folder.apply`. Everything below is
+untouched and does not know encryption exists — which is what the plan wanted
+and a better version of it. `decrypted()` and `encrypted()` in `cipher.ts` state
+the root exemption once on each side.
+
+**A latent bug in the incremental fold, which encryption made reachable.**
+`applyOther` called `ensure(parent)` on the decoded `:parent` value without
+checking its width. `:parent` folds with the bytes register, which accepts any
+length, so a value that is not a uuid reached it — and a ciphertext `:parent` in
+a space whose key this peer lacks is exactly that. The result was a phantom
+object keyed by 32 bytes of ciphertext, with no attributes and no events.
+
+`resolveParents` had the check already (`p.length === UUID_LEN`, falling back to
+`ROOT`), which is precisely what §6.1 says should happen. So the two disagreed,
+and only the fold that could invent objects was wrong. Fixed at the source. It
+was reachable before encryption by any writer sending a malformed `:parent`;
+nothing in the tree-shaped tests did.
+
+**A keyless peer cannot mirror blobs**, found by writing the end-to-end test this
+stage is measured by — and it is a **regression against §6.2**, not a
+consequence. A blob's address is in `:body` and this stage encrypted `:body`.
+`design/BLOB-REFS.md` has the problem statement and five candidates; the root
+cause is §3.9, which predicted that `:body` answering two questions would have to
+be separated again. Not fixed here, and stage 10 is not finished until it is.
+
+## What was built beyond the five steps
+
+- **`Space.readable` and `Space.looksEncrypted`**, the second a stated guess:
+  nothing in an event says "this is ciphertext", so the interface reads the
+  invariant `ROOT-IN-CLEAR.md` says a peer can check. It exists only so a client
+  can say *encrypted, no reading key* rather than showing a broken-looking space.
+- **Reading keys in the local conformance suite**, which immediately found that
+  `MemoryKeyring` accepted a wrong-width key where both real backends refused.
+- **A new space is encrypted by default in the browser**, unencrypted from the
+  CLI (`thing init --encrypted` opts in). Deliberate asymmetry: a browser space
+  is somebody's own material, and a CLI space is usually a hub. Neither §6 nor
+  `CAPABILITIES.md` decided this; it was decided here.
