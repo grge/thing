@@ -382,6 +382,36 @@ looking.
 fold 22× slower than a full replay of the same events — the opposite of its
 purpose. That is now stage 12. The bug was real; the description was fiction.
 
+## 16. A name is not an identifier, however convenient it is
+
+`follow(space, linkName)` looked up a link by its name. Two links called
+`untitled` — the *default* name, so this is the common case rather than a
+contrived one — and clicking either opened whichever `links()` sorted first.
+
+**What it looked like from outside was much worse than what it was.** The user
+reported "expanding a link shows the content of a totally different space",
+which is content attributed to the wrong space: a correctness bug in the fold,
+or a link whose target had been corrupted. I spent several rounds checking
+`makeLink`, `targetOf`, the fold, and the tree's keying, and reproduced the
+scenario end to end in Node — where it worked, because the *engine* was never
+wrong. Only when they narrowed it to *"clicking either of two links switches to
+the same tab"* was the shape obvious.
+
+The lesson is not "use ids", which everyone already knows. It is that **the
+identifier was right there and the name was easier to pass**. `FileEntry` has
+`id`; the button had `chosen` in scope; `follow` took a string because a string
+was what the caller happened to have. Nothing forced the mistake and nothing
+caught it, because with one link per name it is indistinguishable from correct.
+
+**Two more of the same shape were in the CLI**, found by grepping for the
+pattern rather than by thinking. `thing unlink <name>` removed an arbitrary one
+of several — silently, and the wrong one as likely as the right one. It now
+refuses and lists the candidates, with `--key` to disambiguate. That one is a
+*deletion*, so the same bug there was worse and had been sitting unremarked.
+
+**Worth grepping for after any bug of this kind.** `\.name === ` found all
+three in one command.
+
 ## The nuclear revoke
 
 **The problem it answers.** `deps` (see `../design/DEPS.md`) narrows backdating without

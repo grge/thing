@@ -31,10 +31,13 @@ import {
   type Divergence,
   hex,
   type KeyPair,
+  entry,
   links,
   type Locator,
   parseLocator,
   referencedBlobs,
+  targetOf,
+  type Uuid,
   type PeerKind,
   type PeerStatus,
   type PublicKey,
@@ -382,12 +385,17 @@ export class Client extends PeerClient {
    * The link's name comes with it, so a tab is labelled by what the space it
    * came from called it — which is what a petname was, without a separate store.
    */
-  async follow(from: string, linkName: string): Promise<Tab | null> {
+  async follow(from: string, link: Uuid): Promise<Tab | null> {
     const held = this.entry(from);
     if (held === undefined) return null;
-    const found = links(held.space.state).find((l) => l.entry.name === linkName);
-    if (found === undefined) return null;
-    return this.open(found.target, found.entry.name);
+    // **By object id, not by name.** Names are not unique — nothing stops a
+    // space holding two links called `untitled`, and `links()` sorts by name,
+    // so finding by name always opened the first of them however many there
+    // were. Clicking either of two identically named links went to the same
+    // space, which looked like a link pointing at the wrong content.
+    const target = targetOf(held.space.state, link);
+    if (target === null) return null;
+    return this.open(target, entry(held.space.state, link)?.name ?? null);
   }
 
   /* ── settings ─────────────────────────────────────────────────────────── */

@@ -178,10 +178,17 @@
     selected = null;
   }
 
-  /** Following a link opens a tab. It writes nothing (`docs/design/MAIN-SPACE.md`). */
-  async function follow(name: string): Promise<void> {
+  /**
+   * Following a link opens a tab. It writes nothing (`docs/design/MAIN-SPACE.md`).
+   *
+   * **By the link's object id, not its name.** Nothing stops a space holding
+   * two links called `untitled`, and looking one up by name always found the
+   * first — so clicking either went to the same space, which looked like a
+   * link pointing at someone else's content.
+   */
+  async function follow(link: Uuid): Promise<void> {
     if (activeId === null) return;
-    const tab = await client.follow(activeId, name);
+    const tab = await client.follow(activeId, link);
     if (tab !== null) show(tab.id);
   }
 
@@ -678,7 +685,7 @@
           {#if chosen !== null}
             {#if isLink(chosen)}
               <button
-                onclick={() => void follow(chosen.name)}
+                onclick={() => void follow(chosen.id)}
                 aria-label="Open in a tab"
                 title="Open in a tab"
               >

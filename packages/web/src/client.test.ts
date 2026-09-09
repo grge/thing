@@ -176,9 +176,9 @@ describe('tabs', () => {
     const client = new Client();
     const mine = await client.create('mine');
     const target = await generateKeyPair();
-    await makeLink(client.space(mine.id)!, 'theirs', target.publicKey);
+    const link = await makeLink(client.space(mine.id)!, 'theirs', target.publicKey);
 
-    const opened = await client.follow(mine.id, 'theirs');
+    const opened = await client.follow(mine.id, link);
 
     expect(opened).not.toBeNull();
     expect(opened!.id).toBe(hex(target.publicKey));
@@ -192,20 +192,39 @@ describe('tabs', () => {
     const client = new Client();
     const mine = await client.create('mine');
     const target = await generateKeyPair();
-    await makeLink(client.space(mine.id)!, 'theirs', target.publicKey);
+    const link = await makeLink(client.space(mine.id)!, 'theirs', target.publicKey);
 
     const before = links(client.space(mine.id)!.state).length;
-    await client.follow(mine.id, 'theirs');
+    await client.follow(mine.id, link);
     const after = links(client.space(mine.id)!.state).length;
 
     expect(after).toBe(before);
     await client.close();
   });
 
-  it('following a link that is not there is null, not an error', async () => {
+  it('following something that is not a link is null, not an error', async () => {
     const client = new Client();
     const mine = await client.create('mine');
-    expect(await client.follow(mine.id, 'nothing')).toBeNull();
+    expect(await client.follow(mine.id, new Uint8Array(16))).toBeNull();
+    await client.close();
+  });
+
+  it('follows the link that was clicked, not the first with its name', async () => {
+    // **Nothing makes a link name unique.** Two spaces both called `untitled`
+    // is ordinary — it is the default name — and looking one up by name found
+    // whichever `links()` sorted first, so clicking either went to the same
+    // space. That looked like a link pointing at someone else's content, which
+    // is a much more alarming bug than the one it was.
+    const client = new Client();
+    const mine = await client.create('mine');
+    const first = await generateKeyPair();
+    const second = await generateKeyPair();
+
+    const linkOne = await makeLink(client.space(mine.id)!, 'untitled', first.publicKey);
+    const linkTwo = await makeLink(client.space(mine.id)!, 'untitled', second.publicKey);
+
+    expect((await client.follow(mine.id, linkOne))!.id).toBe(hex(first.publicKey));
+    expect((await client.follow(mine.id, linkTwo))!.id).toBe(hex(second.publicKey));
     await client.close();
   });
 
@@ -365,11 +384,11 @@ describe('tabs', () => {
     const client = new Client();
     const mine = await client.create('mine');
     const theirs = await generateKeyPair();
-    await makeLink(client.space(mine.id)!, 'theirs', theirs.publicKey);
+    const link = await makeLink(client.space(mine.id)!, 'theirs', theirs.publicKey);
 
     expect(client.view().map((t) => t.name)).toEqual(['mine']);
 
-    const opened = await client.follow(mine.id, 'theirs');
+    const opened = await client.follow(mine.id, link);
     expect(opened!.name).toBe('theirs');
     expect(client.view()).toHaveLength(2);
     await client.close();

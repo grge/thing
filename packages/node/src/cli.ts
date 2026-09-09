@@ -13,7 +13,7 @@
  *   thing put <file> [--as name]       write a file in
  *   thing get <name> [--out file]      read one back
  *   thing link <name> <key>            add a link to another space
- *   thing unlink <name>                remove one
+ *   thing unlink <name>|--key <key>    remove one
  *   thing links                        every link this peer holds
  *   thing key                          this peer's space key, for sharing
  * ```
@@ -305,24 +305,40 @@ export async function main(argv: readonly string[]): Promise<number> {
 
     case 'unlink': {
       const name = positional[1];
-      if (name === undefined) {
-        process.stderr.write('usage: thing unlink <name>\n');
+      const byKey = flags['key'];
+      if (name === undefined && byKey === undefined) {
+        process.stderr.write('usage: thing unlink <name> | thing unlink --key <key>\n');
         return 2;
       }
       const opened = await openMain(dir, flags['at']);
       if (opened === null) return 1;
       let wrote = false;
       try {
-        const found = links(opened.space.state).find((l) => l.entry.name === name);
-        if (found === undefined) {
-          process.stderr.write(`no link called ${name}\n`);
+        // **Names are not unique**, and `untitled` is the default — so several
+        // links may answer to one name. Removing an arbitrary one of them is
+        // worse than refusing: it is silent, and the wrong one is as likely as
+        // the right one.
+        const matching = links(opened.space.state).filter((l) =>
+          byKey === undefined ? l.entry.name === name : hex(l.target) === byKey.toLowerCase(),
+        );
+        if (matching.length === 0) {
+          process.stderr.write(byKey === undefined ? `no link called ${name}\n` : `no link to ${byKey}\n`);
           return 1;
         }
+        if (matching.length > 1) {
+          process.stderr.write(`${matching.length} links are called ${name}:\n`);
+          for (const l of matching) {
+            process.stderr.write(`  ${hex(l.target)}\n`);
+          }
+          process.stderr.write('remove one by its key: thing unlink --key <key>\n');
+          return 1;
+        }
+        const found = matching[0]!;
         // §7.2.3's shape: removal stops it being listed, and does not unwrite
         // the fact that it was there.
         await opened.space.write(found.entry.id, ':deleted', Uint8Array.of(1));
         wrote = true;
-        process.stdout.write(`unlinked ${name}\n`);
+        process.stdout.write(`unlinked ${found.entry.name}\n`);
       } finally {
         if (!wrote) await opened.server.close();
       }
@@ -455,7 +471,7 @@ const USAGE = `thing — one space, and links to others
   thing put <file> [--as name]       write a file in
   thing get <name> [--out file]      read one back
   thing link <name> <key>            add a link to another space
-  thing unlink <name>                remove one
+  thing unlink <name>|--key <key>    remove one
   thing links                        every link this peer holds
 
 Writing commands take --at <url> to reach a peer already serving this
