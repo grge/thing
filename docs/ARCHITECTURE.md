@@ -398,6 +398,21 @@ whether the writer is permitted to say it. Those are decisions for higher layers
 and keeping them out is what allows a peer to replicate an application it does
 not have — or a space it cannot read (Section 6).
 
+**Permission in particular cannot be checked here**, for two reasons worth
+stating because the consequence is easy to mistake for an oversight. A peer
+without the reading key cannot evaluate membership at all — `:writers` is an
+encrypted value on the root — so refusing unadmitted writes at the store would
+mean an encrypted space could only be hosted by someone who can read it, which
+is what §6.2 exists to avoid. And membership is time-dependent: §7.2.3 judges an
+event against the set *its author had seen*, and a peer may not yet hold the
+events that admitted a writer. The fold can revisit that; an append-only log
+cannot un-refuse.
+
+So **an event from a writer nobody admitted is stored, replicated, and never
+folded.** It changes nothing anyone sees. What it costs is that anyone who can
+reach a space can make it grow, which OPEN.md 8a records against §9 —
+compaction is where a bound would live.
+
 **Appending is serial, and that is a requirement rather than an implementation
 detail.** Check 3 is a decision about a *chain*, not about an event: whether a
 sequence number follows depends on what the store already holds, so deciding it
@@ -1794,6 +1809,12 @@ answerable without disturbing it:
   the workaround — pre-authorising a batch of keys — is clumsy.
 - **Whether moderator actions need their own attribute vocabulary** or are
   ordinary writes distinguished only by who signed them.
+- **What bounds an unadmitted writer's storage cost.** Their events fold into
+  nothing, so they change no state — but the substrate stores and replicates
+  them regardless, for the reasons §2.3 gives, and nothing removes them. Anyone
+  who can reach a space can therefore make it grow. OPEN.md 8a has the shape of
+  it; a bound belongs with compaction (§9) or with a peer that *can* read
+  declining to relay, which is different from refusing to store.
 
 ---
 
@@ -1936,6 +1957,15 @@ accumulator, keys included, not the state a view sees.
 
 Discarding events is what actually bounds growth, and it breaks the verification
 story completely:
+
+**One class of event is easier than the rest, and worth naming separately.**
+Events from a writer nobody admitted fold into nothing (§2.3), and unlike the
+losing branch of a fork they can be shown *permanently* irrelevant rather than
+merely unused — no later arrival can admit them retrospectively, because
+§7.2.3 judges an event against the set its author had seen. Discarding those
+needs none of the trust machinery below, since nothing was ever computed from
+them. That is the natural bound on OPEN.md 8a, and it is a smaller problem than
+compaction proper.
 
 > **Verification requires the events you were trying to discard.** A peer that
 > recomputes a snapshot to check it does not need the snapshot. A peer that needs
