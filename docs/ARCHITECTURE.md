@@ -36,11 +36,14 @@ who takes them for solved will plan badly:
   those events name is answerable with what exists and is not surfaced
   anywhere, so an upload looks complete when only its names have replicated.
 
-There is also one **constraint on operating the system** that it cannot enforce
-itself: **a private key is held by one device at a time.** Two devices sharing a
-key fork that writer's chain, and while §7.3 resolves the fork deterministically
-so the network converges, the losing branch's writes are dropped. Worth reading
-before any decision about sharing administration.
+There was also a **constraint on operating the system** that it cannot enforce
+itself — *a private key is held by one device at a time* — and **append points
+removed it**. A chain is keyed by `(writer, point)` and every process mints a
+fresh point, so two devices holding one key extend different chains and both
+sets of writes are kept (§2.1, `design/APPEND-POINTS.md`). Sharing a key is now
+an *accountability* choice rather than a correctness hazard: it makes "who wrote
+this" unanswerable and makes revocation all-or-nothing (§7.2.2). Sections
+written before that change are marked where the premise has moved.
 
 A reader who wants only the parts that are safe to build on should read §2, §5,
 §6, §7 and §10, which are Proven or Decided throughout.
@@ -258,9 +261,9 @@ alongside the frontier, or a bounded list of exceptions — and neither is desig
 **Decided: detect now, repair later.** The tip hash goes in the handshake, so a
 fork is noticed in the ordinary exchange and can be reported. The *request* that
 would fetch a competing branch is deliberately not designed yet, for two
-reasons: a fork means the one-key-one-device constraint (§7.3) was already
-violated, so it is not a routine event; and the same extension is wanted by two
-other needs that are not yet understood. Designing it once, when all three are,
+reasons: a fork means deliberate equivocation or a rolled-back store (§7.3), so
+it is not something honest software produces; and the same extension is wanted
+by two other needs that are not yet understood. Designing it once, when all three are,
 beats designing it three times.
 
 **What detection must do meanwhile.** A peer that sees mismatched tips must say
@@ -398,6 +401,47 @@ whether the writer is permitted to say it. Those are decisions for higher layers
 and keeping them out is what allows a peer to replicate an application it does
 not have — or a space it cannot read (Section 6).
 
+**Permission in particular cannot be checked here**, for two reasons worth
+stating because the consequence is easy to mistake for an oversight. A peer
+without the reading key cannot evaluate membership at all — `:writers` is a
+value on the root, which `design/ROOT-IN-CLEAR.md` proposes leaving unencrypted
+for exactly this reason, and which is encrypted until that is built — so refusing unadmitted writes at the store would
+mean an encrypted space could only be hosted by someone who can read it, which
+is what §6.2 exists to avoid. And membership is time-dependent: §7.2.3 judges an
+event against the set *its author had seen*, and a peer may not yet hold the
+events that admitted a writer. The fold can revisit that; an append-only log
+cannot un-refuse.
+
+So **an event from a writer nobody admitted is stored, replicated, and never
+folded.** It changes nothing anyone sees. What it costs is that anyone who can
+reach a space can make it grow, which OPEN.md 8a records against §9 —
+compaction is where a bound would live.
+
+**Appending is serial, and that is a requirement rather than an implementation
+detail.** Check 3 is a decision about a *chain*, not about an event: whether a
+sequence number follows depends on what the store already holds, so deciding it
+and recording the result have to be one step. Check 1 makes that awkward,
+because verifying a signature is asynchronous — so between deciding an event is
+new and noting that it was taken, another append can run and decide the same
+thing. Both then store it.
+
+The cost is not a wasted write. **A log with an event twice in it is a log whose
+chain no longer reads as a sequence**, and everything that walks a chain expects
+one: rebuilding chain state on open, and serving a range to a peer that is
+behind. Both stopped at the second copy, so the chain pinned at that sequence
+number and every later event became a permanent gap — a file with a name, no
+content, and no way to recover without touching the log.
+
+So **a store appends one batch at a time**. Concurrent appends are ordinary
+rather than exotic: a peer sends events in batches, a client asks for several
+ranges at once, and one connection carries several spaces (§5.3) — so nothing
+above the store naturally arrives in single file.
+
+This was not noticed until a connection could carry more than one space. Before
+that, appends were serial by accident, which is the worst way for an invariant
+to hold: it is satisfied, unstated, and stops being satisfied when something
+unrelated changes.
+
 ### 2.4 Blobs
 
 Large content does not travel in the log. A blob-kinded object's body holds the
@@ -424,7 +468,11 @@ retry instead of a permanent gap.
 - **Content-addressed** by full SHA-256 of the bytes **as stored and
   transferred**, so integrity is verified by rehashing the reassembly. Identical
   content deduplicates only where the encryption is deterministic, which is a
-  choice §6 makes rather than a property that comes free.
+  choice §6 makes rather than a property that comes free —
+  **and it is made the other way**: blobs are randomised, so an encrypted space
+  does not deduplicate. `working/ENCRYPTION-PLAN.md` has the trade. The cost is
+  duplicate storage when the same bytes are added twice within one space; what
+  it avoids is a confirm-a-known-file attack by whoever hosts you.
 - **Chunked** for transfer, with backpressure and resume from a chunk index.
 - **Availability is advertised.** Version vectors describe events, never blobs.
   Peers exchange blob-availability sets so "who holds this content" is
@@ -851,6 +899,13 @@ Left open deliberately. It is a small decision that wants to be made against a
 real implementation rather than in advance, and nothing above depends on which
 way it goes.
 
+**Both conditions have since changed.** Stage 10 encrypted `:body` and so
+encrypted the blob *address* it carries, which broke keyless mirroring — §6.2's
+promise, and the thing §2.4's ciphertext-addressing was arranged to support. So
+there is now a real implementation to decide against, and something above does
+depend on which way it goes. `design/BLOB-REFS.md` has the problem and the
+candidates; snapshots (§9.1) remain the second forcing case.
+
 ---
 
 ## 4. Objects, kinds and views — **Decided in shape, Open in detail**
@@ -1194,6 +1249,10 @@ question for observation rather than argument.
 
 ### 5.4 Sharing
 
+**See `design/CAPABILITIES.md`**, which settles what a link carries when there
+is more than one key to carry: replicating, reading and administering are three
+different grants and the format below has one field for them.
+
 A share link carries the key in the URL fragment, so it never reaches a server:
 
 ```
@@ -1302,7 +1361,7 @@ without being told, exactly as on the early web.
 
 ---
 
-## 6. Privacy and the reading key — **Decided in shape, Open in construction**
+## 6. Privacy and the reading key — **Proven**
 
 Identity is a public key, and it makes a space verifiable. It does not make a
 space private: anything a peer can replicate, a peer could read.
@@ -1310,32 +1369,48 @@ space private: anything a peer can replicate, a peer could read.
 Privacy is therefore a separate key. A space may have a **symmetric reading
 key**, and where it does, event values and blob contents are encrypted under it.
 
-**The construction is not specified here and must be before this is built.** What
-the rest of this section says about *who can do what* holds under any competent
-authenticated cipher; what follows is what a construction has to get right.
+**The construction is settled and built** (`core/cipher.ts`):
+**XChaCha20-Poly1305**, with the value and blob subkeys derived from the reading
+key by HKDF-SHA256. What the rest of this section says about *who can do what*
+holds under any competent authenticated cipher; what follows is what a
+construction has to get right, and what this one does about it.
 
 - **Nonces must never repeat under one key**, and a space is exactly the setting
   where they would: many writers encrypting independently, offline, with no
   coordination. Random nonces invite a birthday collision; a counter needs
   agreement nobody can reach. The envelope already carries a unique pair —
-  `(writer, seq)` — which is unique by construction under §7.3's constraint and
-  is the natural nonce input. **That dependency is load-bearing and easy to
-  miss:** the pair is unique *because* one key has one chain. Any change that
-  lets one identity hold two chains — per-process append points, say, which
-  `design/APPEND-POINTS.md` traces — makes two writers produce the same nonce for
-  different plaintexts under one key, which an authenticated cipher does not
-  survive. The nonce input must gain whatever component distinguishes the
-  chains, and this bullet must be revisited *before* §6 is built.
-- **Encryption must be deterministic where deduplication is wanted.** §2.4 says
-  identical content deduplicates; under a randomised scheme two writers adding
-  the same file produce different ciphertexts and it does not, even within one
-  space. Deriving a blob's key and nonce from its plaintext hash restores
-  deduplication at a known cost: it reveals to anyone holding the key that two
-  objects have identical content, and it permits a confirm-a-known-file attack
-  by someone who can guess a candidate. That is a real trade and it should be
-  made deliberately.
-- **Keys should be derived, not used raw.** One reading key with separate derived
-  subkeys for event values and blobs keeps the two domains apart.
+  `(writer, seq)`. **That dependency was load-bearing and it has since broken:**
+  the pair was unique *because* one key had one chain, and per-process append
+  points (`design/APPEND-POINTS.md`) give one identity a chain per process. The
+  nonce input is therefore **`(writer, point, seq)`** — the same triple that
+  already keys a chain, which is not a coincidence: the point exists precisely
+  because `(writer, seq)` stopped identifying a position.
+  `design/CAPABILITIES.md` records the correction. The flag worked as intended:
+  written down when the assumption was made, found on re-reading, cost nothing.
+- **Encryption must be deterministic where deduplication is wanted**, and
+  **this one is not.** §2.4 says identical content deduplicates; under a
+  randomised scheme two writers adding the same file produce different
+  ciphertexts and it does not, even within one space. Deriving a blob's key and
+  nonce from its plaintext hash would restore deduplication at a known cost: it
+  permits a **confirm-a-known-file attack** by someone who can guess a
+  candidate — encrypt it, compare hashes — aimed at exactly the party a public
+  server exposes you to. **Taken the other way deliberately**
+  (`working/ENCRYPTION-PLAN.md`): blobs get a random nonce, carried with the
+  ciphertext. The cost is duplicate storage on a machine you own, and only when
+  one space stores the same bytes twice; the alternative is a standing
+  disclosure to whoever hosts you. §2.4's deduplication is therefore **false for
+  encrypted spaces**, which that section now says.
+- **Keys should be derived, not used raw**, and are: one reading key, expanded by
+  HKDF-SHA256 into separate subkeys for event values and blobs, so a
+  construction error in one domain cannot reach the other. A value's nonce is
+  derived from its position; a blob's is random, for the reason above.
+- **Root-targeted events are not encrypted** — see `design/ROOT-IN-CLEAR.md`.
+  `:writers` lives on the root, so encrypting it means a peer without the
+  reading key cannot evaluate membership, and an encrypted space could only be
+  hosted by someone able to read it. Unlike the `:kind` exemption rejected in
+  §6.1, this is one node rather than one per object, and what it holds is a list
+  of public keys that holding the space id already discloses. It costs `:name`
+  in clear, which is a deliberate trade rather than an oversight.
 
 **One key per space, covering all of it.** There is no per-object or per-subtree
 encryption: holding the reading key means reading everything in the space, and
@@ -1365,20 +1440,34 @@ Almost everything except read. The substrate never interprets a value
 | Store the log | **yes** |
 | Verify signatures and chains | **yes** — signatures are over ciphertext |
 | Replicate events to other peers | **yes** |
-| Store and serve blobs | **yes** — content-addressed by ciphertext hash |
+| Store and serve blobs it was given | **yes** — content-addressed by ciphertext hash |
+| *Find* which blobs a space references | **intended yes; currently no** — see below |
 | Answer resolution queries | **yes** |
 | Read any value | **no** |
-| Fold structure (the object tree) | **yes** — attribute rules are fixed, not declared |
+| Fold attribute slices | **yes** — rules are fixed per name, and merges compare keys |
+| Fold structure (the object tree) | **no** — `:parent` is an encrypted value |
 | Fold any body | **no** — a body's rule is named by an encrypted `:kind` |
 | Fold into *meaningful* state | **no** — the shape resolves, the values do not |
 | Write | **no** — that needs the private space key, separately |
 
-Folding is the interesting case, and it splits. **Attribute slices fold over
-ciphertext**: their rules are fixed per attribute name (§3.2), so a peer knows
-which rule applies without reading anything, and each rule picks a winner by
-`(lamport, writer)` without inspecting values. Such a peer therefore computes
-*the shape* of the state — which objects exist, which attributes they carry,
-which writes won — while knowing what none of it says.
+Folding is the interesting case, and it splits three ways rather than two.
+
+**Attribute slices fold over ciphertext.** Their rules are fixed per attribute
+name (§3.2), so a peer knows which rule applies without reading anything, and
+each rule picks a winner by `(lamport, writer)` without inspecting values. Such
+a peer computes *which write won* for every attribute of every object, while
+knowing what none of it says.
+
+**The tree does not fold.** An earlier version of this table said it did, and
+that was wrong: resolving `:parent` means reading its *decoded* value as a
+16-byte uuid, and ciphertext is not one, so every object falls back to the root.
+A keyless peer therefore has a flat set of objects rather than a tree — and
+cannot name them either, since `:name` is a value like any other. What it holds
+is the slice structure, not the filesystem.
+
+**The root does fold**, because root-targeted events are not encrypted
+(`design/ROOT-IN-CLEAR.md`). That is what lets such a peer evaluate membership,
+and it is now the only structural thing it can compute.
 
 **Body slices do not fold at all.** A body's rule is named by `:kind`, `:kind` is
 an encrypted value, so a peer without the key cannot even determine which rule to
@@ -1391,9 +1480,21 @@ In practice such a peer stores and serves rather than folding, because shape
 without meaning is of no use to it. The point is that it *can* — nothing in
 replication requires reading.
 
-The consequence is the useful one: **a peer can be a complete, verifying,
-useful replica of a space it cannot read.** Storage and readership are separate
-concerns, and only the second requires trust.
+**Blobs are currently broken here, and it is a bug rather than a property**
+(`design/BLOB-REFS.md`). A blob's address lives in `:body`, stage 10 encrypted
+`:body`, and a keyless peer therefore cannot name a blob to ask for. It relays
+the whole log and acquires no content — so a **file** space keeps its structure
+alive and not its bytes.
+
+That contradicts this table and §6.2, both of which are the intent: §2.4
+addresses blobs by the hash of the *ciphertext* specifically so that a peer
+without the reading key can verify what it stores and serves. The fix is
+undecided and the candidates are in `design/BLOB-REFS.md`; §3.9 predicted the
+underlying confusion, which is that `:body` answers two questions at once.
+
+The consequence is the useful one once that is repaired: **a peer can be a
+complete, verifying replica of a space it cannot read.** Storage and readership
+are separate concerns, and only the second requires trust.
 
 ### 6.2 What this makes possible
 
@@ -1418,9 +1519,22 @@ concerns, and only the second requires trust.
   ever held it holds it permanently, and can decrypt anything they have or later
   obtain that was encrypted under it. Restricting access after the fact requires
   a new key and re-encryption, which is a new space in all but name.
-- **It does not hide structure.** A peer without the key still sees how many
-  events exist, who wrote them, when, how large the blobs are, and how the space
-  changes over time. Encrypted values conceal content, not activity.
+- **It does not hide structure**, and this concession is larger than one line
+  suggests — `working/LEARNINGS.md` §20 works it through. A peer without the key
+  sees how many objects exist and therefore roughly how many files; how many
+  times each changed; which carry a body and so which are files rather than
+  folders; when everything happened and in what order; who wrote each event; how
+  large every blob is; and, once the root is in clear, the membership list and
+  the space's name. An edit-per-keystroke document is distinguishable from a
+  file uploaded once.
+
+  **This is not a weakness of the cipher.** Events are the unit of replication,
+  so a peer must read `target`, `attr`, `writer`, `seq` and `prev` to reconcile
+  at all (§2.3); the fold is universal, so attribute names must be legible
+  (§3.2); signatures are per event, so events cannot be batched into
+  indistinguishable chunks. Metadata is the substrate. **"A peer can host a
+  space it cannot read" is true and weaker than it sounds:** the host cannot
+  read your documents, and can describe your working habits.
 - **It does not hide identity.** The space's public key is what peers ask for by
   name. Holding an encrypted space is not private in the sense of being secret;
   it is private in the sense of being unreadable.
@@ -1557,12 +1671,20 @@ time membership changes.
 ### 7.2.2 Moderators hold their own keys, never the space key
 
 The obvious way to have several administrators is to share the space key between
-them. **It should not be done**, and the reason is more specific than shared
-secrets being poor practice: two holders writing concurrently fork the one chain
-that determines who may write. §7.3 resolves such a fork rather than leaving the
-space stuck, so this is a silent loss of one administrator's changes rather than
-a catastrophe — but it is a loss with no upside, since the shape below gets
-several administrators without it.
+them. **It should not be done** — though the reason has changed, and the old one
+is worth retiring rather than leaving to be repeated.
+
+**It used to be forks.** Two holders writing concurrently were said to fork the
+one chain that decides who may write, silently losing one administrator's
+changes. Append points removed that: each process mints its own chain, so two
+holders of one key write side by side and both sets of changes are kept
+(`design/APPEND-POINTS.md`).
+
+**What remains is attribution.** A key is what a signature attributes an event
+to, so several people behind one key makes *"who admitted this writer"*
+unanswerable — in a log whose whole purpose is provenance. And §7.2.3's
+revocation acts on a key, so removing one administrator removes all of them.
+Neither is fixed by append points, and the shape below avoids both.
 
 The shape that works instead keeps the root single-writer:
 
@@ -1579,10 +1701,11 @@ event is, so folding it means checking whether that writer was a moderator. That
 check is against phase 1's output, which is already computed, and it is the same
 shape as an ordinary write-permission check.
 
-It buys two things worth having. No secret is ever shared, so §7.3's hazard never
-arises. And every moderator action is **attributable to a person** rather than
-being an anonymous act by the space — *Alice removed Bob* rather than *Bob was
-removed* — which is better in a log whose whole purpose is provenance.
+It buys two things worth having. No secret is ever shared, so revocation can
+reach one administrator without reaching all of them. And every moderator action
+is **attributable to a person** rather than being an anonymous act by the space
+— *Alice removed Bob* rather than *Bob was removed* — which is better in a log
+whose whole purpose is provenance.
 
 ### 7.2.3 Revocation means "may no longer write", never "was never here"
 
@@ -1631,23 +1754,36 @@ reconsidering if the reading key were ever derived from membership**, since "who
 was a member at time T" would then determine what can be decrypted, and a few
 seconds of ambiguity would stop being cosmetic.
 
-### 7.3 Chain forks: one key, two devices — **Decided**
+### 7.3 Chain forks — **Decided**
 
-A private key is meant to be held by **one device at a time**. This section says
-what happens when that is violated, because it will be, and because the answer
-determines whether the violation is survivable.
+> **This section was written before append points and its premise has changed.**
+> It said *one key, two devices*, and described sharing a private key as the way
+> a fork happens. That is no longer true: §2.1's append point means a chain is
+> keyed by `(writer, point)` and every process mints a fresh random point, so
+> two devices holding one key extend two *different* chains and never collide.
+> `design/APPEND-POINTS.md` has the change; the resolution below is unchanged
+> and still needed, because a fork is still *possible* — it just now means
+> something else.
 
-**Two devices holding one key fork that writer's chain.** The mechanism is
-§2.1's per-writer chain: each event carries `seq` and the hash of that writer's
-previous event, which makes a writer's history a linked list with exactly one
-tail. Two devices both believe they are at the same tail. Both write. The result
-is **two different events at the same sequence number, with the same
-predecessor, both validly signed.**
+**A fork is one chain with two histories at the same sequence number.** The
+mechanism is §2.1's chain: each event carries `seq` and the hash of that chain's
+previous event, so a chain is a linked list with exactly one tail. Two events at
+one position with the same predecessor, both validly signed, is a fork.
 
-**Signing cannot catch it.** A forged event fails verification; this one does
-not, because the key genuinely signed both. The two branches have identical
-provenance, so nothing can adjudicate them *on authority* — there is no fact
-about which one the writer "meant".
+**Honest software no longer produces one.** Two of your own processes do not
+collide, because they hold different points. What remains are two causes, and
+neither is an accident:
+
+- **Deliberate equivocation.** A writer that reuses a point on purpose, signing
+  two different events at one position. Signing cannot catch this — the key
+  genuinely signed both — which is the property `design/EQUIVOCATION.md`
+  reviews and the reason the resolution below exists.
+- **A corrupted or rolled-back store.** A peer that loses its record of where a
+  chain had reached may re-mint at a position it already used.
+
+**Signing cannot catch either.** A forged event fails verification; these do
+not. The two branches have identical provenance, so nothing can adjudicate them
+*on authority* — there is no fact about which one the writer "meant".
 
 ### 7.3.1 The resolution is deterministic, not fair
 
@@ -1731,23 +1867,29 @@ never appear — reads as a mysterious bug rather than as a key on two devices. 
 events at one sequence number with one predecessor is a cheap, checkable
 condition, and a client that sees it should say so plainly.
 
-### 7.3.4 The operational rule stands
-
-Resolution changes the failure from *unrecoverable* to *deterministic and lossy*,
-which is a large improvement and not a licence:
+### 7.3.4 The operational rule, and what it now rests on
 
 > **Export a key to move an identity, never to share one.**
 
-Within a single device an exclusive lock per space is a complete fix — the first
-context to open a space writes, later ones open read-only and say so. Across
-devices nothing prevents a fork, because no lock spans devices without a
-coordinator and a coordinator is the server this design does not have.
+**The advice stands; its reason has changed.** It used to rest on forks: sharing
+a key meant two devices at one chain tail, and the resolution above silently lost
+one of them. Append points removed that — two devices holding one key extend
+different chains and both sets of writes are simply kept, which
+`design/APPEND-POINTS.md` verified with two concurrent writers and zero forks.
+**The lock this section once required is gone too**, for the same reason, and
+the code says so where it used to take one.
 
-A second person who needs to write gets **their own key** and a place in the
+What remains is not a correctness argument but an accountability one. A key is
+what a signature attributes an event to, so sharing one makes *"who wrote this"*
+unanswerable — and §7.2.3's revocation removes a key from the writer set, which
+cuts off every holder at once or none of them. Neither of those is fixed by
+append points.
+
+So a second person who needs to write gets **their own key** and a place in the
 writer set. A second person who needs to administer gets §7.2.2's moderator role.
-A second *device* of the same person gets its own key too, enrolled alongside the
-first. In none of these cases is sharing a key the right answer, and the reason
-is now ordinary — it silently loses work — rather than catastrophic.
+A second *device* of the same person may now genuinely share a key — nothing
+breaks, and `CAPABILITIES.md`'s hand-over link exists for exactly that — at the
+cost that the two devices are one writer as far as the log is concerned.
 
 ### 7.4 What remains open
 
@@ -1765,6 +1907,20 @@ answerable without disturbing it:
   the workaround — pre-authorising a batch of keys — is clumsy.
 - **Whether moderator actions need their own attribute vocabulary** or are
   ordinary writes distinguished only by who signed them.
+
+**And whether two levels are enough.** The model has exactly *may write
+everything* and *may write nothing*. Four separate difficulties have each wanted
+a third — hosting a space means write access to a hub's main space, since a link
+is an ordinary write; unadmitted writes cost storage nobody bounds; moderators
+are a label nothing enforces; and encryption forced the authority model outside
+the privacy model rather than under it. Each has a local answer and the pattern
+is only visible together: `working/LEARNINGS.md` §19.
+- **What bounds an unadmitted writer's storage cost.** Their events fold into
+  nothing, so they change no state — but the substrate stores and replicates
+  them regardless, for the reasons §2.3 gives, and nothing removes them. Anyone
+  who can reach a space can therefore make it grow. OPEN.md 8a has the shape of
+  it; a bound belongs with compaction (§9) or with a peer that *can* read
+  declining to relay, which is different from refusing to store.
 
 ---
 
@@ -1907,6 +2063,15 @@ accumulator, keys included, not the state a view sees.
 
 Discarding events is what actually bounds growth, and it breaks the verification
 story completely:
+
+**One class of event is easier than the rest, and worth naming separately.**
+Events from a writer nobody admitted fold into nothing (§2.3), and unlike the
+losing branch of a fork they can be shown *permanently* irrelevant rather than
+merely unused — no later arrival can admit them retrospectively, because
+§7.2.3 judges an event against the set its author had seen. Discarding those
+needs none of the trust machinery below, since nothing was ever computed from
+them. That is the natural bound on OPEN.md 8a, and it is a smaller problem than
+compaction proper.
 
 > **Verification requires the events you were trying to discard.** A peer that
 > recomputes a snapshot to check it does not need the snapshot. A peer that needs
@@ -2152,9 +2317,11 @@ The design holds together only if these hold:
 9. **Only the space key writes the root.** This is what makes the rule that says
    which events count computable without already knowing the answer, and it is
    what keeps a causal dependency out of the envelope.
-10. **A private key is held by one device at a time.** Two devices sharing a key
-    fork that writer's chain. The fork resolves deterministically (§7.3) so peers
-    still converge, but one branch's writes are dropped.
+10. **A chain is `(writer, point)`, and a process mints its own point.** So one
+    identity may write from several places at once without colliding (§2.1). A
+    fork — two histories at one position — is therefore no longer something
+    honest software produces: it means deliberate equivocation or a rolled-back
+    store, and §7.3 still resolves it deterministically.
 11. **Events are the truth; everything else is cache.** Snapshots, indexes and
     rendered state are all discardable and recomputable.
 

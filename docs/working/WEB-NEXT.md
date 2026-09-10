@@ -39,6 +39,23 @@ Two things that need care when it is built, both from §5.1.1:
   is handing over write access to whoever produced it; the view should say what
   is being granted rather than treating it as a preference.
 
+## What the object header changed — **built**
+
+Every object in the preview pane now carries a collapsed header showing what it
+*is*: uuid, space, parent, the body's rule and value, and every attribute slice
+with the rule it folded by. Struck-through cases — an unreadable body
+(`bodyRuleMissing`), a cycle-broken parent, held-aside entries — show only when
+they apply.
+
+**It shows the fold's own vocabulary rather than a summary**, which is the whole
+point: a view that paraphrases hides exactly what you need when something is
+wrong. A file, a folder, a link and a document all read the same way, and the
+difference between them is visible as the rule their body folded by.
+
+This overlaps the debug panel below. The header answers *what is this object*;
+the panel answers *what is this client doing*. Worth checking, when the panel is
+reorganised, whether the per-space views it wants are better reached from here.
+
 ## The debug panel wants rethinking — **noted, not designed**
 
 Built as a global panel, and most of what is in it is not global. Peers,

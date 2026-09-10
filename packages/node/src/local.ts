@@ -24,7 +24,10 @@ import {
   type Keyring,
   type LocalState,
   Locators,
+  READING_KEY_LEN,
+  type ReadingKey,
   SEED_LEN,
+  seedFor,
   type Stored,
   type SpaceId,
 } from '@thing/engine';
@@ -44,6 +47,17 @@ export class FileKeyring implements Keyring {
 
   private path(space: SpaceId): string {
     return join(this.dir, `${space}.key`);
+  }
+
+  /**
+   * Where a reading key lives: a separate file, beside the writing key.
+   *
+   * A different extension rather than a different directory, so the two travel
+   * together when someone copies a keyring — and so `forget` can remove both
+   * without walking anywhere.
+   */
+  private readingPath(space: SpaceId): string {
+    return join(this.dir, `${space}.read`);
   }
 
   async mint(): Promise<KeyPair> {
@@ -68,6 +82,14 @@ export class FileKeyring implements Keyring {
     return key;
   }
 
+  async importFor(space: SpaceId, seed: string): Promise<boolean> {
+    const pair = await seedFor(space, seed);
+    if (pair === null) return false;
+    await mkdir(this.dir, { recursive: true });
+    await writeFile(this.path(space), pair.privateKey, { mode: 0o600 });
+    return true;
+  }
+
   async keyFor(space: SpaceId): Promise<KeyPair | null> {
     try {
       const seed = await readFile(this.path(space));
@@ -80,8 +102,29 @@ export class FileKeyring implements Keyring {
     }
   }
 
+  async readingFor(space: SpaceId): Promise<ReadingKey | null> {
+    try {
+      const key = await readFile(this.readingPath(space));
+      if (key.length !== READING_KEY_LEN) return null;
+      return new Uint8Array(key);
+    } catch {
+      // Absent is "this peer cannot read that space", which §6.1 makes an
+      // ordinary state rather than an error.
+      return null;
+    }
+  }
+
+  async setReading(space: SpaceId, reading: ReadingKey): Promise<void> {
+    if (reading.length !== READING_KEY_LEN) {
+      throw new Error(`a reading key is ${READING_KEY_LEN} bytes, got ${reading.length}`);
+    }
+    await mkdir(this.dir, { recursive: true });
+    await writeFile(this.readingPath(space), reading, { mode: 0o600 });
+  }
+
   async forget(space: SpaceId): Promise<void> {
     await rm(this.path(space), { force: true });
+    await rm(this.readingPath(space), { force: true });
   }
 }
 

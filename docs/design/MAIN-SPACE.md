@@ -248,6 +248,14 @@ tombstone already means "no longer". Compare `acceptUnknownSpaces`, the blunt
 alternative, which the engine describes as making a peer free storage for
 strangers.
 
+**The other edge of that.** Because a link is an ordinary write, *"please host
+my space"* and *"let me edit your space"* are the same request. A hub open to
+strangers must admit them as writers of its own main space, or host nothing they
+ask for — there is no way to say *may add links here, and nothing else*. That is
+fine for a hub run for a known group, which is what this model is for, and it is
+a real limit on any other kind. `working/LEARNINGS.md` §19 has it alongside the
+other places two permission levels have proved too few.
+
 **Withdrawing hosting does not delete.** A mis-drag would otherwise destroy what
 may be the only copy of someone's space, so unlinking stops the hosting from
 being renewed and leaves the data; discarding it is a separate, deliberate act.

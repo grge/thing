@@ -227,6 +227,9 @@ export class Client {
   private async openSpace(id: SpaceId, key: PublicKey, writer?: KeyPair): Promise<Space> {
     const store = await this.capabilities.store.open(id, key);
     const own = writer ?? (await this.capabilities.keys?.keyFor(id)) ?? null;
+    // Held or not, independently of the writing key: a peer may read a space it
+    // cannot write, write one it cannot read, or neither (§6.1).
+    const reading = (await this.capabilities.reading?.readingFor(id)) ?? null;
 
     // §7.3: two writers sharing one key fork that writer's chain, and both
     // branches verify. Where they can agree cheaply they should; a second
@@ -241,7 +244,11 @@ export class Client {
       ? NO_LOCK
       : await this.capabilities.lock(id);
     const writable = own !== null && (this.capabilities.lock === undefined || lock.held);
-    const space = await Space.open(store, writable ? { key, writer: own } : { key });
+    const space = await Space.open(store, {
+      key,
+      ...(writable ? { writer: own } : {}),
+      ...(reading === null ? {} : { reading }),
+    });
 
     const entry: Held = {
       key,
@@ -356,8 +363,21 @@ export class Client {
     // Kept per connection rather than per call, so a space wanted *later* — by
     // `reach`, over a transport already open — can be added to the same
     // routing table rather than starting a second one.
-    const sessions = this.routed.get(conn.peer) ?? new Map<SpaceId, Promise<Session | null>>();
+    const already = this.routed.get(conn.peer);
+    const sessions = already ?? new Map<SpaceId, Promise<Session | null>>();
     this.routed.set(conn.peer, sessions);
+
+    // **Wire the transport once.** `onFrame` appends a handler, so routing an
+    // already-routed connection again would deliver every frame twice — and
+    // the same events arriving twice is what filled logs with copies, which
+    // then broke two walks that assumed strict succession. A client holding
+    // several spaces from one peer calls this once per space, so this is the
+    // ordinary case rather than a corner.
+    if (already !== undefined) {
+      const open = this.openers.get(conn.peer);
+      if (options.greet !== null && open !== undefined) void open(options.greet, 'direct');
+      return sessions;
+    }
 
     const open = (id: SpaceId, kind: PeerKind): Promise<Session | null> => {
       const existing = sessions.get(id);
@@ -659,6 +679,36 @@ export class Client {
       });
     }
     return [...wanted].sort();
+  }
+
+  /* ── presence (§10) ───────────────────────────────────────────────────── */
+
+  /**
+   * Say where you are in a space — a cursor, a selection, whatever a view means
+   * by it.
+   *
+   * **Ephemeral, and that is the point.** A cursor is about the present moment:
+   * putting one in the log would make it permanent, replicated, and unbounded,
+   * accumulating a position per keystroke forever (§10). The payload is opaque
+   * to everything below the view.
+   */
+  announcePresence(id: SpaceId, payload: unknown, ttl?: number): void {
+    const entry = this.held.get(id);
+    if (entry === undefined) return;
+    for (const session of entry.sessions.values()) {
+      if (!session.isClosed) session.presence(id, payload, ttl);
+    }
+  }
+
+  /** Who else is in this space, and what they last said about themselves. */
+  presence(id: SpaceId): Map<string, unknown> {
+    const entry = this.held.get(id);
+    if (entry === undefined) return new Map();
+    const out = new Map<string, unknown>();
+    for (const session of entry.sessions.values()) {
+      for (const [peer, payload] of session.presenceIn(id)) out.set(peer, payload);
+    }
+    return out;
   }
 
   /* ── resolution (§5.3) ────────────────────────────────────────────────── */
@@ -1011,8 +1061,10 @@ export class Client {
   availability(id: SpaceId): { peer: string; blobs: number }[] {
     const entry = this.held.get(id);
     if (entry === undefined) return [];
-    // Only what this session's peer advertised; presence is per-connection.
-    return [...entry.sessions].map(([peer, s]) => ({ peer, blobs: s.ephemeral.present().size }));
+    // Only what this session's peer advertised about *blobs* — this counted
+    // presence entries before, which was a different thing wearing the same
+    // method name.
+    return [...entry.sessions].map(([peer, s]) => ({ peer, blobs: s.blobsAdvertised }));
   }
 
   peers(): PeerStatus[] {

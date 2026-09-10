@@ -65,7 +65,15 @@ export class EphemeralState {
   /** peer -> blob hashes it advertised. */
   private readonly have = new Map<string, Held<Set<string>>>();
   /** peer -> whatever it last said about itself. */
-  private readonly presence = new Map<string, Held<unknown>>();
+  /**
+   * peer -> space -> whatever it last said about itself there.
+   *
+   * Keyed by space as well as by peer, because one connection carries several
+   * (`design/CONNECTIONS.md`) and a person may have two documents open. A
+   * single slot per peer meant the second document's cursor overwrote the
+   * first's.
+   */
+  private readonly presence = new Map<string, Map<string, Held<unknown>>>();
   /**
    * peer -> the spaces it announced, and how to reach it.
    *
@@ -97,7 +105,12 @@ export class EphemeralState {
         });
         return;
       case 'PRESENCE':
-        this.presence.set(peer, {
+        let forPeer = this.presence.get(peer);
+        if (forPeer === undefined) {
+          forPeer = new Map();
+          this.presence.set(peer, forPeer);
+        }
+        forPeer.set(msg.space, {
           value: msg.payload,
           expiresAt: this.now() + Math.max(0, msg.ttl),
         });
@@ -159,13 +172,26 @@ export class EphemeralState {
     return out.sort();
   }
 
-  /** Everyone currently present, and what they last said. */
-  present(): Map<string, unknown> {
+  /**
+   * Everyone currently present in one space, and what they last said.
+   *
+   * Per space, because presence is about a document rather than a connection:
+   * two people editing different files over one transport are not present
+   * together.
+   */
+  present(space: string): Map<string, unknown> {
     const out = new Map<string, unknown>();
-    for (const [peer, held] of this.presence) {
-      if (!this.expired(held)) out.set(peer, held.value);
+    for (const [peer, byspace] of this.presence) {
+      const held = byspace.get(space);
+      if (held !== undefined && !this.expired(held)) out.set(peer, held.value);
     }
     return out;
+  }
+
+  /** How many blobs one peer advertised, for an availability view (§2.4). */
+  blobCount(peer: string): number {
+    const held = this.have.get(peer);
+    return held === undefined || this.expired(held) ? 0 : held.value.size;
   }
 
   /**
@@ -190,7 +216,10 @@ export class EphemeralState {
    */
   sweep(): void {
     for (const [peer, held] of this.have) if (this.expired(held)) this.have.delete(peer);
-    for (const [peer, held] of this.presence) if (this.expired(held)) this.presence.delete(peer);
+    for (const [peer, byspace] of this.presence) {
+      for (const [space, held] of byspace) if (this.expired(held)) byspace.delete(space);
+      if (byspace.size === 0) this.presence.delete(peer);
+    }
   }
 
   private expired(held: Held<unknown>): boolean {
@@ -210,8 +239,8 @@ export function haveMessage(hashes: readonly string[]): Have {
   return { type: 'HAVE', hashes: [...hashes] };
 }
 
-export function presenceMessage(payload: unknown, ttl = 30_000): Presence {
-  return { type: 'PRESENCE', payload, ttl };
+export function presenceMessage(space: string, payload: unknown, ttl = 30_000): Presence {
+  return { type: 'PRESENCE', space, payload, ttl };
 }
 
 /**

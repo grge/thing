@@ -20,7 +20,8 @@
  */
 import { hex } from './bytes.js';
 import { keyOf } from './chain.js';
-import { type Event, eventId, ROOT, type Uuid } from './event.js';
+import { decrypted, type Subkeys } from './cipher.js';
+import { type Event, eventId, ROOT, type Uuid, UUID_LEN } from './event.js';
 import {
   BODY_ATTR,
   KIND_ATTR,
@@ -103,7 +104,17 @@ export class Folder {
    */
   private roots: Event[] = [];
 
-  constructor(private readonly space: PublicKey) {
+  /**
+   * The reading key's subkeys, or null for a peer that folds ciphertext (§6.1).
+   *
+   * Held rather than passed per call because it is a property of the space, and
+   * because a fold that changed key partway would produce state no replay could
+   * reproduce (§3.6).
+   */
+  constructor(
+    private readonly space: PublicKey,
+    private readonly reading: Subkeys | null = null,
+  ) {
     this.spaceHex = hex(space);
   }
 
@@ -112,9 +123,13 @@ export class Folder {
     // Root events first, in case they admit writers whose events are in the
     // same batch. Everything else is order-independent anyway.
     const rest: Event[] = [];
-    for (const e of events) {
-      if (isRoot(e.target)) this.applyRoot(e);
-      else rest.push(e);
+    for (const raw of events) {
+      // Decrypt once, on the way in, so everything retained below — `roots`,
+      // `pending`, `bodyEntries` — holds plaintext and no site further down
+      // needs the nonce. Root events pass through untouched, which is where
+      // `ROOT-IN-CLEAR.md`'s exemption lands on the reading side.
+      if (isRoot(raw.target)) this.applyRoot(raw);
+      else rest.push(decrypted(this.reading, raw, false));
     }
 
     for (const e of rest) this.pending.push(e);
@@ -187,8 +202,18 @@ export class Folder {
       // The one cross-slice dependency: a parent write can change which object
       // a cycle re-parents (§3.4), so the whole tree is recomputed on read.
       this.treeDirty = true;
+      // **Only a value that is actually a uuid names an object.** `:parent`
+      // folds with the bytes register, which accepts any width, so a value that
+      // is not `UUID_LEN` long reaches here — a ciphertext `:parent` in a space
+      // whose key this peer lacks is exactly that (§6.1: "ciphertext is not
+      // one, so every object falls back to the root"). Calling `ensure` on it
+      // would mint an object keyed by 32 bytes of ciphertext, with no
+      // attributes and no events, which `resolveParents` then has to explain.
+      // It applies the same width check, so this is where the two agree.
       const parent = obj.attrs.get(PARENT_ATTR)?.value;
-      if (parent instanceof Uint8Array && !isRoot(parent)) this.ensure(parent);
+      if (parent instanceof Uint8Array && parent.length === UUID_LEN && !isRoot(parent)) {
+        this.ensure(parent);
+      }
     }
 
     if (e.attr === KIND_ATTR) {

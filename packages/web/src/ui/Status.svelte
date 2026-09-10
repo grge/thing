@@ -55,6 +55,15 @@
     {#if tab.mirrors}
       <span class="muted" title="Keeping a copy of this space's content">copying</span>
     {/if}
+    {#if !tab.readable && tab.looksEncrypted}
+      <!-- §6.1: this client stores, verifies and serves this space and reads
+           none of it. That is a working state, not a fault, so it is stated
+           plainly rather than warned about — but it must be stated, or a space
+           full of unreadable objects looks broken. -->
+      <span class="muted" title="Encrypted. This client holds no reading key (§6)">
+        encrypted
+      </span>
+    {/if}
   {/if}
 
   <button class="debug" class:on={debugging} onclick={ondebug} title="Debug">

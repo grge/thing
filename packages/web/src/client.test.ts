@@ -31,7 +31,7 @@ import {
   targetOf,
 } from '@thing/engine';
 
-import { Client, parsePasted } from './client.js';
+import { Client, parsePasted, parseShareLink } from './client.js';
 import { IdbStore } from './idbstore.js';
 import { browserLocalState } from './local.js';
 
@@ -51,6 +51,12 @@ class MemoryStorage {
 
 beforeEach(() => {
   (globalThis as { localStorage?: unknown }).localStorage = new MemoryStorage();
+  // `shareLink` builds a URL from the page it is on. Stubbed rather than
+  // avoided, because the shape of the link is part of what is being tested.
+  (globalThis as { location?: unknown }).location = {
+    origin: 'https://example.test',
+    pathname: '/',
+  };
 });
 
 describe('tabs', () => {
@@ -94,6 +100,46 @@ describe('tabs', () => {
     const view = client.view();
     expect(view.find((t) => t.id === tabA.id)?.mirrors).toBe(true);
     expect(view.find((t) => t.id === hex(b.publicKey))?.mirrors).toBe(false);
+    await client.close();
+  });
+
+  it('a space with a declared writer set is read-only until admitted', async () => {
+    // **The change a person notices.** Opening someone's space mints an
+    // identity (§5.1) and that identity is not a writer until the space key
+    // says so (§7.2.1) — so a share link grants reading, not writing, which is
+    // what `CAPABILITIES.md` exists to fix.
+    //
+    // The space is built as `create` builds one, since that is what declares a
+    // set at all.
+    const owner = new Client();
+    const theirs = await owner.create('theirs');
+    const key = await owner.keyFor(theirs.id);
+    expect(key).not.toBeNull();
+
+    // A second client, with its own storage. Both `Client`s share
+    // `localStorage` in this harness, so without swapping it the visitor would
+    // find the *owner's* key and be admitted — passing for the wrong reason.
+    (globalThis as { localStorage?: unknown }).localStorage = new MemoryStorage();
+    const visitor = new Client();
+    const seen = await visitor.open(key!.publicKey);
+
+    expect(seen.writable).toBe(false);
+    // It does hold a key — it simply is not admitted, which is the distinction
+    // `Space.admitted` draws and the reason a UI cannot use `writable` alone.
+    expect(await visitor.keyFor(theirs.id)).not.toBeNull();
+
+    await owner.close();
+    await visitor.close();
+  });
+
+  it('a space with no declared writer set admits everyone (§7.2.1)', async () => {
+    // An absent set is not an empty one, and spaces made before this change
+    // have none — so adding the default must not lock anyone out of a space
+    // they already share.
+    const client = new Client();
+    const someone = await generateKeyPair();
+    const tab = await client.open(someone.publicKey);
+    expect(tab.writable).toBe(true);
     await client.close();
   });
 
@@ -176,9 +222,9 @@ describe('tabs', () => {
     const client = new Client();
     const mine = await client.create('mine');
     const target = await generateKeyPair();
-    await makeLink(client.space(mine.id)!, 'theirs', target.publicKey);
+    const link = await makeLink(client.space(mine.id)!, 'theirs', target.publicKey);
 
-    const opened = await client.follow(mine.id, 'theirs');
+    const opened = await client.follow(mine.id, link);
 
     expect(opened).not.toBeNull();
     expect(opened!.id).toBe(hex(target.publicKey));
@@ -192,20 +238,39 @@ describe('tabs', () => {
     const client = new Client();
     const mine = await client.create('mine');
     const target = await generateKeyPair();
-    await makeLink(client.space(mine.id)!, 'theirs', target.publicKey);
+    const link = await makeLink(client.space(mine.id)!, 'theirs', target.publicKey);
 
     const before = links(client.space(mine.id)!.state).length;
-    await client.follow(mine.id, 'theirs');
+    await client.follow(mine.id, link);
     const after = links(client.space(mine.id)!.state).length;
 
     expect(after).toBe(before);
     await client.close();
   });
 
-  it('following a link that is not there is null, not an error', async () => {
+  it('following something that is not a link is null, not an error', async () => {
     const client = new Client();
     const mine = await client.create('mine');
-    expect(await client.follow(mine.id, 'nothing')).toBeNull();
+    expect(await client.follow(mine.id, new Uint8Array(16))).toBeNull();
+    await client.close();
+  });
+
+  it('follows the link that was clicked, not the first with its name', async () => {
+    // **Nothing makes a link name unique.** Two spaces both called `untitled`
+    // is ordinary — it is the default name — and looking one up by name found
+    // whichever `links()` sorted first, so clicking either went to the same
+    // space. That looked like a link pointing at someone else's content, which
+    // is a much more alarming bug than the one it was.
+    const client = new Client();
+    const mine = await client.create('mine');
+    const first = await generateKeyPair();
+    const second = await generateKeyPair();
+
+    const linkOne = await makeLink(client.space(mine.id)!, 'untitled', first.publicKey);
+    const linkTwo = await makeLink(client.space(mine.id)!, 'untitled', second.publicKey);
+
+    expect((await client.follow(mine.id, linkOne))!.id).toBe(hex(first.publicKey));
+    expect((await client.follow(mine.id, linkTwo))!.id).toBe(hex(second.publicKey));
     await client.close();
   });
 
@@ -365,11 +430,11 @@ describe('tabs', () => {
     const client = new Client();
     const mine = await client.create('mine');
     const theirs = await generateKeyPair();
-    await makeLink(client.space(mine.id)!, 'theirs', theirs.publicKey);
+    const link = await makeLink(client.space(mine.id)!, 'theirs', theirs.publicKey);
 
     expect(client.view().map((t) => t.name)).toEqual(['mine']);
 
-    const opened = await client.follow(mine.id, 'theirs');
+    const opened = await client.follow(mine.id, link);
     expect(opened!.name).toBe('theirs');
     expect(client.view()).toHaveLength(2);
     await client.close();
@@ -769,6 +834,51 @@ describe('settings', () => {
   });
 });
 
+describe('handing over a space', () => {
+  it('an ordinary link carries no key', async () => {
+    // Reading and writing are different grants (`design/CAPABILITIES.md`), and
+    // the ordinary share is the one that does not hand over authority.
+    const client = new Client();
+    const tab = await client.create('mine');
+    expect(parseShareLink(new URL(client.shareLink(tab.id)).hash)?.seed).toBeNull();
+    await client.close();
+  });
+
+  it('a hand-over link carries the seed, and installs it', async () => {
+    const owner = new Client();
+    const tab = await owner.create('mine');
+    const link = owner.shareLink(tab.id, { grant: 'administer' });
+    const parsed = parseShareLink(new URL(link).hash)!;
+    expect(parsed.seed).not.toBeNull();
+
+    // A different browser opens it: read-only until the seed is installed.
+    (globalThis as { localStorage?: unknown }).localStorage = new MemoryStorage();
+    const other = new Client();
+    const bytes = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) bytes[i] = Number.parseInt(parsed.key.slice(i * 2, i * 2 + 2), 16);
+    const opened = await other.open(bytes);
+    expect(opened.writable).toBe(false);
+
+    expect(await other.adoptKey(opened.id, parsed.seed!)).toBe(true);
+    expect(other.view().find((t) => t.id === opened.id)?.writable).toBe(true);
+
+    await owner.close();
+    await other.close();
+  });
+
+  it('refuses a seed for a different space', async () => {
+    // A space *is* its public key, so accepting this would install one space's
+    // identity under another's name.
+    const client = new Client();
+    const a = await client.create('a');
+    const b = await client.create('b');
+    const bSeed = client.exportKey(b.id)!;
+
+    expect(await client.adoptKey(a.id, bSeed)).toBe(false);
+    await client.close();
+  });
+});
+
 describe('the storage view', () => {
   it('lists a space that is open in a tab', async () => {
     const client = new Client();
@@ -862,6 +972,90 @@ describe('share links', () => {
     const key = new Uint8Array(32).fill(0xcd);
     expect(codeFor(key)).toBe(codeFor(key));
     expect(codeFor(key)).toHaveLength(8);
+  });
+});
+
+/**
+ * The reading key in a link (§6, `design/CAPABILITIES.md`).
+ *
+ * The distinction being checked is the one the design draws: a link with `k`
+ * alone replicates, and one with `r` too invites the recipient in. They are
+ * different links rather than one link with a mode flag.
+ */
+describe('reading keys in links', () => {
+  it('an unencrypted space shares a link with no r=', async () => {
+    // Opting out: new spaces are encrypted by default, so this is the
+    // deliberate case rather than the ordinary one.
+    const client = new Client();
+    const tab = await client.create('mine', { encrypted: false });
+    const link = parseShareLink(new URL(client.shareLink(tab.id, { grant: 'read' })).hash);
+    expect(link?.reading).toBeNull();
+    await client.close();
+  });
+
+  it('makes a new space encrypted by default', async () => {
+    const client = new Client();
+    const tab = await client.create('mine');
+    expect(client.isEncrypted(tab.id)).toBe(true);
+    await client.close();
+  });
+
+  it('an encrypted space shares a read link carrying r=', async () => {
+    const client = new Client();
+    const tab = await client.create('mine', { encrypted: true });
+    const link = parseShareLink(new URL(client.shareLink(tab.id, { grant: 'read' })).hash);
+    expect(link?.reading).toMatch(/^[0-9a-f]{64}$/);
+    await client.close();
+  });
+
+  it('a replicate link omits r= even for an encrypted space', async () => {
+    // §6.2: handing someone the space key asks them to help keep it alive;
+    // handing them the reading key too invites them in. Different acts.
+    const client = new Client();
+    const tab = await client.create('mine', { encrypted: true });
+    const link = parseShareLink(new URL(client.shareLink(tab.id)).hash);
+    expect(link?.key).toBe(tab.id);
+    expect(link?.reading).toBeNull();
+    await client.close();
+  });
+
+  it('installs a reading key from a link, and then reads', async () => {
+    const owner = new Client();
+    const tab = await owner.create('mine', { encrypted: true });
+    await makeFile(owner.space(tab.id)!, 'notes.txt', new TextEncoder().encode('hello'));
+    const link = parseShareLink(new URL(owner.shareLink(tab.id, { grant: 'read' })).hash)!;
+
+    // A different browser, holding nothing.
+    (globalThis as { localStorage?: unknown }).localStorage = new MemoryStorage();
+    const other = new Client();
+    const bytes = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) bytes[i] = Number.parseInt(link.key.slice(i * 2, i * 2 + 2), 16);
+    await other.open(bytes);
+
+    expect(await other.adoptReading(link.key, link.reading!)).toBe(true);
+    expect(other.view().find((t) => t.id === link.key)?.readable).toBe(true);
+    await other.close();
+    await owner.close();
+  });
+
+  it('refuses a malformed reading key rather than installing one that cannot read', async () => {
+    // A key of the wrong width would install and then fail authentication at
+    // every read, which looks like a corrupt space rather than a bad link.
+    const client = new Client();
+    const tab = await client.create('mine');
+    expect(await client.adoptReading(tab.id, 'ab'.repeat(8))).toBe(false);
+    expect(await client.adoptReading(tab.id, 'nothex')).toBe(false);
+    await client.close();
+  });
+
+  it('reads r= out of a pasted link, and ignores a malformed one', () => {
+    const key = 'ab'.repeat(32);
+    const good = 'cd'.repeat(32);
+    expect(parsePasted(`#k=${key}&r=${good}`)?.reading).toBe(good);
+    // Malformed `r` leaves a link that still replicates, which is a working
+    // outcome rather than a broken one.
+    expect(parsePasted(`#k=${key}&r=tooshort`)?.reading).toBeNull();
+    expect(parsePasted(`#k=${key}`)?.reading).toBeNull();
   });
 });
 

@@ -22,6 +22,7 @@
     entry,
     hex,
     isLink,
+    isText,
     read,
     targetOf,
     type Space,
@@ -29,6 +30,8 @@
   } from '@thing/engine';
   import type { Client } from '../client.js';
   import { rendererFor } from './renderers/index.js';
+  import ObjectHeader from './ObjectHeader.svelte';
+  import TextEdit from './TextEdit.svelte';
 
   interface Props {
     client: Client;
@@ -38,9 +41,20 @@
     peers: number;
     /** Whether this space keeps copies of content it names (§2.4). */
     mirrors: boolean;
+    /** Whether this client may write here, for editable documents. */
+    writable: boolean;
   }
 
-  const { client, space, spaceId, id, peers, mirrors }: Props = $props();
+  const { client, space, spaceId, id, peers, mirrors, writable }: Props = $props();
+
+  /**
+   * The space is encrypted and this client holds no reading key (§6.1).
+   *
+   * Read from the space rather than passed down: it is a property of the whole
+   * space, and asking it here keeps the one place that decides it in the engine
+   * (`Space.looksEncrypted`) rather than in a chain of props.
+   */
+  const cannotRead = $derived(!space.readable && space.looksEncrypted);
 
   let bytes = $state<Uint8Array | null>(null);
   let loading = $state(false);
@@ -55,6 +69,8 @@
   let refusedBy = $state(0);
 
   const item = $derived(entry(space.state, id));
+  /** A document whose body folds by the sequence rule, so it is editable. */
+  const isTextDoc = $derived(item !== null && isText(space.state, id));
   const link = $derived(item !== null && isLink(item) ? targetOf(space.state, id) : null);
 
   /**
@@ -158,8 +174,16 @@
 
 <section class="preview">
   <h2>{item?.name ?? 'file'}</h2>
+  <!-- What the object *is*, above whatever is showing it: the same slices for
+       a file, a folder, a link and a document, in the fold's own vocabulary. -->
+  <ObjectHeader folded={space.state} {spaceId} {id} encrypted={cannotRead} />
 
-  {#if link !== null}
+  {#if isTextDoc}
+    <!-- A text document is live state, not bytes: it has no blob to fetch and
+         the point is to change it, so it does not go through the renderer
+         registry (§3.8). -->
+    <TextEdit {client} {space} {spaceId} {id} writable={writable} />
+  {:else if link !== null}
     <p class="note">A link to another space.</p>
     <p class="key">{hex(link)}</p>
   {:else if bytes === null}

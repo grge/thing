@@ -41,6 +41,16 @@ export {
   parseType,
 } from './fs/mime.js';
 export { isLink, LINK_KIND, links, makeLink, targetOf } from './fs/links.js';
+export {
+  edit,
+  isText,
+  makeText,
+  readText,
+  runs,
+  TEXT_KIND,
+  type TextRun,
+  writeText,
+} from './fs/text.js';
 export { type ChangeListener, Space, type SpaceOptions } from './space.js';
 export {
   addModerator,
@@ -60,6 +70,7 @@ export {
   type Keyring,
   type LocalState,
   type LocatorCache,
+  seedFor,
 } from './local.js';
 export {
   type Attempt,

@@ -99,6 +99,8 @@ function fromStored(s: StoredEvent): Event {
 
 class IdbSpaceStore implements SpaceStore {
   private closed = false;
+  /** Serialises `append`, so no two overlap between admission and storage. */
+  private appending: Promise<void> = Promise.resolve();
 
   private constructor(
     readonly space: SpaceId,
@@ -134,6 +136,20 @@ class IdbSpaceStore implements SpaceStore {
 
   async append(events: readonly Event[]): Promise<AppendResult> {
     if (this.closed) throw new Error('store is closed');
+    // **One batch at a time** (§2.3). Admission awaits signature verification,
+    // so two overlapping appends can both decide an event is new — and a log
+    // with an event twice in it is a log whose chain no longer reads as a
+    // sequence. This store is the one a browser uses, where several spaces
+    // share a connection and overlapping appends are the ordinary case.
+    const mine = this.appending.then(() => this.appendSerially(events));
+    this.appending = mine.then(
+      () => undefined,
+      () => undefined,
+    );
+    return mine;
+  }
+
+  private async appendSerially(events: readonly Event[]): Promise<AppendResult> {
 
     const appended: Event[] = [];
     const rejected: { event: Event; why: AppendRejection }[] = [];

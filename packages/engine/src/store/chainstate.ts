@@ -71,6 +71,18 @@ export class ChainSet {
       list.sort((a, b) => a.seq - b.seq);
       const chain = emptyChain();
       for (const e of list) {
+        // **A repeated seq is skipped, not a stop.** A log may hold the same
+        // event more than once — `append` is what deduplicates, and anything
+        // that wrote around it, or a crash between the write and the state
+        // update, leaves copies behind. Sorting then puts them adjacent, so a
+        // strict `frontier + 1` check saw `0, 0, 0, 1, …`, stopped at the
+        // second copy, and left the chain pinned at 0 forever: every later
+        // event became a permanent gap, and the space showed a file with a
+        // name and no content.
+        if (e.seq <= chain.frontier) continue;
+        // A genuine hole does stop it. Events after a gap are held aside
+        // rather than applied (§2.5), and the frontier is by definition the
+        // highest *contiguous* sequence number.
         if (e.seq !== chain.frontier + 1) break;
         chain.frontier = e.seq;
         chain.tip = eventId(this.space, e);
@@ -95,6 +107,14 @@ export class ChainSet {
    * Returns null if it may, or why not. Checks in order of cost: cheap
    * structural checks before the signature, so a duplicate does not pay for
    * verification.
+   *
+   * **A caller must not interleave `admit` and `advance`.** This awaits — it
+   * verifies a signature — so between deciding an event is new and recording
+   * that it was taken, another append can run and decide the same thing. Both
+   * then store it, and the chain advances once: the log gains a copy per
+   * concurrent caller, and those copies broke two walks that assumed strict
+   * succession (`load` here, `readRange` in the file store). Every store
+   * serialises `append` for this reason.
    */
   async admit(e: Event): Promise<AppendRejection | null> {
     const w = chainOf(e);

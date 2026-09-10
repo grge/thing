@@ -1,6 +1,10 @@
 # Sequence numbers, equivocation, and what the literature says
 
-**Status: findings, not a proposal.** Nothing here recommends a change yet. It
+**Status: findings, and the proposal they led to was taken.** Append points
+(`APPEND-POINTS.md`) removed the one-key-one-device constraint this document
+questions: a chain is keyed by `(writer, point)` and each process mints its own,
+so two devices holding one key no longer collide. Quotations of §7.3 below are
+of the text *as it then stood*, and are what the change was argued against. Nothing here recommends a change yet. It
 records what a literature review turned up about a constraint we arrived at
 independently, and what it would cost to relax it.
 

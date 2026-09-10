@@ -1062,17 +1062,68 @@ resolution is deterministic, and it belongs with the defensive work.
 
 ---
 
-## Stage 10 — Encryption
+## Stage 9.5 — Capabilities: three keys, and what a link carries ✅
+
+**Designed, not built.** `../design/CAPABILITIES.md` has the reasoning.
+
+Two things block putting this on a public server, and only one of them was
+obvious.
+
+**Every space is world-writable.** `mayWrite` admits everyone when no writer set
+is declared, and nothing writes `:writers` — so a space is writable by anyone
+holding its public key, which is what a share link is made of. Sharing a space
+to be *read* currently hands over the ability to change it. `Space.addWriter`
+and `Space.admitted` both exist with no callers.
+
+**A link carries one key and there are three.** Replicate, read and administer
+are different acts (§6.2 says so); the format has one field.
+
+- `create` declares a writer set naming its creator.
+- Three link shapes, by what they contain rather than a mode flag.
+- `writable` in a UI must distinguish *I hold a key* from *my key is admitted*.
+- An absent writer set still admits everyone, so existing spaces are unaffected.
+
+**Done when:** a space made in one browser is read-only in another until
+admitted, and a share link can be made that grants reading without writing.
+
+**Done.** Four notes:
+
+- **`writable` now means admitted**, not "holds a key". A key outside the
+  writer set signs events every peer stores and no peer folds, so a UI offering
+  editing on the first would be lying. `Space.admitted` existed for exactly
+  this and had no callers.
+- **`importFor` is the other half of `exportKey`**, which §5.1.1 wanted and
+  `WEB-NEXT.md` had noted as the substantive gap: an export nobody can restore
+  is half a mechanism. Validated against the space id in one shared place, so
+  three backends cannot disagree about what they accept.
+- **Existing spaces are untouched.** An absent writer set still admits everyone
+  (§7.2.1), so only newly created spaces declare one.
+- **The hand-over link is deliberately blunt.** It hands over the space, not
+  write access, and the panel says so in those words.
+
+**Left for stage 10:** the `r=` field. A reading key has nothing to carry until
+there is encryption.
+
+## Stage 10 — Encryption ✅ *(one defect open: `design/BLOB-REFS.md`)*
 
 §6, self-contained if stage 3 left addressing ciphertext-shaped.
+**`ENCRYPTION-PLAN.md` has the decisions, the seams, and what the build found
+that they missed** — read that first; the bullets below are the original
+sketch.
 
-- Reading key in the link fragment.
+- **Root events are not encrypted** (`../design/ROOT-IN-CLEAR.md`). `:writers`
+  lives there, so encrypting it means a peer without the reading key cannot
+  evaluate membership — and an encrypted space could then only be hosted by
+  someone able to read it, which is what §6.2 exists to avoid. It is also the
+  bound OPEN.md 8a wanted: a keyless peer can tell whether an event will ever
+  fold. Costs `:name` in clear, deliberately.
+- Reading key in the link fragment — the `r=` field `CAPABILITIES.md` left for
+  this stage.
 - Authenticated cipher over event values and blobs, **nonce derived from
-  `(writer, seq)`** (§6). **That pair is unique only because one identity has
-  one chain.** If per-process append points land first (`../design/APPEND-POINTS.md`), the
-  nonce input must gain the point or two of one identity's processes reuse a
-  nonce under one key — which an authenticated cipher does not survive. Check
-  this before building, whichever way the core question goes.
+  `(writer, point, seq)`**. §6 specified `(writer, seq)` and flagged that the
+  pair is unique *only because one identity has one chain*; append points broke
+  that, and `../design/CAPABILITIES.md` settles the replacement — the same
+  triple that already keys a chain.
 - Derived subkeys for values and blobs.
 - A peer without the key: stores, serves, verifies, folds structure, folds no
   bodies (§6.1).
@@ -1082,6 +1133,34 @@ which trades a confirm-a-known-file attack for deduplication (§6).
 
 **Done when:** a headless peer serves an encrypted space it cannot read, and a
 browser with the key reads it through that peer.
+
+**Done, with one qualification worth reading.** XChaCha20-Poly1305 over event
+values and blobs, HKDF-SHA256 subkeys, nonce `(writer, point, seq)`, root in
+clear, `r=` in links, reading keys in all three keyrings and in the local
+conformance suite. `hosting.test.ts` runs the "done when" end to end.
+
+**The qualification: a keyless peer cannot mirror blobs, and this is a bug.**
+A blob's address lives in `:body` and this stage encrypted `:body`, so the
+headless peer in that test relays the whole log and the *content* moves only
+between the two peers holding the key. §6.1 and §6.2 both promise otherwise, and
+§2.4 addressed blobs by ciphertext hash specifically to make keyless mirroring
+possible. **Open, with five candidates in `../design/BLOB-REFS.md`** — the root
+cause is §3.9's deferred question, now forced. Stage 10 is otherwise complete;
+this is the piece to settle before it can be called done.
+
+Three other notes:
+
+- **The three decode sites the plan named were the wrong seam** — two of them
+  have no access to the nonce triple. Decryption happens once at the entry to
+  each fold instead, and nothing below it knows encryption exists.
+- **It found a latent bug in the incremental fold.** `applyOther` minted a
+  phantom object from any `:parent` value that was not a uuid; `resolveParents`
+  had the width check and the two disagreed. Reachable before encryption by a
+  malformed write, never hit.
+- **A new browser space is encrypted by default**; a CLI space is not
+  (`thing init --encrypted`). Nothing in the design decided this, so it was
+  decided in `ENCRYPTION-PLAN.md` and is flagged here as a choice rather than a
+  consequence.
 
 ---
 
@@ -1177,6 +1256,40 @@ one full fold of the same events, the two folds still agree over the generated
 histories, and the tests that carry a raised timeout no longer need one.
 
 ---
+
+## Stage 13 — A shared document ✅
+
+**The bet, used.** §3.8 calls the universal fold the central claim of the
+design; the sequence rule was built for it, pinned before it was coded, and
+nothing had ever put weight on it. A text document is the smallest thing that
+does — and it needed no engine change beyond exporting one traversal.
+
+A document is an object whose `:kind` is `sequence`, so any client holding that
+rule can edit it without knowing what wrote it. `fs/text.ts` turns a wanted
+string into operations; `TextEdit.svelte` binds a textarea to it, with cursors
+on the ephemeral channel.
+
+Three things worth keeping:
+
+- **Runs, not characters.** An element's id is its event's, so one event is one
+  element and a character per keystroke would be an event per keystroke. Typing
+  is debounced into runs. The price: concurrent edits *inside one run* resolve
+  at run granularity, because splitting a run needs an id the creating event
+  cannot supply.
+- **Local text leads while you type.** Rebuilding the textarea from the fold on
+  every keystroke fights the caret — the fold is a beat behind, so the value
+  snaps back and the cursor jumps. The fold only overwrites when someone *else*
+  changed it.
+- **`:kind` names the rule** (§4.2), which caught an error: an invented `text`
+  kind resolved to nothing and the object folded as *unreadable* rather than
+  being guessed at. §3.1's tiering working as designed.
+
+**Verified with two people editing at once**, through a hub, converging with
+both edits intact.
+
+**Open:** cursors are reported as an offset and shown as text. Rendering them in
+the textarea needs coordinate mapping, which is a UI problem rather than a
+protocol one.
 
 ## Beyond
 

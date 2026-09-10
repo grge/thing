@@ -204,7 +204,18 @@ function step(acc: SeqAcc, entries: readonly Entry<SeqOp>[]): Acc<SeqAcc> {
  * position is not observable (§3.6's "hash the observable state"). Elements
  * whose anchor is missing are also absent, and appear when it arrives.
  */
-function render(acc: SeqAcc): readonly Uint8Array[] {
+/**
+ * The visible elements in order, with their ids.
+ *
+ * `render` drops the ids because the rendered value is what a *view* sees, and
+ * a view has no use for them. An **editor** does: an insertion anchors after an
+ * element and a deletion names one, so anything that means to change the text
+ * needs to know which element is where.
+ *
+ * Same traversal as `render`, which calls this — one ordering, so the two
+ * cannot disagree about where an element sits.
+ */
+export function ordered(acc: SeqAcc): readonly SeqNode[] {
   const children = new Map<ElementId | null, SeqNode[]>();
   for (const node of acc.nodes.values()) {
     // An anchor naming an element nobody holds is not placeable yet.
@@ -228,15 +239,19 @@ function render(acc: SeqAcc): readonly Uint8Array[] {
     });
   }
 
-  const out: Uint8Array[] = [];
+  const out: SeqNode[] = [];
   const walk = (anchor: ElementId | null): void => {
     for (const node of children.get(anchor) ?? []) {
-      if (!node.deleted) out.push(node.body);
+      if (!node.deleted) out.push(node);
       walk(node.id);
     }
   };
   walk(null);
   return out;
+}
+
+function render(acc: SeqAcc): readonly Uint8Array[] {
+  return ordered(acc).map((n) => n.body);
 }
 
 export const sequence: Rule<SeqOp, SeqAcc, readonly Uint8Array[]> = {

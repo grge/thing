@@ -14,7 +14,10 @@ the decision was made, so one can be superseded without being wrong.
 | `APPEND-POINTS.md` | how a writer's chain is keyed, so two processes never fork |
 | `DEPS.md` | judging an event against the writer set its author had seen |
 | `SEQUENCE.md` | the sequence rule, written as a specification first (§3.6) |
+| `CAPABILITIES.md` | three keys, what a share link carries, what a new space defaults to |
 | `CONNECTIONS.md` | a connection carries many spaces, not one |
+| `ROOT-IN-CLEAR.md` | the root is not encrypted, so a keyless peer can still evaluate membership |
+| `BLOB-REFS.md` | **open** — `:body` holds both content and blob addresses, and encrypting it broke keyless mirroring |
 | `WEB-CLIENT.md` | what the browser client is, and what shapes it |
 | `CLIENTS.md` | **superseded in part** — append points removed two of its conclusions |
 

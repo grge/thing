@@ -382,6 +382,274 @@ looking.
 fold 22× slower than a full replay of the same events — the opposite of its
 purpose. That is now stage 12. The bug was real; the description was fiction.
 
+## 16. A name is not an identifier, however convenient it is
+
+`follow(space, linkName)` looked up a link by its name. Two links called
+`untitled` — the *default* name, so this is the common case rather than a
+contrived one — and clicking either opened whichever `links()` sorted first.
+
+**What it looked like from outside was much worse than what it was.** The user
+reported "expanding a link shows the content of a totally different space",
+which is content attributed to the wrong space: a correctness bug in the fold,
+or a link whose target had been corrupted. I spent several rounds checking
+`makeLink`, `targetOf`, the fold, and the tree's keying, and reproduced the
+scenario end to end in Node — where it worked, because the *engine* was never
+wrong. Only when they narrowed it to *"clicking either of two links switches to
+the same tab"* was the shape obvious.
+
+The lesson is not "use ids", which everyone already knows. It is that **the
+identifier was right there and the name was easier to pass**. `FileEntry` has
+`id`; the button had `chosen` in scope; `follow` took a string because a string
+was what the caller happened to have. Nothing forced the mistake and nothing
+caught it, because with one link per name it is indistinguishable from correct.
+
+**Two more of the same shape were in the CLI**, found by grepping for the
+pattern rather than by thinking. `thing unlink <name>` removed an arbitrary one
+of several — silently, and the wrong one as likely as the right one. It now
+refuses and lists the candidates, with `--key` to disambiguate. That one is a
+*deletion*, so the same bug there was worse and had been sitting unremarked.
+
+**Worth grepping for after any bug of this kind.** `\.name === ` found all
+three in one command.
+
+## 17. The same walk, written twice, broke twice
+
+A log held every event three times. Two separate walks stepped through a
+chain's events by `expect + 1`, and sorting by seq puts duplicates adjacent —
+`0, 0, 0, 1, ...` — so both stopped at the second copy of seq 0.
+
+- `ChainSet.load` pinned the frontier at 0, so every later event was refused as
+  a permanent gap.
+- `readRange` yielded one event and returned, so a peer asking for the range
+  got seq 0 and nothing else, however many times it asked.
+
+**The second one was invisible until the first was fixed.** Repairing `load`
+made the server's own copy healthy, and the space still would not replicate —
+which is what sent me looking again rather than declaring it done. Two bugs with
+one symptom look like one bug that was not properly fixed.
+
+**Neither function had a test.** `ChainSet` had none at all; `readRange` had
+none either, in a file with twenty-three other tests. Both are on paths that
+only run when something else has already gone slightly wrong — reopening a log,
+serving a range to a peer that is behind — which is exactly the code that gets
+exercised least and matters most.
+
+The shape worth remembering: **a walk that assumes strict succession over data
+it did not itself deduplicate.** `append` deduplicates, so within one process a
+log holds each event once, and both walks were written against that assumption.
+A log is a file, and a file outlives the process that guaranteed its shape.
+
+## 18. An invariant that holds by accident is not held
+
+`SpaceStore.append` decided an event was new, awaited a signature verification,
+and only then recorded that it had been taken. Two overlapping appends both
+passed the check and both stored the event.
+
+**Three stores, written at different times, all had it.** That is the signature
+of a missing contract rather than three slips: `ChainSet` offered `admit` and
+`advance` as separate calls and said nothing about holding them together, so
+every implementation independently did the reasonable-looking thing.
+
+**It was satisfied by accident until something unrelated changed.** One
+connection carried one space, so appends arrived one batch at a time and the
+race had no way to fire. Making a connection carry several spaces
+(`design/CONNECTIONS.md`) made overlapping appends ordinary — and the failure
+appeared three layers away, as a file with a name and no content.
+
+**The damage outlived the cause, which is what made it hard to see.** Duplicate
+events broke two *other* walks that assumed a chain reads as a sequence —
+rebuilding chain state on open, and serving a range to a peer. I fixed both as
+bugs, and they were; but fixing them made the symptom recede without the cause
+going anywhere, and the second one was invisible until the first was fixed. Two
+bugs with one symptom look like one bug that was not properly fixed.
+
+**The user called it before I did.** I was four layers deep and still treating
+each layer as its own defect. Their read — *"this feels like a design issue we
+overlooked rather than a bug"* — was right, and the tell was that I had fixed
+"the" bug twice already and it was still there.
+
+Now stated in §2.3, where the three verification checks are: deciding a sequence
+number follows is a decision about a *chain*, so deciding it and recording it
+must be one step. The conformance suite has it, so a fourth store cannot get it
+wrong quietly.
+
+## 19. The permission model is too simple, and it is starting to show
+
+**The model is one sentence:** whoever holds the space key decides who may
+write. That is its great virtue — §7.2.1 says so, and it is why the fold has no
+fixed point to find and why membership needs no merge semantics. It should not
+be given up lightly.
+
+But four separate difficulties this month turned out to be the same difficulty,
+and it is worth recording that they are related rather than each being fixed
+where it surfaced.
+
+**Encryption and authority collided.** `:writers` is a root value, so encrypting
+it means a peer without the reading key cannot evaluate membership — and an
+encrypted space could then only be hosted by someone able to read it, which is
+what §6.2 exists to avoid. `ROOT-IN-CLEAR.md` resolves it by exempting the root,
+which works, but notice what the fix is: **the authority model had to be moved
+outside the privacy model** because they could not be layered. Two mechanisms
+that should be independent were not.
+
+**Unadmitted writes cost storage nobody bounds** (OPEN.md 8a). Because a store
+cannot check permission — for the reason above, and because §7.2.3 makes
+membership time-dependent — anyone who can reach a space can make it grow. The
+events fold into nothing, so this is not a correctness failure; it is authority
+that stops at the fold and does not reach the transport.
+
+**Sharing a space means write access to a hub's main space.** Hosting is a link
+(`MAIN-SPACE.md`), a link is an ordinary write, so *"please host my space"* and
+*"let me edit your space"* are the same request. A public hub either admits
+strangers as writers of its own main space or hosts nothing they ask for. The
+authorisation the design wanted — *this person may add a link* — cannot be
+expressed, because the vocabulary has one verb.
+
+**Moderators are a label the engine does not enforce.** §7.2.2 defines them,
+`isModerator` exists, nothing calls it, and nothing can: a moderator action is
+an ordinary write and the fold has no way to treat it differently. The concept
+was added because "several administrators" needed an answer that was not
+sharing the space key — and what it produced was a note on the root that any
+application may consult or ignore.
+
+**What connects them.** The model has exactly two levels — *may write
+everything*, or *may write nothing* — and every one of these is a request for a
+third: may write here but not there, may add links but not files, may act as
+this role. Each has been worked around locally, and the workarounds are
+reasonable in isolation. The pattern is only visible when they are listed
+together.
+
+**This is not a call to build capability-based ACLs.** The simplicity is
+load-bearing and most of what it buys is real. It is a note that the next
+authority question should be answered by *revisiting the model* rather than by
+adding a fifth workaround — and that a rewrite of `ARCHITECTURE.md` should
+treat §6 and §7 as one problem rather than two chapters.
+
+## 20. Encryption hides values; the design reveals the rest
+
+§6.3 concedes that encryption *"does not hide structure"* in one line and moves
+on. Working through what a keyless peer actually holds — while correcting §6.1,
+which claimed more than it should have — makes the size of that concession
+clearer, and it is worth writing down before anyone deploys against it.
+
+**What a host of an encrypted space learns without the reading key:**
+
+- **How many objects there are**, and therefore roughly how many files.
+- **How many times each one changed**, since every write is an event on that
+  object's slice, and the slices are enumerable by attribute name.
+- **Which attributes each object carries** — so *this object has a `:body`* and
+  *this one does not* separates files from folders without reading either.
+- **When everything happened**, from `wall`, and in what order, from `lamport`.
+- **Who wrote what**, since `writer` is in the clear on every event.
+- **How large every blob is**, and when it arrived.
+- **The whole membership list**, once `ROOT-IN-CLEAR.md` lands, plus the space's
+  `:name`.
+
+An edit-per-keystroke document is distinguishable from a file uploaded once. A
+space with three objects is distinguishable from one with three hundred. A burst
+of activity at 2am is visible. None of that needs a single value decrypted.
+
+**Why it comes out this way.** Nothing here is a mistake in the encryption; it
+falls out of choices made for good reasons elsewhere. Events are the unit of
+replication, so they cannot be opaque blobs — a peer must read `target`, `attr`,
+`writer`, `seq` and `prev` to reconcile at all (§2.3). The fold is universal, so
+attribute *names* must be legible for the rule vocabulary to be fixed (§3.2).
+Signatures are per event, so events cannot be batched into indistinguishable
+chunks. **Metadata is the substrate.** Encrypting it would mean a different
+substrate, not a different cipher.
+
+**What that means in practice.** "A peer can host a space it cannot read" is
+true and much weaker than it sounds. The host cannot read your documents; it can
+describe your working habits. For a personal file-sync space on a VPS you
+control that is fine. For anything where *activity itself* is sensitive — who is
+talking to whom, when a group formed, whether a file exists at all — this design
+does not provide it, and no amount of care with the cipher will.
+
+**Carry forward:** §6.3's one line should be a section, and a rewrite should
+state the disclosure positively — *here is what a host learns* — rather than as
+a list of things encryption does not do. A reader deciding whether to trust a
+host needs the first form.
+
+## 21. A pointer went into a slot that gets encrypted
+
+Stage 10, found by writing the end-to-end test §6 asks for: *a headless peer
+serves an encrypted space it cannot read, and a peer with the key reads it
+through that peer.* The first half is true. The second half is true of **events**
+and false of **blobs**.
+
+**This is a regression against stated intent, not a discovered limitation.** The
+first version of this entry recorded it as an honest consequence of §6 that the
+design had not noticed. That was wrong twice over, and the corrections are the
+actual lesson — see the end of this section. The live problem statement is
+[`../design/BLOB-REFS.md`](../design/BLOB-REFS.md); this records how it was
+misread.
+
+**Why.** A relay mirrors content by walking the fold for what it references —
+`referencedBlobs` reads `:parent` to find objects and `:body` to get each hash.
+Both are encrypted values, so a keyless peer cannot name a single blob to ask
+for. And a peer serves a blob only from its own store: `WANT_BLOB` is answered
+from local bytes or refused with `NO_BLOB`, never forwarded. So a hub with no
+reading key holds no blob of an encrypted space and has nothing to pass on.
+
+The result is a split that §6.1's table does not draw:
+
+| | keyless hub |
+| --- | --- |
+| relay events | **yes** — the whole log, verified |
+| fold the root, evaluate membership | **yes** (`ROOT-IN-CLEAR.md`) |
+| mirror or serve blobs | **no** — it cannot name one |
+
+**What it means in practice.** For a space whose content lives in event values —
+notes, a chat, a collaborative document — a keyless hub is a complete relay, and
+§6.2 holds as written. For a **file** space, it keeps the filesystem's structure
+alive and not its bytes: two peers never online together see the file listed and
+cannot fetch it. That is a much weaker promise than "a peer can be a complete,
+verifying, useful replica of a space it cannot read", which §6.1 says without
+qualification.
+
+**It is a bug, and the cause is one sentence:** a blob's address lives in
+`:body`, and stage 10 encrypted `:body`. §2.4 had deliberately arranged for the
+address to be the hash of the *ciphertext* precisely so a keyless peer could
+verify blobs it stores and serves — that reasoning only makes sense if such a
+peer is expected to acquire them. The mechanism was there and stage 10 wrapped
+the one input it needed.
+
+**Three wrong turns before that was clear**, and they are the part worth
+remembering:
+
+- **"The tree walk blocks it."** `referencedBlobs` recurses through `:parent`,
+  which a keyless peer cannot resolve — so it looked like a second, independent
+  blocker. It is not: `state.objects` is a flat map and iterating it directly
+  reaches the same objects for less work. A gratuitous recursion was mistaken
+  for a constraint because it was there.
+- **"The hash is secret."** It is an address, and a randomised one — encrypting
+  one file three times yields three unrelated addresses, so it cannot even
+  confirm a guessed file. Reasoning proceeded for some time on the assumption
+  that exposing it was the dangerous part, having already established that it
+  was the ciphertext hash.
+- **"It is a consequence, so document it."** Two design documents were amended
+  and an OPEN entry filed, all of which made a bug look like a decision. Writing
+  it down is not the same as being right, and a plausible explanation absorbed
+  the evidence instead of being tested against it.
+
+**The lesson.** §6.1's table was written about *the fold* and silently
+generalised to *everything a peer does*; blobs travel by a different path (§2.4)
+and were never checked against it. That is the second time a claim about a
+keyless peer was more confident than the code — §20 corrected the same table for
+the tree. But the sharper lesson is the third bullet: **the first coherent story
+that fits the symptom is not the diagnosis**, and it is most dangerous when it is
+coherent enough to write up.
+
+**What was actually predicted.** §3.9 has been open since it was written and
+names this exactly — *"is this body a blob" and "is this value stored out of
+line" are two different questions, and a design that answers them with one
+mechanism will have to separate them again.* It deferred the decision until
+there was a real implementation to decide against. There is now, and encryption
+is the second forcing case after snapshots (§9.1).
+
+**Open:** [`../design/BLOB-REFS.md`](../design/BLOB-REFS.md) has the problem
+statement and five candidate fixes. Not decided.
+
 ## The nuclear revoke
 
 **The problem it answers.** `deps` (see `../design/DEPS.md`) narrows backdating without

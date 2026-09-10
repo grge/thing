@@ -18,6 +18,7 @@
     makeFile,
     makeFolder,
     makeLink,
+    makeText,
     move,
     read,
     remove,
@@ -160,6 +161,20 @@
           // Dial regardless of whether the tab is new: a restored tab has no
           // connection, and the link's hint may be the only address anyone has
           // for that space (`docs/design/LOCATORS.md`).
+          // A link that carried the space's own seed hands over the space
+          // (`docs/design/CAPABILITIES.md`) — install it before connecting, so
+          // the space opens with its key rather than read-only.
+          // A reading key first: it changes what the space *says*, and doing it
+          // before connecting means the first events to arrive are folded with
+          // it rather than as ciphertext that a later reopen has to redo.
+          if (link.reading !== null) {
+            const took = await client.adoptReading(tab.id, link.reading);
+            if (!took) error = 'that link carried a malformed reading key';
+          }
+          if (link.seed !== null) {
+            const took = await client.adoptKey(tab.id, link.seed);
+            if (!took) error = 'that link carried a key for a different space';
+          }
           if (link.locator !== null) await client.connect(tab.id, link.locator);
           else if (link.token !== null) await client.meetAt(tab.id, link.token);
         } catch (err) {
@@ -178,10 +193,17 @@
     selected = null;
   }
 
-  /** Following a link opens a tab. It writes nothing (`docs/design/MAIN-SPACE.md`). */
-  async function follow(name: string): Promise<void> {
+  /**
+   * Following a link opens a tab. It writes nothing (`docs/design/MAIN-SPACE.md`).
+   *
+   * **By the link's object id, not its name.** Nothing stops a space holding
+   * two links called `untitled`, and looking one up by name always found the
+   * first — so clicking either went to the same space, which looked like a
+   * link pointing at someone else's content.
+   */
+  async function follow(link: Uuid): Promise<void> {
     if (activeId === null) return;
-    const tab = await client.follow(activeId, name);
+    const tab = await client.follow(activeId, link);
     if (tab !== null) show(tab.id);
   }
 
@@ -208,6 +230,8 @@
   }
 
   async function create(): Promise<void> {
+    // Encrypted by default (§6). `create` decides that; naming it here would
+    // be a second place for the default to live.
     show((await client.create('untitled')).id);
   }
 
@@ -360,6 +384,30 @@
     if (event.dataTransfer?.types.includes('Files') !== true) return;
     event.preventDefault();
     void addFiles(event.dataTransfer.files);
+  }
+
+  /**
+   * A text document: an object whose body folds by the sequence rule (§3.8).
+   *
+   * Not a file — it has no blob. The contents live in the log as operations,
+   * so two people can edit it at once and any client holding the rule can
+   * read it without knowing what wrote it.
+   */
+  async function newDocument(): Promise<void> {
+    if (activeId === null) return;
+    const space = client.space(activeId);
+    if (space === null || !space.writable) {
+      error = 'this space is read-only here';
+      return;
+    }
+    try {
+      const doc = await makeText(space, 'untitled.txt', here);
+      selected = doc;
+      selectedIn = activeId;
+      refresh();
+    } catch {
+      error = 'could not make a document';
+    }
   }
 
   async function newFolder(): Promise<void> {
@@ -665,6 +713,13 @@
               <Icon name="folderPlus" />
             </button>
             <button
+              onclick={newDocument}
+              aria-label="New document"
+              title="New shared document"
+            >
+              <Icon name="fileText" />
+            </button>
+            <button
               onclick={() => {
                 pasting = 'link';
                 pasted = '';
@@ -678,7 +733,7 @@
           {#if chosen !== null}
             {#if isLink(chosen)}
               <button
-                onclick={() => void follow(chosen.name)}
+                onclick={() => void follow(chosen.id)}
                 aria-label="Open in a tab"
                 title="Open in a tab"
               >
@@ -737,6 +792,7 @@
             id={selected}
             peers={active.peers}
             mirrors={active.mirrors}
+            {writable}
           />
         {:else}
           <p class="muted pad">Select a file.</p>

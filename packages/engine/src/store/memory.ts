@@ -24,6 +24,8 @@ class MemorySpaceStore implements SpaceStore {
   private readonly events = new Map<ChainId, Map<number, Event>>();
   private readonly blobs = new Map<string, Uint8Array>();
   private readonly chains: ChainSet;
+  /** Serialises `append`, so no two overlap between `admit` and `advance`. */
+  private appending: Promise<void> = Promise.resolve();
 
   constructor(
     readonly space: SpaceId,
@@ -33,6 +35,19 @@ class MemorySpaceStore implements SpaceStore {
   }
 
   async append(events: readonly Event[]): Promise<AppendResult> {
+    // Serialised for the same reason as the file store: `admit` awaits, so two
+    // overlapping appends can both decide one event is new. The map keying here
+    // hides the duplicate *storage*, but both callers would still be told the
+    // event was appended and would refold it twice.
+    const mine = this.appending.then(() => this.appendSerially(events));
+    this.appending = mine.then(
+      () => undefined,
+      () => undefined,
+    );
+    return mine;
+  }
+
+  private async appendSerially(events: readonly Event[]): Promise<AppendResult> {
     const appended: Event[] = [];
     const rejected: { event: Event; why: NonNullable<Awaited<ReturnType<ChainSet['admit']>>> }[] = [];
 
